@@ -1,0 +1,85 @@
+import polars as pl
+
+import base64
+import zipfile
+import json
+import xml.etree.ElementTree as ET
+import io
+
+from .schema import ggb_schema
+
+class ggb_construction:
+    _pl = pl
+    _pl.Config.set_tbl_rows(-1)
+
+    def __init__(self):
+        self.ggb_schema = ggb_schema().schema
+
+    def initialize_dataframe(self, file):
+        self.cp = pl.read_parquet(file)
+        self.cp = (self.cp
+            .transpose(include_header=True, header_name="Name", column_names=["Type", "Command", "Value", "Caption", "Layer"])
+            .with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0)))
+        return self
+
+    def write_parquet(self, file):
+        self.cp.write_parquet(file)
+        return self
+    
+    def load(self, file):
+        self.source_file = file
+
+        self.base64_buffer = None
+        self.geogebra_xml = None
+
+        try:
+            with open(self.source_file, 'rb') as f:
+                def unzip(buff):
+                    with zipfile.ZipFile(io.BytesIO(base64.b64decode(buff)), 'r') as zf:
+                        # for fileinfo in zf.infolist():
+                        #     print(fileinfo)
+                        with zf.open('geogebra.xml', 'r') as zff:
+                            try:
+                                s = zff.read()
+                            except:
+                                pass
+                    return s
+
+                match tuple(f.read(4).decode()):
+                    case ('U', 'E', 's', 'D'):
+                        # base64 encoded zip
+                        f.close()
+                        with open(self.source_file, 'rb') as f2:
+                            self.base64_buffer = f2.read()  # base64.b64decode(f2.read())
+                            self.geogebra_xml = unzip(self.base64_buffer)
+                    case ('P', 'K', _, _):
+                        # zip
+                        f.close()
+                        with open(self.source_file, 'rb') as f2:
+                            # b64encode for sending GeoGebra Applet
+                            self.base64_buffer = base64.b64encode(f2.read())
+                            self.geogebra_xml = unzip(self.base64_buffer)
+                    case ('{', _, _, _) | ('[', _, _, _):
+                        # json
+                        f.close()
+                        with open(self.source_file, 'r', encoding='utf-8') as f2:
+                            self.base64_buffer = json.load(f2)
+                            for f in self.base64_buffer['archive']:
+                                if f['fileName'] == 'geogebra.xml':
+                                    self.geogebra_xml = f['fileContent']
+                    case _:
+                        # xml?
+                        with open(self.source_file, 'r', encoding='utf-8') as f2:
+                            self.geogebra_xml = f2.read()
+            # return self.initialize_dataframe(file)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"File not found: {self.source_file}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load the file: {e}")
+
+        # strip to construction element and fix scientific notation
+        self.geogebra_xml = (ET.tostring(ET.fromstring(self.geogebra_xml)
+                                        .find('./construction'), encoding='unicode')
+                            .replace('e-1', 'E-1'))
+
+        return self
