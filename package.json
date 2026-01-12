@@ -1,6 +1,6 @@
 {
     "name": "ggblab",
-    "version": "0.6.8",
+    "version": "0.7.0",
     "description": "A JupyterLab extension.",
     "keywords": [
         "jupyter",
