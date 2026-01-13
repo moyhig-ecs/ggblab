@@ -34,7 +34,8 @@ GeoGebra's native capabilities for numerical work are **asymmetric**:
 - ✅ **Symbolic algebra**: Usable for medium-complexity expressions
 - ✅ **Lists & iteration**: Functional `Map()`, `Sequence()` exist but are cumbersome
 - ✅ **Matrix operations**: Available but interface is awkward for iterative workflows
-- ❌ **Solving (ODE, constraint)**: Limited; no accessible solver APIs
+| **Solving (ODE)**: Native ODE solver available (`SolveODE` command); usable for medium complexity
+| **Constraint solving**: Limited; no built-in constraint solver APIs
 - ❌ **Numerical iteration**: No native iteration control; scripting is fragile
 - ❌ **Data wrangling**: No structured data types (no DataFrame equivalent)
 - ❌ **Statistical analysis**: Minimal support
@@ -125,49 +126,105 @@ for k in [0.1, 0.5, 1.0]:
 
 ## 3. Geometric Scene Evolution (Timeline/Animation)
 
-### Vision: Wolfram Mathematica's Scene Concept
+### Vision: Wolfram's GeometricScene Paradigm
 
-Inspire by Mathematica's ability to capture and animate scenes:
-- **Scene = frozen state**: All geometric objects, their properties, and symbolic relationships at one point in time
-- **Evolution = sequence of scenes**: As parameters change, snapshots form a timeline
-- **Playback = re-rendering**: Smooth or stepped replay through timeline
+Mathematica's `GeometricScene` is a powerful, underexplored concept in the broader programming community. It represents a **unified data structure** for geometric configurations that can be:
+- **Defined**: Specify objects, relationships, and constraints symbolically
+- **Parameterized**: Vary the scene as parameters change
+- **Visualized**: Render in 2D/3D at arbitrary resolution
+- **Queried**: Ask questions about properties, relationships, symmetries
+- **Animated**: Replay evolution as an educational narrative
 
-### ggblab Implementation Strategy
+While GitHub documentation on `GeometricScene` is sparse (Wolfram keeps this as intellectual property), the paradigm is revolutionary for mathematics education.
+
+### ggblab's Reinterpretation: Scenes → Manim Videos
+
+ggblab adapts this vision for the open-source ecosystem:
+
+**Goal**: Transform interactive GeoGebra scenes into polished **manim-rendered educational videos**.
+
+```
+GeoGebra Construction
+    ↓ (Interactive exploration, parameter adjustment)
+Scene Timeline (snapshots at each parameter step)
+    ↓ (Extract geometry + annotations)
+Manim Script (Python code describing animations)
+    ↓ (manim render engine)
+MP4 Video (HD mathematical animation for teaching)
+```
+
+### Why Manim?
+
+**manim** (Mathematical Animation Engine by Grant Sanderson / 3Blue1Brown) is:
+- **Open-source**, Python-based
+- **Designed for math**: Elegantly animates equations, transformations, curves
+- **Publication-quality**: Produces broadcast-ready mathematical visualizations
+- **Community-driven**: Large ecosystem of custom animations and examples
+
+**Synergy**: GeoGebra provides **interactive geometric design**; manim provides **professional animation pipeline**. ggblab bridges them.
+
+### Three-Phase Implementation
 
 #### Phase 1: State Capture (v0.8 - v0.9)
 
-```python
-class SceneSnapshot:
-    """Immutable capture of GeoGebra construction state."""
-    timestamp: float  # For ordering
-    base64: str       # Full applet state
-    metadata: dict    # {'slider_values': {...}, 'description': '...'}
-
-class SceneTimeline:
-    """Ordered sequence of snapshots; enables playback."""
-    scenes: List[SceneSnapshot]
-    
-    async def record_at_parameters(self, param_ranges: dict):
-        """Sweep parameter space; record snapshot at each point."""
-        
-    async def playback(self, fps=2):
-        """Animate through timeline."""
-        
-    def diff(self, i: int, j: int) -> dict:
-        """Return what changed between scene i and j."""
-```
+Interactive exploration and scene snapshot recording in Jupyter.
 
 #### Phase 2: Interactive Navigation (v0.9 - v1.0)
 
-- **Slider-driven playback**: User drags to navigate timeline
-- **Branching timelines**: Record multiple "what-if" branches
-- **Comparison view** (if Applet rendering bug fixed): Show two scenes side-by-side
+Timeline navigation in Jupyter; optional GeoGebra-based playback.
 
 #### Phase 3: Educational Narrative (v1.0+)
 
-- Embed timelines in Jupyter cells
-- Markdown annotations for each scene
-- Export as GIF/video for presentation
+Embed timelines in Jupyter cells with markdown annotations.
+
+#### Phase 4: Manim Export (v1.0 - v1.5)
+
+**The final and defining feature**: Convert scene timelines to manim-rendered videos.
+
+```python
+class SceneTimeline:
+    # ... previous methods ...
+    
+    def to_manim_script(self, 
+                        output_file='scene.py',
+                        title='Geometric Transformation',
+                        fps=30) -> str:
+        """
+        Generate a manim Scene class that reproduces the timeline.
+        
+        Returns:
+            Python source code as string
+            
+        Example output:
+        ```python
+        from manim import *
+        class GeometricEvolution(Scene):
+            def construct(self):
+                # Frame 0: Initial configuration
+                A = Dot(point=np.array([0, 0, 0]))
+                B = Dot(point=np.array([3, 0, 0]))
+                # ... animate to frame 1, 2, ... N
+        ```
+        """
+        
+    async def render_video(self,
+                          output_format='mp4',
+                          quality='high') -> bytes:
+        """
+        Orchestrate:
+        1. Extract geometry from snapshots
+        2. Generate manim script
+        3. Invoke 'manim render'
+        4. Return video file bytes
+        """
+```
+
+**Pedagogical power**: Students can:
+1. Interactively build scenes in GeoGebra
+2. Record parameter evolution in Jupyter
+3. Export as professional-quality video
+4. Share on platforms (YouTube, course sites)
+5. Understand the code that generated it (transparency)
 
 ### Why Not Multiple Simultaneous Applets?
 
@@ -256,9 +313,18 @@ ggblab's primary audience is **geometry/math education**, not production applica
 **High learning value**:
 - Scene snapshot capture
 - Timeline navigation
-- Smooth playback
+- Smooth playback in Jupyter
 
-**Why**: Bridges the gap between static visualizations and dynamic exploration; teaches state management, animation principles.
+**Why**: Bridges interactive exploration and narrative understanding.
+
+### Tier 2.5: Manim Export (v1.0 - v1.5)
+
+**Extremely high impact; defining feature**:
+- Extract geometry from scene snapshots
+- Generate manim Python code automatically
+- Render to MP4/GIF for publication
+
+**Why**: Enables educators to author professional mathematical videos without manim expertise. Closes the loop from education design to broadcast-quality content.
 
 ### Tier 3: Numerical Integration (v0.9 - v1.0)
 
@@ -304,6 +370,14 @@ ggblab's primary audience is **geometry/math education**, not production applica
 - [ ] Example notebook: compare analytical vs numerical solutions
 - [ ] Student outcomes: improved intuition for differential equations
 
+### For v1.5 (Manim Export)
+
+- [ ] `SceneTimeline.to_manim_script()` generates publication-quality animation code
+- [ ] `SceneTimeline.render_video()` orchestrates manim render pipeline
+- [ ] Example: projectile motion with air resistance → animated video
+- [ ] Educator feedback: "can now publish professional educational content"
+- [ ] Impact: Open-source alternative to expensive animation software
+
 ### Long-term (v1.5+)
 
 - [ ] 5+ complete lesson modules (affine transforms, ODEs, constrained geometry, etc.)
@@ -336,8 +410,13 @@ ggblab's primary audience is **geometry/math education**, not production applica
 | **Communication** | Mature, plateaued | Maintain; focus elsewhere |
 | **Geometry visualization** | Mature (GeoGebra native) | Enhance via Scene Timeline |
 | **Scene evolution** | Proof-of-concept needed | Implement v0.8-v1.0 |
+| **Manim export** | Greenfield; **defining feature** | Architect extraction + codegen (v1.0-v1.5) |
 | **Numerical analysis** | Greenfield | Design wrapper layer; v0.9-v1.0 |
 | **Parser (subgraph)** | Failed experiment | Deprecate; shift focus to timeline |
 | **Educational integration** | In progress | Develop lesson modules; gather instructor feedback |
 
-**Thesis**: ggblab's value lies not in technical infrastructure (communication is solved) but in **pedagogical design**: making it natural for instructors to blend interactive geometry with numerical computation and narrative explanation, all in one Jupyter-based workflow.
+**Thesis**: ggblab's value lies not in technical infrastructure (communication is solved) but in creating a **unified authoring and publishing pipeline** for interactive mathematical education:
+
+$$\text{GeoGebra (design)} \to \text{Timeline (explore)} \to \text{Manim (publish)} \to \text{Video (teach)}$$
+
+This reinterprets Wolfram's `GeometricScene` vision for the open-source community, enabling educators to author mathematical animations without deep manim programming expertise.
