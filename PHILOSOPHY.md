@@ -2,6 +2,8 @@
 
 This document articulates the design principles, scope boundaries, and educational vision for ggblab.
 
+**Core Educational Mission**: ggblab uses geometric scene construction to teach **variable scoping** and **computational thinking**—concepts often poorly understood in Python education. Geometric dependencies (points → lines → circles) are isomorphic to programming scopes (global → function → nested). See [SCOPING.md](SCOPING.md) for the complete pedagogical framework.
+
 ## 1. Communication Architecture: Achieved & Plateaued
 
 ### Current State
