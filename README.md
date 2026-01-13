@@ -51,6 +51,62 @@ print(value)
 
 `init()` fetches the current kernel ID, starts the IPython Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
 
+## Documentation
+
+ggblab's design philosophy and implementation details are documented across several focused documents:
+
+### Core Documentation
+
+- **[PHILOSOPHY.md](PHILOSOPHY.md)** - Design principles, scope boundaries, and educational vision
+  - Communication architecture maturity and stability assessment
+  - GeoGebra + Python complementarity framework
+  - Geometric Scene evolution inspired by Wolfram's GeometricScene paradigm
+  - Manim video export as the ultimate pedagogical goal
+  - Prioritized technical roadmap (Tiers 1-5) focused on learning value
+  - Success criteria for each version milestone (v0.8 - v1.5+)
+
+- **[SCOPING.md](SCOPING.md)** - **Core Educational Mission**: Variable scoping via geometric construction
+  - **The foundational insight**: Geometric dependencies (points → lines → circles) are isomorphic to programming scopes (global → function → nested)
+  - How GeoGebra's construction protocol naturally forms a scope tree
+  - Computational thinking pedagogy through geometric decomposition, pattern recognition, abstraction, and algorithm design
+  - Concrete lesson plans for teaching Python scoping using geometric constructions
+  - Classroom integration roadmap with assessment rubrics
+  - Cognitive science rationale: Dual Coding Theory, Transfer of Learning, Constructivism
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical implementation details
+  - Dual-channel communication design (IPython Comm + Unix socket/TCP WebSocket)
+  - Message flow patterns and error handling strategies
+  - Dependency parser architecture with performance analysis
+  - Critical limitations of `parse_subgraph()` and recommended v1.0 algorithm replacement
+  - Resource cleanup and security considerations
+  - Testing strategies and development workflow
+
+- **[TODO.md](TODO.md)** - Actionable development roadmap
+  - 7 priority areas: Parser, Type Safety, Error Handling, CI/CD, Documentation, Configuration, Monitoring
+  - Version targets (v0.7.3 - v1.0+) with concrete implementation tasks
+  - Blocking issues and dependency tracking
+  - Quick-fix vs. long-term architectural improvements
+
+### Advanced Integration
+
+- **[SYMPY_INTEGRATION.md](SYMPY_INTEGRATION.md)** - Symbolic computation and code generation
+  - Bidirectional conversion: GeoGebra constructions ↔ SymPy Geometry objects
+  - Symbolic verification of geometric properties (collinearity, concyclicity, perpendicularity)
+  - Automatic Python code generation from constructions (reproducibility + version control)
+  - Advanced solvers: locus equations, envelope curves, constraint satisfaction
+  - Manim export pipeline: SymPy geometry → manim animation code
+  - Implementation roadmap (v1.1 - v1.5) with educational success criteria
+
+### Quick Reference
+
+| Document | Primary Audience | Key Insight |
+|----------|-----------------|-------------|
+| **SCOPING.md** | Educators, Students | Geometric construction teaches programming scoping |
+| **PHILOSOPHY.md** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
+| **SYMPY_INTEGRATION.md** | Math/CS Instructors | Symbolic proof + code generation + manim export |
+| **ARCHITECTURE.md** | Developers | Dual-channel communication; parser needs v1.0 redesign |
+| **TODO.md** | Contributors | Concrete next steps prioritized by learning value |
+
 ### Examples
 
 - Sample notebook: [examples/example.ipynb](examples/example.ipynb)
