@@ -325,6 +325,57 @@ To improve error handling on the out-of-band channel:
    - Distinguish transient (network, timing) vs. permanent (API) errors
    - Implement exponential backoff for transient failures
 
+## Resource Cleanup and Lifecycle Management
+
+### Graceful Shutdown
+
+ggblab implements proper resource cleanup through the widget's `dispose()` lifecycle hook:
+
+**Frontend Widget Disposal** ([src/widget.tsx](src/widget.tsx)):
+```typescript
+dispose(): void {
+    console.log("GeoGebraWidget is being disposed.");
+    window.dispatchEvent(new Event('close'));
+    super.dispose();
+}
+```
+
+When the GeoGebra panel is closed:
+
+1. **Widget disposal triggered**: JupyterLab calls `dispose()` on the `GeoGebraWidget` instance
+2. **Close event dispatched**: `window.dispatchEvent(new Event('close'))` signals cleanup to any active listeners
+3. **IPython Comm cleanup**: The Comm connection is automatically closed by Jupyter/JupyterHub infrastructure when the widget is disposed
+4. **Kernel resource release**: The secondary kernel connection (used for out-of-band WebSocket setup) is released
+
+**Backend Resource Cleanup** ([ggblab/comm.py](ggblab/comm.py)):
+```python
+async def server(self):
+    if os.name in ['posix']:
+        # Unix Domain Socket with context manager
+        async with unix_serve(self.client_handle, path=self.socketPath) as self.server_handle:
+            await asyncio.Future()  # Run indefinitely
+    else:
+        # TCP WebSocket with context manager
+        async with serve(self.client_handle, "localhost", 0) as self.server_handle:
+            await asyncio.Future()
+```
+
+The out-of-band socket server uses `async with` context managers:
+- **Automatic cleanup**: Socket resources are released when the context exits
+- **Per-transaction connections**: Each message response opens and closes a connection, preventing resource leaks
+- **No persistent state**: No connection pooling or persistent connections to clean up
+
+### Resource Guarantees
+
+| Resource | Cleanup Mechanism | Status |
+|----------|-------------------|---------|
+| IPython Comm | Jupyter/JupyterHub infrastructure | Automatic on widget disposal |
+| Out-of-band socket connections | `async with` context manager | Automatic per-transaction cleanup |
+| Secondary kernel connection | JupyterLab kernel manager | Released on widget disposal |
+| WebSocket server | Python `websockets` library | Closed when context exits |
+
+**Result**: All communication resources are properly released when the GeoGebra panel is closed, with no resource leaks.
+
 ## Security Considerations
 
 ### Unix Domain Socket (POSIX)

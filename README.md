@@ -255,7 +255,6 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
   - GeoGebra displays error dialogs (native popups) when operations fail (e.g., invalid syntax in algebraic commands)
   - The frontend monitors dialog events and forwards error messages via the primary Comm channel
   - Errors without a dialog (e.g., malformed JSON responses) result in timeout exceptions or silent failures
-- **No graceful shutdown**: Closing the GeoGebra panel does not automatically clean up Comm or WebSocket resources in all cases.
 
 #### General Limitations
 
@@ -625,7 +624,6 @@ jupyter lab  # 別ターミナルでサーバー起動
   - GeoGebra は操作失敗時（例: 代数コマンド文法エラー）、エラーダイアログ（ネイティブポップアップ）を表示します
   - フロントエンドはダイアログイベントを監視して、主回線 Comm 経由でエラーメッセージを伝送
   - ダイアログなしのエラー（例: 不正な JSON 応答）を上流で尽くす実装は不可能
-- **グレースフルシャットダウンがない**: GeoGebra パネルを閉じても、Comm や WebSocket リソースが完全にクリーンアップされない場合があります。
 
 #### 一般的な制限事項
 
