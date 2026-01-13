@@ -42,6 +42,44 @@ class ggb_parser:
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
     
     def parse_subgraph(self):
+        """
+        Extract a simplified dependency subgraph (G2) from the full graph (G).
+        
+        WARNING: This implementation has significant performance limitations and 
+        should be replaced in v1.0. See ARCHITECTURE.md for details.
+        
+        Algorithm:
+        - Enumerates all combinations of root objects (O(2^n) combinations)
+        - For each combination, identifies dependent objects that exclusively depend on that combination
+        - Adds edges to G2 when dependencies are uniquely determined
+        
+        KNOWN LIMITATIONS (Critical):
+        1. **Combinatorial Explosion**: O(2^n) time complexity where n = number of root objects.
+           - With 15 roots: ~32,000 paths (manageable)
+           - With 20 roots: ~1,000,000 paths (slow)
+           - With 25+ roots: computation becomes intractable
+           
+        2. **Infinite Loop Risk**: The while loop may not terminate under certain graph topologies
+           where _nodes1 is not updated in each iteration.
+           
+        3. **Limited N-ary Dependency Support**: Only handles 1-2 parents. Constructions where
+           3+ objects jointly create one output (e.g., polygon from 3+ points) have incomplete
+           representation in G2 (these edges are silently skipped).
+           
+        4. **Redundant Computation**: Neighbor lists are recomputed on every iteration
+           of inner loops, causing O(n) redundant work.
+           
+        5. **Debug Output**: Contains print() statements that should be removed for production.
+        
+        WORKAROUND:
+        - Use with constructions having <15 independent root objects
+        - For larger constructions, consider implementing the optimized algorithm
+          described in ARCHITECTURE.md § Dependency Parser Architecture
+        
+        FUTURE: Replace with topological sort + reachability pruning in v1.0 for O(n(n+m)) complexity.
+        
+        See: https://github.com/[repo]/ARCHITECTURE.md#dependency-parser-architecture
+        """
         self.G2 = nx.DiGraph()
         self.G2.clear()
 
@@ -94,6 +132,35 @@ class ggb_parser:
 
             _nodes0 |= _nodes1
             _nodes1 = _nodes3 - _nodes2 - _nodes1
+
+    # def parse_subgraph_improved(self):
+    #     """
+    #     Identify minimal construction sequences by analyzing the dependency graph.
+    #     Uses a topological sort + pruning approach instead of exhaustive path enumeration.
+    #     """
+    #     self.G2 = nx.DiGraph()
+        
+    #     # Identify which nodes are essential (no alternative path)
+    #     for node in self.G.nodes():
+    #         direct_parents = list(self.G.predecessors(node))
+    #         if not direct_parents:
+    #             continue
+                
+    #         # Check if all direct parents are needed
+    #         # A parent is needed if removing it disconnects node from any root
+    #         parents_to_keep = []
+    #         for parent in direct_parents:
+    #             # Check if there's an alternative path without this parent
+    #             G_without = self.G.copy()
+    #             G_without.remove_edge(parent, node)
+    #             has_alternative = nx.has_path(G_without, parent, node)
+                
+    #             if not has_alternative:
+    #                 parents_to_keep.append(parent)
+            
+    #         # Add edges for essential parents
+    #         for parent in parents_to_keep:
+    #             self.G2.add_edge(parent, node)
 
     def ffd(self, k, recursive=True):
         if recursive:

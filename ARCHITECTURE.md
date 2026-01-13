@@ -456,9 +456,224 @@ The out-of-band socket server uses `async with` context managers:
 - POSIX: Verify Unix socket creation and permissions
 - Windows: Verify TCP WebSocket fallback behavior
 
+---
+
+## Dependency Parser Architecture
+
+### Overview
+
+The `ggb_parser` module (`ggblab/parser.py`) analyzes object relationships in GeoGebra constructions by building directed graphs using NetworkX. It provides two graph representations:
+
+1. **`G` (Full Dependency Graph)**: Complete construction dependencies
+2. **`G2` (Simplified Subgraph)**: Minimal construction sequences
+
+### Current Implementation: `parse_subgraph()`
+
+The `parse_subgraph()` method attempts to identify minimal construction sequences by enumerating all possible combinations of root objects and their dependencies.
+
+#### Known Limitations
+
+##### 1. **Combinatorial Explosion (Critical Performance Issue)**
+
+The method generates all possible combinations of root objects:
+
+```python
+_paths = []
+for __p in (list(chain.from_iterable(combinations(_nodes1, r)
+            for r in range(1, len(_nodes1) + 1)))):
+    _paths.append(_nodes0 | set(__p))
+```
+
+- If there are `n` root objects, this generates $2^n - 1$ potential paths
+- With 20+ roots: **~1 million paths** to evaluate
+- With 30+ roots: **~1 billion paths** — computation becomes intractable
+
+**Impact**: Large constructions with many independent objects (e.g., multiple input points, parameters) will cause significant performance degradation or hang.
+
+**Workaround**: Limit analysis to constructions with <15 independent root objects.
+
+##### 2. **Infinite Loop Risk**
+
+The iteration condition depends on `_nodes1` being updated:
+
+```python
+while _nodes1:
+    # ... processing ...
+    _nodes1 = _nodes3 - _nodes2 - _nodes1
+```
+
+Under certain graph topologies, `_nodes1` may not change, causing the loop to iterate infinitely or until Python resource limits are hit.
+
+##### 3. **Limited Handling of N-ary Dependencies**
+
+The current `match` statement only handles 1-ary and 2-ary dependencies:
+
+```python
+match len(_nodes2 - _nodes0):
+    case 1:
+        # Handle single parent
+        self.G2.add_edge(o, n)
+    case 2:
+        # Handle two parents
+        self.G2.add_edge(o1, n)
+        self.G2.add_edge(o2, n)
+    case _:
+        pass  # Silently ignore 3+ parents
+```
+
+**Missing**: Constructions where 3+ objects jointly create a dependent object (e.g., a triangle from 3 points, or a polygon from multiple vertices) are not represented in `G2`.
+
+##### 4. **Redundant Neighbor Computation**
+
+Inside the inner loop:
+
+```python
+for n1 in _nodes2:
+    _n = [set(self.G.neighbors(__n)) for __n in _nodes2]  # Computed every iteration
+```
+
+The neighbors list is recalculated on each iteration of `n1`, even though it's independent of `n1`. This is $O(n)$ redundant work per iteration.
+
+##### 5. **Debug Output in Production Code**
+
+```python
+print(f"found: '{o}' => '{n}'")
+print(f"found: '{o1}', '{o2}' => '{n}'")
+```
+
+These debug statements appear in every edge discovery and should be removed for production use or wrapped in a configurable debug flag.
+
+### Recommended Improvements
+
+#### Short Term (v0.7.3)
+
+1. **Remove debug output** and add optional logging:
+   ```python
+   import logging
+   logger = logging.getLogger(__name__)
+   logger.debug(f"found: '{o}' => '{n}'")  # Only when debug=True
+   ```
+
+2. **Add early termination check** to detect infinite loops:
+   ```python
+   max_iterations = 100
+   iteration_count = 0
+   while _nodes1 and iteration_count < max_iterations:
+       iteration_count += 1
+       # ...
+   if iteration_count >= max_iterations:
+       logger.warning("parse_subgraph exceeded max iterations; G2 may be incomplete")
+   ```
+
+3. **Cache neighbor computation**:
+   ```python
+   neighbors_cache = {n: set(self.G.neighbors(n)) for n in _nodes2}
+   # Then reuse in loop
+   ```
+
+4. **Support N-ary dependencies** (3+ parents):
+   ```python
+   # Instead of match, use a more general approach
+   parents = tuple(_nodes2 - _nodes0)
+   for parent in parents:
+       self.G2.add_edge(parent, n)
+   ```
+
+#### Medium Term (v1.0)
+
+**Algorithm replacement**: Adopt a topological sort + reachability pruning approach:
+
+```python
+def parse_subgraph_optimized(self):
+    """
+    Efficient subgraph extraction using topological analysis.
+    
+    For each node, identify which predecessors are essential by checking
+    if removing them disconnects the node from roots.
+    
+    Time complexity: O(n * (n + m)) instead of O(2^n)
+    where n = nodes, m = edges
+    """
+    self.G2 = nx.DiGraph()
+    
+    # Topologically sort the graph
+    topo_order = list(nx.topological_sort(self.G))
+    
+    for node in topo_order:
+        direct_parents = list(self.G.predecessors(node))
+        if not direct_parents:
+            continue
+        
+        # Identify essential parents (those whose removal disconnects from roots)
+        essential_parents = []
+        for parent in direct_parents:
+            # Create a temporary graph without this edge
+            G_test = self.G.copy()
+            G_test.remove_edge(parent, node)
+            
+            # Check if node is still reachable from roots
+            reachable_from_root = False
+            for root in self.roots:
+                if nx.has_path(G_test, root, node):
+                    reachable_from_root = True
+                    break
+            
+            # If removing this edge disconnects from roots, it's essential
+            if not reachable_from_root:
+                essential_parents.append(parent)
+        
+        # Add edges for essential parents
+        for parent in essential_parents:
+            self.G2.add_edge(parent, node)
+```
+
+**Benefits**:
+- Polynomial time complexity instead of exponential
+- Mathematically clear definition: "essential" = cannot be removed without losing root reachability
+- Handles N-ary dependencies naturally
+- Deterministic, no infinite loop risk
+
+#### Long Term (v1.5+)
+
+- Support weighted edges (represent "preferred" construction order)
+- Interactive subgraph selection (UI-driven)
+- Caching of frequently requested subgraphs
+- Integration with constraint solving for optimal path identification
+
+### Testing
+
+Current testing coverage for `parse_subgraph()` is minimal. Recommended test cases:
+
+```python
+# test_parser.py
+def test_parse_subgraph_simple():
+    """Single dependency chain: A -> B -> C"""
+    # Expected: G2 has edges A->B, B->C
+    
+def test_parse_subgraph_diamond():
+    """Diamond dependency: A,B -> C -> D"""
+    # Expected: G2 has edges A->C, B->C, C->D
+    
+def test_parse_subgraph_binary_tree():
+    """Binary tree of dependencies"""
+    # Expected: linear time, no combinatorial explosion
+    
+def test_parse_subgraph_large():
+    """Large graph with 50+ nodes"""
+    # Expected: completes within 5 seconds
+    
+def test_parse_subgraph_nary_deps():
+    """3+ parents creating single output: A,B,C -> D"""
+    # Expected: G2 has edges A->D, B->D, C->D
+```
+
+---
+
 ## References
 
 - [IPython Comm documentation](https://ipython.readthedocs.io/en/stable/development/messaging.html#custom-messages)
 - [Jupyter/JupyterHub WebSocket handling](https://jupyterhub.readthedocs.io/en/stable/)
 - [Unix Domain Sockets (Python websockets)](https://websockets.readthedocs.io/en/stable/reference/asyncio/server.html#unix-domain-sockets)
 - [GeoGebra Apps API](https://geogebra.github.io/docs/reference/en/GeoGebra_Apps_API/)
+- [NetworkX Documentation](https://networkx.org/documentation/stable/)
+- [Topological Sorting](https://en.wikipedia.org/wiki/Topological_sorting)

@@ -324,6 +324,12 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
   - GeoGebra displays error dialogs (native popups) when operations fail (e.g., invalid syntax in algebraic commands)
   - The frontend monitors dialog events and forwards error messages via the primary Comm channel
   - Errors without a dialog (e.g., malformed JSON responses) result in timeout exceptions or silent failures
+- **Parser subgraph extraction (`parse_subgraph()`) performance issues**:
+  - **Combinatorial explosion**: Generates $2^n$ path combinations where $n$ = number of root objects. Performance degrades rapidly with 15+ independent roots.
+  - **Infinite loop risk**: May hang indefinitely under certain graph topologies.
+  - **Limited N-ary dependency support**: Only handles 1-ary and 2-ary dependencies; 3+ objects jointly creating an output are ignored.
+  - **Redundant computation**: Neighbor lookups are recalculated unnecessarily in loops.
+  - See [ARCHITECTURE.md § Dependency Parser Architecture](ARCHITECTURE.md#dependency-parser-architecture) for detailed analysis and planned improvements.
 
 #### General Limitations
 
@@ -343,12 +349,18 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
    - Enhanced error message recovery from GeoGebra dialog content
    - Provide more descriptive error messages in the UI when operations fail
 
-2. **Event System Expansion**
+2. **Parser Optimization** (`v0.7.3`)
+   - Remove debug output; add optional logging via `logging` module
+   - Add early termination check to detect infinite loops in `parse_subgraph()`
+   - Cache neighbor computation to reduce redundant graph traversals
+   - Extend N-ary dependency support (currently limited to 1-2 parents; should support 3+)
+
+3. **Event System Expansion**
    - Subscribe to additional GeoGebra events (slider value changes, object property changes, script execution)
    - Expose event system to Python API via `ggb.on_event()` pattern
    - Log all events with timestamps for debugging
 
-3. **Configuration & Customization**
+4. **Configuration & Customization**
    - Add settings UI to choose Comm target name and socket configuration
    - Allow custom GeoGebra CDN URL (for offline or private CDN scenarios)
    - Implement widget position/size preferences (split-right, split-left, tab, etc.)
@@ -359,15 +371,23 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
    - Enable TypeScript strict mode and eliminate `any` types
    - Add JSDoc for all public TypeScript/Python APIs
    - Increase test coverage to >80% for both frontend and backend
+   - Add comprehensive unit tests for parser, especially for edge cases and large graphs
 
-2. **Advanced Features**
+2. **Parser Algorithm Replacement**
+   - Replace `parse_subgraph()` with topological sort + reachability pruning approach
+   - Reduce time complexity from $O(2^n)$ to $O(n(n+m))$
+   - Support arbitrary N-ary dependencies (not limited to 2 parents)
+   - Eliminate infinite loop risk through deterministic algorithm
+   - See [ARCHITECTURE.md § Dependency Parser Architecture](ARCHITECTURE.md#dependency-parser-architecture) for detailed design
+
+3. **Advanced Features**
    - **Multi-panel support**: Allow multiple GeoGebra instances in different notebook cells
    - **State persistence**: Save/restore GeoGebra construction state to notebook or file
    - **Real-time collaboration**: Support multiple users viewing/editing the same construction
    - **Animation API**: Programmatic animation of objects with timeline control
    - **Custom tool definitions**: Allow users to define and persist custom GeoGebra tools
 
-3. **Integration Improvements**
+4. **Integration Improvements**
    - **Jupyter Widgets (ipywidgets) support**: Make GeoGebra embeddable in `ipywidgets` environments
    - **Matplotlib/Plotly integration**: Export construction data to visualization libraries
    - **NumPy/Pandas integration**: Bidirectional data sync with DataFrames
@@ -378,10 +398,17 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
    - WebSocket batching for high-frequency updates (e.g., animations)
    - Caching layer for repeated function calls
    - Support for serverless/container environments without persistent sockets
+   - Memoization of subgraph extraction results
 
 2. **ML/Data Science Features**
    - Built-in geometry solvers with numerical optimization (scipy integration)
    - Constraint solving interface
+   - Interactive visualization of mathematical models
+
+3. **Parser Enhancements**
+   - Weighted edges representing construction order preference
+   - Interactive subgraph selection UI
+   - Integration with constraint solving for optimal construction paths
    - Interactive visualization of mathematical models
 
 3. **Ecosystem & Standards**
