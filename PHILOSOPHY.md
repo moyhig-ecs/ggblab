@@ -326,14 +326,22 @@ ggblab's primary audience is **geometry/math education**, not production applica
 
 **Why**: Enables educators to author professional mathematical videos without manim expertise. Closes the loop from education design to broadcast-quality content.
 
-### Tier 3: Numerical Integration (v0.9 - v1.0)
+### Tier 3: Numerical Integration & Symbolic Verification (v0.9 - v1.0)
 
 **High learning value**:
 - Wrapper for scipy ODE solvers
 - Point list ↔ GeoGebra object conversion
 - Parameter sweep utilities
+- **SymPy Geometry bridge** for symbolic computation and verification
 
-**Why**: Teaches numerical analysis, complementary use of tools, scientific computing.
+**Why**: Teaches numerical analysis, complementary use of tools, scientific computing. SymPy integration enables symbolic proof verification, exact calculations, and bidirectional code generation between geometric representations.
+
+**SymPy Integration Highlights**:
+- Convert GeoGebra constructions ↔ SymPy geometric objects
+- Verify geometric properties symbolically (collinearity, concyclicity, perpendicularity)
+- Generate manim animation code from SymPy geometry
+- Export construction steps as reproducible Python code
+- See [SYMPY_INTEGRATION.md](SYMPY_INTEGRATION.md) for detailed design.
 
 ### Tier 4: Data Structures & Iteration (v1.0+)
 
@@ -412,6 +420,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 | **Scene evolution** | Proof-of-concept needed | Implement v0.8-v1.0 |
 | **Manim export** | Greenfield; **defining feature** | Architect extraction + codegen (v1.0-v1.5) |
 | **Numerical analysis** | Greenfield | Design wrapper layer; v0.9-v1.0 |
+| **SymPy integration** | Greenfield | Bridge symbolic ↔ geometric representations; v1.1-v1.2 |
 | **Parser (subgraph)** | Failed experiment | Deprecate; shift focus to timeline |
 | **Educational integration** | In progress | Develop lesson modules; gather instructor feedback |
 
