@@ -6,13 +6,13 @@
 
 ## ggblab (English)
 
-ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. You can launch the panel from the Command Palette or Launcher and call GeoGebra commands/functions asynchronously from Python via Comm plus an optional Unix-socket/TCP WebSocket bridge.
+ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. You can launch the panel from the Command Palette or Launcher and call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
 
 ### Features
 
 - Open the GeoGebra panel from the Command Palette/Launcher, or programmatically via `GeoGebra().init()` (Command ID: `ggblab:create`, label: "React Widget")
 - Call GeoGebra commands (`command`) and API functions (`function`) from Python through the `GeoGebra` helper
-- Combined Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
+- Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
 - Settings schema is wired up (no user options yet) for future configuration
 
@@ -48,14 +48,14 @@ pip uninstall ggblab
 from ggblab.ggbapplet import GeoGebra
 
 ggb = GeoGebra()
-await ggb.init()                 # init Comm/socket and open the GeoGebra panel
+await ggb.init()                 # init IPython Comm/socket and open the GeoGebra panel
 
 await ggb.command("A=(0,0)")    # create a point
 value = await ggb.function("getValue", ["A"])  # call GeoGebra API
 print(value)
 ```
 
-`init()` fetches the current kernel ID, starts the Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
+`init()` fetches the current kernel ID, starts the IPython Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
 
 ### Examples
 
@@ -172,9 +172,46 @@ c.save()              # next available filename based on source_file
 
 ### Architecture
 
-- **Frontend** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx)): Registers the plugin `ggblab:plugin` and command `ggblab:create`. Creates a `GeoGebraWidget` ReactWidget that loads GeoGebra from the CDN, opens a Comm target (default `test3`), executes commands/functions, and mirrors add/remove/rename/clear events plus dialog notices back to the kernel. Results can also be forwarded over the external socket when provided.
-- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_construction` loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects.
+- **Frontend** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx)): Registers the plugin `ggblab:plugin` and command `ggblab:create`. Creates a `GeoGebraWidget` ReactWidget that loads GeoGebra from the CDN, opens an IPython Comm target (default `test3`), executes commands/functions, and mirrors add/remove/rename/clear events plus dialog notices back to the kernel. Results can also be forwarded over the external socket when provided.
+- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_construction` loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects.
 - **Styles** ([style/index.css](style/index.css), [style/base.css](style/base.css)): Ensure the embedded applet fills the available area.
+
+#### Communication Architecture
+
+**Dual-channel design**: ggblab uses two communication channels between the frontend and backend:
+
+1. **Primary channel (IPython Comm over WebSocket)**:
+   - Handles command/function calls and event notifications
+   - Managed by Jupyter/JupyterHub infrastructure with reverse proxy support
+   - Connection health guaranteed by Jupyter/JupyterHub
+   - **Limitation**: IPython Comm cannot receive messages while a notebook cell is executing
+
+2. **Out-of-band channel (Unix Domain Socket on POSIX / TCP WebSocket on Windows)**:
+   - Addresses the Comm limitation by enabling message reception during cell execution
+   - Allows GeoGebra applet responses to be received even when Python is busy executing code
+   - Connection is opened/closed per transaction (no persistent connection)
+   - No auto-reconnection needed due to transient nature
+
+This dual-channel approach ensures that interactive operations (e.g., retrieving object values, updating constructions) remain responsive even during long-running cell execution.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design rationale and implementation notes.
+
+#### Error Handling and Limitations
+
+**Primary channel (IPython Comm)**: Error handling is managed automatically by Jupyter/JupyterHub infrastructure. Connection failures are detected and handled transparently; kernel status is visible in the JupyterLab UI.
+
+**Out-of-band channel**: The secondary channel has a **3-second timeout** for receiving responses. If no response arrives within this window, a `TimeoutError` is raised in Python:
+
+```python
+try:
+    result = await ggb.function("getValue", ["a"])
+except TimeoutError:
+    print("GeoGebra did not respond within 3 seconds")
+```
+
+**GeoGebra API constraint**: The GeoGebra API does **not** provide explicit error response codes. Instead, errors are communicated through **dialog popups** displayed in the browser. The frontend monitors these dialog events and forwards error information via the primary Comm channel. For errors that do not trigger dialogs (e.g., malformed responses), the timeout is the primary error signal.
+
+See [ARCHITECTURE.md § Error Handling](ARCHITECTURE.md#error-handling) for details on error detection and recovery strategies.
 
 ### Settings
 
@@ -213,9 +250,11 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
 #### Backend Limitations
 
 - **Singleton pattern constraint**: Only one active GeoGebra instance per kernel session. Attempting to create multiple instances will reuse the same connection.
-- **No automatic reconnection**: If the WebSocket connection drops unexpectedly, there is no automatic retry mechanism.
-- **Missing async error propagation**: Errors in asynchronous Comm/WebSocket operations may not be properly caught and reported to user code.
-- **Limited file format support documentation**: While multiple formats are supported, error messages for malformed files are generic and unhelpful.
+- **Out-of-band communication timeout**: The out-of-band socket channel has a 3-second timeout. If the frontend does not respond within this window, the backend raises a timeout exception.
+- **Limited error handling on out-of-band channel**: GeoGebra API does not provide explicit error responses, so errors are communicated indirectly:
+  - GeoGebra displays error dialogs (native popups) when operations fail (e.g., invalid syntax in algebraic commands)
+  - The frontend monitors dialog events and forwards error messages via the primary Comm channel
+  - Errors without a dialog (e.g., malformed JSON responses) result in timeout exceptions or silent failures
 - **No graceful shutdown**: Closing the GeoGebra panel does not automatically clean up Comm or WebSocket resources in all cases.
 
 #### General Limitations
@@ -231,7 +270,9 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
 
 1. **Error Handling & User Feedback**
    - Add user-facing error notifications for Comm/WebSocket failures
-   - Implement retry logic with exponential backoff for connection drops
+   - Improve out-of-band error reporting: detect timeout conditions and propagate as Python exceptions with context
+   - Support for custom timeout configuration in `GeoGebra()` initialization
+   - Enhanced error message recovery from GeoGebra dialog content
    - Provide more descriptive error messages in the UI when operations fail
 
 2. **Event System Expansion**
@@ -305,13 +346,13 @@ BSD-3-Clause
 
 JupyterLab 上で GeoGebra アプレットを開き、Jupyter カーネルから非同期で駆動するための JupyterLab 機能拡張と Python ライブラリです。
 コマンドパレット/ランチャーから起動するか、Python の `GeoGebra().init()` から GeoGebra パネルを開くことができます。
-Comm と Unix ドメインソケット (POSIX) / TCP WebSocket の併用により、高速なデータ転送が実現します。
+IPython Comm と Unix ドメインソケット (POSIX) / TCP WebSocket の併用により、高速なデータ転送が実現します。
 
 ### 特徴
 
 - コマンドパレット/ランチャーから、または Python の `GeoGebra().init()` から GeoGebra パネルを起動 (コマンド ID: `ggblab:create`, ラベル: "React Widget")
 - Python から `GeoGebra` クラスを介してコマンド実行 (`command`) と API 呼び出し (`function`) が可能
-- Comm メッセージと OS の Unix ドメインソケット (POSIX) / TCP WebSocket を併用した高速なデータ転送
+- IPython Comm メッセージと OS の Unix ドメインソケット (POSIX) / TCP WebSocket を併用した高速なデータ転送
 - 図形の追加・削除・リネーム・クリアやダイアログ検出をフロント側で監視し、カーネルへ通知
 - 設定スキーマあり (現状オプションなし) で JupyterLab の Settings と統合
 
@@ -350,7 +391,7 @@ pip uninstall ggblab
 from ggblab.ggbapplet import GeoGebra
 
 ggb = GeoGebra()
-await ggb.init()                 # Comm とソケットを初期化し、UI パネルを開く
+await ggb.init()                 # IPython Comm とソケットを初期化し、UI パネルを開く
 
 # 点を作成
 await ggb.command("A=(0,0)")
@@ -360,7 +401,7 @@ value = await ggb.function("getValue", ["A"])
 print(value)
 ```
 
-`init()` はカーネル ID を取得し、フロントエンドのコマンド `ggblab:create` を叩いて GeoGebra パネルを右分割で開きます。以降 `command` は GeoGebra コマンド、`function` は GeoGebra API 名 (配列で複数指定可) を実行します。戻り値は非同期で返されます。
+`init()` はカーネル ID を取得し、IPython Comm と WebSocket サーバーを開始し、フロントエンドのコマンド `ggblab:create` を叩いて GeoGebra パネルを右分割で開きます。以降 `command` は GeoGebra コマンド、`function` は GeoGebra API 名 (配列で複数指定可) を実行します。戻り値は非同期で返されます。
 
 ### 例
 
@@ -486,16 +527,53 @@ c.save()               # source_file を基準に次の未使用ファイル名�
 
 - **フロントエンド** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx))
   - プラグイン ID は `ggblab:plugin`。起動時にコマンド `ggblab:create` を登録し、メインエリアに ReactWidget (`GeoGebraWidget`) を開く。
-  - Widget は CDN から GeoGebra を読み込み、Comm (`commTarget` デフォルト `test3`) を開いてカーネルと通信。追加/削除/リネーム/クリアやダイアログを監視して通知。
-  - 受信コマンド `type: command` で GeoGebra コマンドを実行、`type: function` で GeoGebra API を呼び出し結果を返送。結果は Comm に加えて外部ソケットにも送信可能。
+  - Widget は CDN から GeoGebra を読み込み、IPython Comm (`commTarget` デフォルト `test3`) を開いてカーネルと通信。追加/削除/リネーム/クリアやダイアログを監視して通知。
+  - 受信コマンド `type: command` で GeoGebra コマンドを実行、`type: function` で GeoGebra API を呼び出し結果を返送。結果は IPython Comm に加えて外部ソケットにも送信可能。
 
 - **バックエンド** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py))
-  - `GeoGebra` クラスがシングルトンとして Comm と WebSocket サーバーを初期化し、ipylab 経由でフロントコマンドを実行。
-  - `ggb_comm` は Unix ドメインソケット (POSIX) / TCP WebSocket を起動し、Comm で受けたレスポンスを待ち受ける `send_recv` を提供。
+  - `GeoGebra` クラスがシングルトンとして IPython Comm と WebSocket サーバーを初期化し、ipylab 経由でフロントコマンドを実行。
+  - `ggb_comm` は Unix ドメインソケット (POSIX) / TCP WebSocket を起動し、IPython Comm で受けたレスポンスを待ち受ける `send_recv` を提供。
   - `ggb_construction` は `.ggb` (base64 zip)、zip、JSON、XML などの複数形式をサポートしてファイルを読み込み、構文解析して `geogebra_xml` を提供。`ggb_schema` でコンストラクション XML をスキーマに変換可能。
 
 - **スタイル** ([style/index.css](style/index.css), [style/base.css](style/base.css))
   - GeoGebra 埋め込み領域を画面全体にフィットさせる基本スタイルを提供。
+
+#### 通信アーキテクチャ
+
+**2チャネル設計**: ggblab はフロントエンドとバックエンド間で 2 つの通信チャネルを使用します：
+
+1. **主回線 (IPython Comm over WebSocket)**:
+   - コマンド/関数呼び出しとイベント通知を処理
+   - Jupyter/JupyterHub インフラストラクチャがリバースプロキシ対応で管理
+   - 接続の健全性は Jupyter/JupyterHub が保証
+   - **制約**: IPython Comm はノートブックセル実行中にメッセージを受信できない
+
+2. **帯域外チャネル (POSIX では Unix Domain Socket / Windows では TCP WebSocket)**:
+   - Comm の制約を回避し、セル実行中でもメッセージ受信を可能にする
+   - Python がコード実行中でも GeoGebra アプレットからの応答を受信できる
+   - トランザクションごとに接続を開閉（永続接続なし）
+   - 一時的な性質のため自動再接続は不要
+
+この 2 チャネルアプローチにより、長時間実行されるセル中でも対話的操作（例: オブジェクト値の取得、コンストラクションの更新）が応答性を保ちます。
+
+設計の根拠と実装ノートの詳細は [ARCHITECTURE.md](ARCHITECTURE.md) を参照してください。
+
+#### エラーハンドリングと制限事項
+
+**主回線 (IPython Comm)**: エラーハンドリングは Jupyter/JupyterHub インフラストラクチャが自動的に管理します。接続障害は透過的に検出・処理され、カーネル状態は JupyterLab UI で確認できます。
+
+**帯域外チャネル**: セカンダリチャネルは応答受信に **3 秒のタイムアウト** を設定しています。この期間内に応答がない場合、Python で `TimeoutError` が発生します：
+
+```python
+try:
+    result = await ggb.function("getValue", ["a"])
+except TimeoutError:
+    print("GeoGebra は 3 秒以内に応答しませんでした")
+```
+
+**GeoGebra API の制約**: GeoGebra API は **明示的なエラー応答コードを提供しません**。代わりに、ブラウザに表示される **ダイアログポップアップ** を通じてエラーが通知されます。フロントエンドはこれらのダイアログイベントを監視して、主回線 Comm 経由でエラー情報を転送します。ダイアログを伴わないエラー（例: 不正な JSON 応答）の場合、タイムアウトがエラー信号となります。
+
+詳細なエラー検出と復旧戦略については [ARCHITECTURE.md のエラーハンドリング](ARCHITECTURE.md#error-handling) を参照してください。
 
 ### 設定
 
@@ -542,9 +620,11 @@ jupyter lab  # 別ターミナルでサーバー起動
 #### バックエンドの制限事項
 
 - **シングルトンパターンの制約**: カーネルセッションごとに 1 つのアクティブな GeoGebra インスタンスのみ。複数インスタンスの作成を試みると同じ接続が再利用されます。
-- **自動再接続がない**: WebSocket 接続が予期せず切断された場合、自動再試行メカニズムがありません。
-- **非同期エラー伝播の欠落**: Comm/WebSocket 操作の非同期エラーが適切にキャッチされ、ユーザーコードに報告されない場合があります。
-- **ファイル形式サポートの文書化が不完全**: 複数の形式がサポートされていますが、形式が不正なファイルのエラーメッセージは一般的で役に立ちません。
+- **帯域外通信のタイムアウト**: 帯域外ソケットチャネルは 3 秒のタイムアウト設定を有しています。この窓内にフロントエンドから応答がない場合、バックエンドはタイムアウト例外を発生します。
+- **GeoGebra API の制約に伴うエラー処理**: GeoGebra API は明示的なエラー遠格を提供しないため、エラーは間接的に伝通されます：
+  - GeoGebra は操作失敗時（例: 代数コマンド文法エラー）、エラーダイアログ（ネイティブポップアップ）を表示します
+  - フロントエンドはダイアログイベントを監視して、主回線 Comm 経由でエラーメッセージを伝送
+  - ダイアログなしのエラー（例: 不正な JSON 応答）を上流で尽くす実装は不可能
 - **グレースフルシャットダウンがない**: GeoGebra パネルを閉じても、Comm や WebSocket リソースが完全にクリーンアップされない場合があります。
 
 #### 一般的な制限事項
@@ -560,8 +640,10 @@ jupyter lab  # 別ターミナルでサーバー起動
 
 1. **エラーハンドリングとユーザーフィードバック**
    - Comm/WebSocket 障害時のユーザー向け通知を追加
-   - 接続切断時の指数バックオフを使用した再試行ロジック
-   - 操作が失敗した場合の UI に、より詳細なエラーメッセージを提供
+   - 帯域外エラー報告改善: タイムアウト検出を Python 例外として伝播させ、コンテキスト情報を付加
+   - `GeoGebra()` 初期化時のカスタムタイムアウト設定対応
+   - GeoGebra ダイアログコンテンツからのエラーメッセージ抽出改善
+   - 操作失敗時の UI エラーメッセージ詳細化
 
 2. **イベントシステムの拡張**
    - スライダー値の変更、オブジェクトプロパティの変更、スクリプト実行など、追加の GeoGebra イベントへの購読
