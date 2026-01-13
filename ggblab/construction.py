@@ -5,6 +5,7 @@ import zipfile
 import json
 import xml.etree.ElementTree as ET
 import io
+import os
 
 from .schema import ggb_schema
 
@@ -82,4 +83,37 @@ class ggb_construction:
                                         .find('./construction'), encoding='unicode')
                             .replace('e-1', 'E-1'))
 
+        return self
+    
+    def save(self, overwrite=False, file=None):
+
+        def get_next_revised_filename(filename):
+            """
+            Generates the next available non-existing filename by appending 
+            '_1', '_2', etc. before the file extension.
+            """
+            if not os.path.exists(filename):
+                return filename
+
+            root, ext = os.path.splitext(filename)
+            i = 1
+            new_filename = f"{root}_{i}{ext}"
+            
+            while os.path.exists(new_filename):
+                i += 1
+                new_filename = f"{root}_{i}{ext}"
+                
+            return new_filename
+
+        if file is None:
+            if overwrite:
+                file = self.source_file
+            else:
+                file = get_next_revised_filename(self.source_file)
+
+        with open(file, 'wb') as f:
+            if self.base64_buffer is not None:
+                f.write(base64.b64decode(self.base64_buffer))
+            else:
+                f.write(self.geogebra_xml.encode('utf-8'))
         return self
