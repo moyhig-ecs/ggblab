@@ -7,6 +7,7 @@ from ipylab import JupyterFrontEnd
 
 from .comm import ggb_comm
 from .construction import ggb_construction
+from .parser import ggb_parser
 
 class GeoGebra:
     _instance = None
@@ -19,6 +20,7 @@ class GeoGebra:
     def __init__(self):
         self.initialized = False
         self.construction = ggb_construction()
+        self.parser = ggb_parser()
   
     async def init(self):
         if not self.initialized:

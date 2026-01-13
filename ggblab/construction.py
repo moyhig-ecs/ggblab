@@ -1,5 +1,3 @@
-import polars as pl
-
 import base64
 import zipfile
 import json
@@ -10,22 +8,8 @@ import os
 from .schema import ggb_schema
 
 class ggb_construction:
-    _pl = pl
-    _pl.Config.set_tbl_rows(-1)
-
     def __init__(self):
         self.ggb_schema = ggb_schema().schema
-
-    def initialize_dataframe(self, file):
-        self.cp = pl.read_parquet(file)
-        self.cp = (self.cp
-            .transpose(include_header=True, header_name="Name", column_names=["Type", "Command", "Value", "Caption", "Layer"])
-            .with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0)))
-        return self
-
-    def write_parquet(self, file):
-        self.cp.write_parquet(file)
-        return self
     
     def load(self, file):
         self.source_file = file

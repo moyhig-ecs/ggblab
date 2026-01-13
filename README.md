@@ -170,10 +170,79 @@ c.save()              # next available filename based on source_file
 # c.save(overwrite=True)  # to overwrite the original
 ```
 
+### Object Dependency Analysis (Parser)
+
+ggblab includes a **dependency parser** (`ggblab.parser.ggb_parser`) that analyzes object relationships in GeoGebra constructions using **NetworkX graphs**. This enables:
+
+- **Dependency tracking**: Build a directed graph of which objects depend on which others
+- **Root/leaf identification**: Find independent starting objects and final dependent objects
+- **Subgraph analysis**: Identify minimal construction sequences needed to derive specific objects
+
+#### Basic Usage
+
+```python
+from ggblab import GeoGebra
+from ggblab.parser import ggb_parser
+import networkx as nx
+
+ggb = GeoGebra()
+await ggb.init()
+
+# Fetch construction protocol from applet
+construction = {}
+for obj_name in await ggb.function("getAllObjectNames"):
+    obj_info = await ggb.function(
+        ["getObjectType", "getCommandString", "getValueString", "getCaption", "getLayer"],
+        [obj_name]
+    )
+    construction[obj_name] = obj_info
+
+# Parse into Polars DataFrame
+parser = ggb_parser()
+parser.initialize_dataframe(df=pl.DataFrame(construction, strict=False))
+parser.parse()  # Build dependency graph
+
+# Access the NetworkX DiGraph
+G = parser.G
+print(f"Root objects: {parser.roots}")      # Objects with no dependencies
+print(f"Leaf objects: {parser.leaves}")      # Objects that nothing depends on
+
+# Traverse dependencies
+for obj in parser.roots:
+    descendants = nx.descendants(G, obj)  # All objects that depend on this one
+    print(f"{obj} -> {descendants}")
+```
+
+#### Advanced: Subgraph Extraction
+
+Extract minimal construction sequences needed for specific output objects:
+
+```python
+# Analyze subgraph for focused construction steps
+parser.parse_subgraph()  # Builds G2 with simplified dependencies
+G2 = parser.G2
+
+# Reconstruct only necessary steps
+nx.write_network_text(G2)  # View simplified dependency tree
+```
+
+#### Parser Components
+
+- **`df`**: Polars DataFrame with columns `Type`, `Command`, `Value`, `Caption`, `Layer` (transposed from construction protocol)
+- **`G` (NetworkX DiGraph)**: Full dependency graph; edges point from dependencies to dependents
+- **`G2` (NetworkX DiGraph)**: Simplified subgraph with redundant dependencies removed
+- **`ft` (dict)**: Tokenized command strings; maps object name → list of tokens (parsed by `tokenize_with_commas()`)
+- **`roots` (list)**: Objects with `in_degree == 0` (no incoming dependencies)
+- **`leaves` (list)**: Objects with `out_degree == 0` (nothing depends on them)
+
+#### Example Notebook
+
+See [examples/eg4_parse.ipynb](examples/eg4_parse.ipynb) for a complete example of loading a `.ggb`, building dependency graphs, and analyzing construction structure.
+
 ### Architecture
 
 - **Frontend** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx)): Registers the plugin `ggblab:plugin` and command `ggblab:create`. Creates a `GeoGebraWidget` ReactWidget that loads GeoGebra from the CDN, opens an IPython Comm target (default `test3`), executes commands/functions, and mirrors add/remove/rename/clear events plus dialog notices back to the kernel. Results can also be forwarded over the external socket when provided.
-- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_construction` loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects.
+- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py), [ggblab/parser.py](ggblab/parser.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_construction` loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects. `ggb_parser` analyzes object dependencies using NetworkX directed graphs.
 - **Styles** ([style/index.css](style/index.css), [style/base.css](style/base.css)): Ensure the embedded applet fills the available area.
 
 #### Communication Architecture
@@ -522,6 +591,76 @@ c.save()               # source_file を基準に次の未使用ファイル名�
 # c.save(overwrite=True)  # 元のファイルを上書きする場合
 ```
 
+### オブジェクト依存関係の解析（パーサー）
+
+ggblab には**依存関係パーサー** (`ggblab.parser.ggb_parser`) が含まれており、**NetworkX グラフ** を使用して GeoGebra コンストラクション内のオブジェクト間の関係を解析します。これにより以下が実現できます：
+
+- **依存関係の追跡**: どのオブジェクトがどのオブジェクトに依存しているかの有向グラフを構築
+- **ルート/リーフの特定**: 独立したスタートオブジェクトと最終的な依存オブジェクトを検出
+- **部分グラフ解析**: 特定のオブジェクトを導出するために必要な最小限のコンストラクション手順を特定
+
+#### 基本的な使用方法
+
+```python
+from ggblab import GeoGebra
+from ggblab.parser import ggb_parser
+import networkx as nx
+import polars as pl
+
+ggb = GeoGebra()
+await ggb.init()
+
+# アプレットからコンストラクションプロトコルを取得
+construction = {}
+for obj_name in await ggb.function("getAllObjectNames"):
+    obj_info = await ggb.function(
+        ["getObjectType", "getCommandString", "getValueString", "getCaption", "getLayer"],
+        [obj_name]
+    )
+    construction[obj_name] = obj_info
+
+# Polars DataFrame にパース
+parser = ggb_parser()
+parser.initialize_dataframe(df=pl.DataFrame(construction, strict=False))
+parser.parse()  # 依存関係グラフを構築
+
+# NetworkX DiGraph にアクセス
+G = parser.G
+print(f"ルートオブジェクト: {parser.roots}")      # 依存関係のないオブジェクト
+print(f"リーフオブジェクト: {parser.leaves}")      # 他に依存されていないオブジェクト
+
+# 依存関係をトラバース
+for obj in parser.roots:
+    descendants = nx.descendants(G, obj)  # このオブジェクトに依存するすべてのオブジェクト
+    print(f"{obj} -> {descendants}")
+```
+
+#### 高度な機能：部分グラフの抽出
+
+特定の出力オブジェクトに必要な最小限のコンストラクション手順を抽出します：
+
+```python
+# 構築手順を特定するため部分グラフを解析
+parser.parse_subgraph()  # 冗長な依存関係を削除したG2を構築
+G2 = parser.G2
+
+# 必要な手順のみを再構築
+nx.write_network_text(G2)  # 単純化された依存関係ツリーを表示
+```
+
+#### パーサーのコンポーネント
+
+- **`df`**: 列 `Type`, `Command`, `Value`, `Caption`, `Layer` を持つ Polars DataFrame（コンストラクションプロトコルから転置）
+- **`G` (NetworkX DiGraph)**: 完全な依存グラフ。エッジは依存元から依存先へ指す
+- **`G2` (NetworkX DiGraph)**: 冗長な依存関係を削除した単純化部分グラフ
+- **`ft` (dict)**: トークン化されたコマンド文字列。オブジェクト名 → トークンのリスト（`tokenize_with_commas()` でパース）にマップ
+- **`roots` (list)**: `in_degree == 0` のオブジェクト（入次数が 0、依存関係なし）
+- **`leaves` (list)**: `out_degree == 0` のオブジェクト（出次数が 0、何も依存していない）
+
+#### サンプルノートブック
+
+[examples/eg4_parse.ipynb](examples/eg4_parse.ipynb) で完全な例を参照してください。.ggb ファイルの読み込み、依存グラフの構築、コンストラクション構造の解析例が含まれています。
+
 ### アーキテクチャ概要
 
 - **フロントエンド** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx))
@@ -529,10 +668,11 @@ c.save()               # source_file を基準に次の未使用ファイル名�
   - Widget は CDN から GeoGebra を読み込み、IPython Comm (`commTarget` デフォルト `test3`) を開いてカーネルと通信。追加/削除/リネーム/クリアやダイアログを監視して通知。
   - 受信コマンド `type: command` で GeoGebra コマンドを実行、`type: function` で GeoGebra API を呼び出し結果を返送。結果は IPython Comm に加えて外部ソケットにも送信可能。
 
-- **バックエンド** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py))
+- **バックエンド** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py), [ggblab/parser.py](ggblab/parser.py))
   - `GeoGebra` クラスがシングルトンとして IPython Comm と WebSocket サーバーを初期化し、ipylab 経由でフロントコマンドを実行。
   - `ggb_comm` は Unix ドメインソケット (POSIX) / TCP WebSocket を起動し、IPython Comm で受けたレスポンスを待ち受ける `send_recv` を提供。
   - `ggb_construction` は `.ggb` (base64 zip)、zip、JSON、XML などの複数形式をサポートしてファイルを読み込み、構文解析して `geogebra_xml` を提供。`ggb_schema` でコンストラクション XML をスキーマに変換可能。
+  - `ggb_parser` は NetworkX を使用してオブジェクト間の依存関係を解析します。
 
 - **スタイル** ([style/index.css](style/index.css), [style/base.css](style/base.css))
   - GeoGebra 埋め込み領域を画面全体にフィットさせる基本スタイルを提供。

@@ -29,6 +29,7 @@ dependencies = [
     "aiofiles",
     "xmltodict",
     "xmlschema",
+    "networkx",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
