@@ -87,7 +87,7 @@ Note: Supports `.ggb` (base64-encoded zip), plain zip, JSON, and XML formats. Th
 
 ### Saving construction
 
-Save the currently loaded construction to various formats:
+Save the current construction (archive when Base64 is set, otherwise plain XML):
 
 ```python
 from ggblab import GeoGebra
@@ -95,20 +95,20 @@ from ggblab import GeoGebra
 ggb = await GeoGebra().init()
 c = ggb.construction.load('/path/to/your.ggb')
 
-# Save to XML
+# Save to XML (when no Base64 is set)
 c.save('/tmp/construction.xml')
 
-# Save back to a GeoGebra .ggb archive (zip)
+# Save to a .ggb file name; content depends on state:
+# - if Base64 is set -> decoded archive (.ggb zip)
+# - else -> plain XML bytes (extension does not enforce format)
 c.save('/tmp/construction.ggb')
-
-# Save to JSON bundle
-c.save('/tmp/construction.json')
 ```
 
 #### Saving behavior and defaults
 
 - `c.save()` with no arguments writes to the next available filename derived from the originally loaded `source_file` (e.g., `name_1.ggb`, `name_2.ggb`, ...). Use `c.save(overwrite=True)` to overwrite the original `source_file`.
 - If `construction.base64_buffer` is set (e.g., from `getBase64()` or `load()`), `save()` writes the decoded archive; otherwise it writes the in-memory `geogebra_xml` as plain XML.
+- Target file extension does not enforce format: if Base64 is absent, saving to a `.ggb` path will still write plain XML bytes.
 - Note: `getBase64()` from the applet may not include non-XML artifacts present in the original `.ggb` archive (e.g., thumbnails or other resources). Saving after API-driven changes can therefore produce a leaner archive.
 
 ### Use Cases (from examples/eg3_applet.ipynb)
@@ -399,7 +399,7 @@ o
 
 #### コンストラクションの保存
 
-ロード済みコンストラクションを各種形式で保存できます:
+ロード済みコンストラクションを保存します（Base64 が設定されていればアーカイブ、未設定ならプレーン XML）:
 
 ```python
 from ggblab import GeoGebra
@@ -407,20 +407,20 @@ from ggblab import GeoGebra
 ggb = await GeoGebra().init()
 c = ggb.construction.load('/path/to/your.ggb')
 
-# XML へ保存
+# XML へ保存（Base64 未設定時）
 c.save('/tmp/construction.xml')
 
-# GeoGebra .ggb (zip) へ保存
+# .ggb というファイル名へ保存（内容は状態に依存）:
+# - Base64 設定時: デコードしたアーカイブ（.ggb zip）
+# - 未設定時: プレーン XML バイト列（拡張子は形式を強制しません）
 c.save('/tmp/construction.ggb')
-
-# JSON バンドルへ保存
-c.save('/tmp/construction.json')
 ```
 
 ##### 保存の挙動とデフォルト
 
 - 引数なしの `c.save()` は、読み込んだ `source_file` を基に次の未使用ファイル名（例: `name_1.ggb`, `name_2.ggb`, ...）へ保存します。元の `source_file` を上書きするには `c.save(overwrite=True)` を使います。
 - `construction.base64_buffer` が設定されている場合（例: `getBase64()` や `load()` の結果）、`save()` はそのデータをデコードしてアーカイブを書き出します。未設定の場合はメモリ上の `geogebra_xml` をプレーン XML として保存します。
+- 拡張子は形式を強制しません。Base64 未設定時に `.ggb` のパスへ保存しても内容はプレーン XML になります。
 - 注意: アプレットの `getBase64()` は、元の `.ggb` アーカイブに含まれる非XMLの付帯ファイル（例: サムネイルやリソース）を含まない場合があります。API 経由で編集後に保存すると、元アーカイブに比べて軽量なアーカイブになることがあります。
 
 ### 利用ケース（examples/eg3_applet.ipynb より）
