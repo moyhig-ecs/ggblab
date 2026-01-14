@@ -63,6 +63,8 @@ print(value)
 
 ggblab's design philosophy and implementation details are documented across several focused documents:
 
+**Full documentation available at**: https://ggblab.readthedocs.io/
+
 Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
 
 ### Core Documentation
@@ -107,6 +109,15 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
   - Manim export pipeline: SymPy geometry → manim animation code
   - Implementation roadmap (v1.1 - v1.5) with educational success criteria
 
+### API Reference
+
+- **[API Documentation](https://ggblab.readthedocs.io/en/latest/api.html)** - Python API reference auto-generated from docstrings
+  - `GeoGebra` class: Main interface for controlling applets
+  - `ggb_comm`: Dual-channel communication layer
+  - `ggb_construction`: File loader and saver
+  - `ggb_parser`: Dependency graph analysis
+  - `ggb_schema`: XML schema loader
+
 ### Quick Reference
 
 | Document | Primary Audience | Key Insight |
@@ -116,6 +127,7 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 | **SYMPY_INTEGRATION.md** | Math/CS Instructors | Symbolic proof + code generation + manim export |
 | **ARCHITECTURE.md** | Developers | Dual-channel communication; parser needs v1.0 redesign |
 | **TODO.md** | Contributors | Concrete next steps prioritized by learning value |
+| **[API Reference](https://ggblab.readthedocs.io/en/latest/api.html)** | Developers | Complete Python API documentation |
 
 ### Examples
 
