@@ -1,10 +1,10 @@
 # ggblab
 
-ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. You can launch the panel from the Command Palette or Launcher and call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
+ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
 
 ### Features
 
-- Open the GeoGebra panel from the Command Palette/Launcher, or programmatically via `GeoGebra().init()` (Command ID: `ggblab:create`, label: "React Widget")
+- Programmatic launch via `GeoGebra().init()` (recommended), which uses ipylab to pass communication settings before widget initialization (Command ID: `ggblab:create`, label: "React Widget"). Command Palette/Launcher work only with fixed arguments and are suitable for default settings.
 - Call GeoGebra commands (`command`) and API functions (`function`) from Python through the `GeoGebra` helper
 - Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
@@ -55,9 +55,11 @@ print(value)
 
 ggblab's design philosophy and implementation details are documented across several focused documents:
 
+Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
+
 ### Core Documentation
 
-- **[PHILOSOPHY.md](PHILOSOPHY.md)** - Design principles, scope boundaries, and educational vision
+- **[philosophy.md](docs/philosophy.md)** - Design principles, scope boundaries, and educational vision
   - Communication architecture maturity and stability assessment
   - GeoGebra + Python complementarity framework
   - Geometric Scene evolution inspired by Wolfram's GeometricScene paradigm
@@ -65,7 +67,7 @@ ggblab's design philosophy and implementation details are documented across seve
   - Prioritized technical roadmap (Tiers 1-5) focused on learning value
   - Success criteria for each version milestone (v0.8 - v1.5+)
 
-- **[SCOPING.md](SCOPING.md)** - **Core Educational Mission**: Variable scoping via geometric construction
+- **[scoping.md](docs/scoping.md)** - **Core Educational Mission**: Variable scoping via geometric construction
   - **The foundational insight**: Geometric dependencies (points → lines → circles) are isomorphic to programming scopes (global → function → nested)
   - How GeoGebra's construction protocol naturally forms a scope tree
   - Computational thinking pedagogy through geometric decomposition, pattern recognition, abstraction, and algorithm design
@@ -73,7 +75,7 @@ ggblab's design philosophy and implementation details are documented across seve
   - Classroom integration roadmap with assessment rubrics
   - Cognitive science rationale: Dual Coding Theory, Transfer of Learning, Constructivism
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical implementation details
+- **[architecture.md](docs/architecture.md)** - Technical implementation details
   - Dual-channel communication design (IPython Comm + Unix socket/TCP WebSocket)
   - Message flow patterns and error handling strategies
   - Dependency parser architecture with performance analysis
@@ -89,7 +91,7 @@ ggblab's design philosophy and implementation details are documented across seve
 
 ### Advanced Integration
 
-- **[SYMPY_INTEGRATION.md](SYMPY_INTEGRATION.md)** - Symbolic computation and code generation
+- **[sympy_integration.md](docs/sympy_integration.md)** - Symbolic computation and code generation
   - Bidirectional conversion: GeoGebra constructions ↔ SymPy Geometry objects
   - Symbolic verification of geometric properties (collinearity, concyclicity, perpendicularity)
   - Automatic Python code generation from constructions (reproducibility + version control)
@@ -313,7 +315,7 @@ See [examples/eg4_parse.ipynb](examples/eg4_parse.ipynb) for a complete example 
 
 This dual-channel approach ensures that interactive operations (e.g., retrieving object values, updating constructions) remain responsive even during long-running cell execution.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design rationale and implementation notes.
+See [architecture.md](docs/architecture.md) for detailed design rationale and implementation notes.
 
 #### Error Handling and Limitations
 
@@ -330,7 +332,7 @@ except TimeoutError:
 
 **GeoGebra API constraint**: The GeoGebra API does **not** provide explicit error response codes. Instead, errors are communicated through **dialog popups** displayed in the browser. The frontend monitors these dialog events and forwards error information via the primary Comm channel. For errors that do not trigger dialogs (e.g., malformed responses), the timeout is the primary error signal.
 
-See [ARCHITECTURE.md § Error Handling](ARCHITECTURE.md#error-handling) for details on error detection and recovery strategies.
+See [architecture.md § Error Handling](docs/architecture.md#error-handling) for details on error detection and recovery strategies.
 
 ### Settings
 
@@ -379,7 +381,7 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
   - **Infinite loop risk**: May hang indefinitely under certain graph topologies.
   - **Limited N-ary dependency support**: Only handles 1-ary and 2-ary dependencies; 3+ objects jointly creating an output are ignored.
   - **Redundant computation**: Neighbor lookups are recalculated unnecessarily in loops.
-  - See [ARCHITECTURE.md § Dependency Parser Architecture](ARCHITECTURE.md#dependency-parser-architecture) for detailed analysis and planned improvements.
+   - See [architecture.md § Dependency Parser Architecture](docs/architecture.md#dependency-parser-architecture) for detailed analysis and planned improvements.
 
 #### General Limitations
 

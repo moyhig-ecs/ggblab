@@ -1,174 +1,159 @@
 # ggblab Development TODO
 
-## Next-Step Priorities (v0.8 - v1.0)
+## Roadmap Overview (docs alignment)
 
-### 1. Parser Correctness & Performance (v0.7.3 - v1.0)
+This TODO consolidates Roadmap and Future Works from:
+- [docs/philosophy.md](docs/philosophy.md) — Tiers 1–5 (education-first)
+- [docs/scoping.md](docs/scoping.md) — Pedagogical roadmap (v0.8–v1.2)
+- [docs/architecture.md](docs/architecture.md) — Communication design, launch strategy, testing, parser
+- [docs/sympy_integration.md](docs/sympy_integration.md) — SymPy bridge roadmap (v1.1+)
 
-**File**: [ggblab/parser.py](ggblab/parser.py) — `parse_subgraph()` method
-
-**Issues**:
-- Exponential time complexity O(2^n) — intractable for 20+ root objects
-- Infinite loop risk under certain topologies
-- Limited to 1-2 parent dependencies (ignores 3+)
-- Debug print statements in production code
-- Redundant neighbor computation in loops
-
-**Actions**:
-- [ ] v0.7.3: Remove debug `print()` statements; add optional `logging` module with debug flag
-- [ ] v0.7.3: Add early termination check (max 100 iterations) to detect infinite loops
-- [ ] v0.7.3: Cache neighbor computation to avoid O(n) redundant work per iteration
-- [ ] v0.7.3: Extend match statement to handle 3+ parent dependencies (not just 1-2)
-- [ ] v1.0: Replace entire algorithm with topological sort + reachability pruning (O(n(n+m)))
-- [ ] v1.0: Add comprehensive unit tests: simple chains, diamonds, N-ary deps, large graphs (50+ nodes)
-
-**Reference**: [ARCHITECTURE.md § Dependency Parser Architecture](ARCHITECTURE.md#dependency-parser-architecture)
+Version focus:
+- v0.8–v1.0: Scene Timeline, launch strategy, error UX, CI, strict types
+- v1.0–v1.5: Manim export, numerical integration wrappers
+- v1.1–v1.2: SymPy geometry bridge + verification
 
 ---
 
-### 2. API Validation & Type Safety (v0.8.x - v1.0)
+## Next-Step Priorities (v0.8 – v1.0)
+
+### 1. Scene Timeline & Launch Strategy (v0.8 – v1.0)
+
+**Refs**: [docs/philosophy.md § Tier 2](docs/philosophy.md), [docs/architecture.md § Widget Launch Strategy](docs/architecture.md)
+
+**Actions**:
+- [ ] v0.8: Implement `SceneTimeline` class (snapshot capture, store metadata)
+- [ ] v0.9: Add timeline navigation and playback in Jupyter
+- [ ] v0.8: Programmatic launch via ipylab `GeoGebra().init()` passing Comm target + socket settings
+- [ ] v0.8: Document Launcher/Command Palette fixed-args limitation; steer users to programmatic launch
+
+---
+
+### 2. Numerical Integration & Wrappers (v0.9 – v1.0)
+
+**Refs**: [docs/philosophy.md § Tier 3](docs/philosophy.md), [docs/scoping.md § Parameter Sweeps](docs/scoping.md)
+
+**Actions**:
+- [ ] v0.9: Python wrappers for scipy ODEs → GeoGebra point lists
+- [ ] v0.9: Numpy ↔ GeoGebra conversions (point lists, curves)
+- [ ] v1.0: Parameter sweep utilities; record to `SceneTimeline`
+- [ ] v1.0: Tutorial notebooks (projectile motion, damped pendulum)
+
+---
+
+### 3. SymPy Geometry Bridge (v1.1 – v1.2)
+
+**Refs**: [docs/sympy_integration.md](docs/sympy_integration.md)
+
+**Actions**:
+- [ ] v1.1: Conversion layer `geogrebra_to_sympy()` and `sympy_to_geogrebra()`
+- [ ] v1.1: Verification APIs (`verify_collinearity`, `verify_concyclicity`, `verify_perpendicular`, `verify_property`)
+- [ ] v1.2: Code generation (`to_python_code`, `to_construction_string`)
+- [ ] v1.2: Export symbolic results → GeoGebra visualization (numeric approximation pipeline)
+
+---
+
+### 4. Manim Export (v1.0 – v1.5)
+
+**Refs**: [docs/philosophy.md § Tier 2.5](docs/philosophy.md)
+
+**Actions**:
+- [ ] v1.0: `SceneTimeline.to_manim_script()` generates Scene class
+- [ ] v1.0: Geometry extraction from snapshots → manim primitives
+- [ ] v1.5: `SceneTimeline.render_video()` orchestrates `manim render` (MP4/GIF)
+- [ ] v1.5: Example notebooks; educator feedback loop
+
+---
+
+### 5. Parser: Sunset & Replacement (v1.0 – v1.1)
+
+**Refs**: [docs/architecture.md § Dependency Parser Architecture](docs/architecture.md#dependency-parser-architecture), [docs/philosophy.md § Parser: Rationale & Sunset](docs/philosophy.md)
+
+**Actions**:
+- [ ] v1.0: Replace `parse_subgraph()` with topological pruning approach (O(n(n+m)))
+- [ ] v1.0: Unit tests: chains, diamonds, N-ary, large graphs (50+ nodes)
+- [ ] v1.1: Deprecate/remove `parse_subgraph()` unless strong use case emerges
+
+---
+
+### 6. Error Handling & User Feedback (v0.8.x)
+
+**Refs**: [docs/architecture.md § Future Error Handling Improvements](docs/architecture.md)
+
+**Actions**:
+- [ ] v0.8: Convert timeout to Python exception with context (command, timestamp)
+- [ ] v0.8: Support custom timeout via `GeoGebra(timeout=5.0)` and per-call overrides
+- [ ] v0.8: Hook GeoGebra dialog events; forward structured error via Comm
+- [ ] v0.8: Basic retry logic (1 retry, 100ms backoff) for transient socket failures
+
+---
+
+### 7. API Validation & Type Safety (v0.8.x – v1.0)
 
 **Files**: [src/widget.tsx](src/widget.tsx), [src/index.ts](src/index.ts), [ggblab/ggbapplet.py](ggblab/ggbapplet.py)
-
-**Issues**:
-- TypeScript strict mode disabled; uses `any` type in places
-- No input validation on commands/functions before sending to GeoGebra
-- Widget props lack full interface documentation
+**Refs**: [AGENTS.md § Type Safety](AGENTS.md)
 
 **Actions**:
-- [ ] v0.8: Enable TypeScript strict mode; eliminate `any` casts in widget
-- [ ] v0.8: Add lightweight argument validation in `GeoGebra.command()` and `GeoGebra.function()` 
-- [ ] v0.8: Add JSDoc for all public TypeScript/Python APIs
-- [ ] v1.0: Full type safety audit; 100% of public interfaces documented
+- [ ] v0.8: Enable TypeScript strict mode; remove `any`
+- [ ] v0.8: Lightweight arg validation in `GeoGebra.command()` and `GeoGebra.function()`
+- [ ] v0.8: JSDoc/docstrings for all public TS/Python APIs
+- [ ] v1.0: Full type safety audit; public interfaces documented
 
 ---
 
-### 3. Error Handling & User Feedback (v0.8.x)
+### 8. CI/CD & Testing (v0.8.x – v1.0)
 
-**Files**: [src/widget.tsx](src/widget.tsx), [ggblab/comm.py](ggblab/comm.py)
-
-**Issues**:
-- Communication errors logged to console but not shown to users
-- 3-second timeout on out-of-band socket gives no context
-- No retry/backoff logic for transient failures
-- Dialog-based errors from GeoGebra not reliably surfaced
+**Refs**: [docs/architecture.md § Testing Strategies](docs/architecture.md)
 
 **Actions**:
-- [ ] v0.8: Add user-facing toast/notification for Comm/WebSocket failures in widget
-- [ ] v0.8: Wrap out-of-band timeout in Python exception with context (command, timestamp, 3-sec limit)
-- [ ] v0.8: Support custom timeout via `GeoGebra(timeout=5.0)` constructor parameter
-- [ ] v0.8: Hook GeoGebra dialog events and extract error messages; forward via Comm
-- [ ] v0.8: Add basic retry logic (1 retry, 100ms backoff) for transient socket failures
+- [ ] v0.8: Add GitHub Actions `.github/workflows/ci.yml` (lint, unit, integration)
+- [ ] v0.8: Backend tests (`tests/test_comm.py`, parser tests incl. performance)
+- [ ] v0.8: Frontend unit tests; optional Playwright/Galata integration
+- [ ] v1.0: Coverage targets: backend >80%, frontend >60%
+- [ ] v1.0: Update [RELEASE.md](RELEASE.md) for automated release checklist
 
 ---
 
-### 4. CI/CD & Testing (v0.8.x - v1.0)
-
-**Files**: 
-- New: `.github/workflows/ci.yml` (GitHub Actions)
-- New: `tests/test_parser.py`, `tests/test_parser_large.py` (unit/perf tests)
-- New: `tests/test_comm.py` (mock Comm tests)
-- Update: `ui-tests/` (Playwright integration tests)
-
-**Issues**:
-- No automated tests on PR/release
-- Unit test coverage <10% (parser, comm untested)
-- No linting on commit
-- Manual release process
-
-**Actions**:
-- [ ] v0.8: Create `.github/workflows/ci.yml` to run:
-  - `jlpm lint` (frontend TypeScript/CSS)
-  - `jlpm test` (frontend unit tests)
-  - `python -m pytest tests/` (backend unit tests)
-  - Playwright tests (optional, slow)
-- [ ] v0.8: Create `tests/test_parser.py`:
-  - Simple dependency chain (A → B → C)
-  - Diamond deps (A,B → C → D)
-  - Binary tree of deps
-  - 3+ parent dependencies (N-ary)
-  - Large graph performance (50+ nodes, <5sec)
-- [ ] v0.8: Create `tests/test_comm.py`:
-  - Mock IPython Comm
-  - Test message ID correlation
-  - Test timeout handling
-- [ ] v1.0: Achieve >80% test coverage for backend, >60% for frontend
-- [ ] v1.0: Update [RELEASE.md](RELEASE.md) with automated release checklist
-
----
-
-### 5. Developer Documentation (v0.8.x)
-
-**Files**: [ARCHITECTURE.md](ARCHITECTURE.md) or new [CONTRIBUTING.md](CONTRIBUTING.md)
-
-**Issues**:
-- No step-by-step guide for first-time contributors
-- Build/test/release process not fully documented
-- Coding standards scattered across [AGENTS.md](AGENTS.md)
-
-**Actions**:
-- [ ] v0.8: Create or expand [CONTRIBUTING.md](CONTRIBUTING.md) with:
-  - Prerequisites (Node.js, Python 3.10+, jlpm)
-  - Clone → activate env → install deps workflow
-  - Local build & test commands (`jlpm build`, `jupyter lab`)
-  - Running tests and CI checks locally
-  - Code style (2-space indent, TypeScript strict, docstrings)
-  - Pull request process
-- [ ] v0.8: Add "Architecture for Contributors" section to [ARCHITECTURE.md](ARCHITECTURE.md):
-  - Dual-channel communication overview (1-2 pages)
-  - Component responsibilities
-  - Message flow diagrams
-- [ ] v0.8: Document hardcoded constants (Comm target `'test3'`, socket timeout 3s) and why they exist
-
----
-
-### 6. Configuration & Customization (v0.8.x)
+### 9. Configuration & Settings (v0.8 – v0.9)
 
 **Files**: [src/widget.tsx](src/widget.tsx), [ggblab/ggbapplet.py](ggblab/ggbapplet.py), [schema/plugin.json](schema/plugin.json)
 
-**Issues**:
-- Comm target hardcoded as `'test3'` — no customization
-- Socket timeout hardcoded to 3 seconds
-- No settings UI in JupyterLab
-
 **Actions**:
-- [ ] v0.8: Allow `GeoGebra(comm_target='custom', timeout=5.0)` via constructor
+- [ ] v0.8: Constructor options `GeoGebra(comm_target='custom', timeout=5.0)`
 - [ ] v0.8: Populate [schema/plugin.json](schema/plugin.json) with user-configurable options
-- [ ] v0.9: Add JupyterLab settings UI for Comm target and socket timeout
+- [ ] v0.9: JupyterLab settings UI (Comm target, socket timeout)
 
 ---
 
-### 7. Monitoring & Observability (v1.0+)
+### 10. Monitoring & Observability (v1.0+)
 
 **Files**: [ggblab/ggbapplet.py](ggblab/ggbapplet.py), [src/widget.tsx](src/widget.tsx)
 
-**Issues**:
-- No logging of operation latency
-- No metrics on Comm/socket success rates
-- No way to diagnose user-reported issues
-
 **Actions**:
-- [ ] v1.0: Add structured logging (JSON format) for all major operations
-- [ ] v1.0: Emit latency metrics (command exec time, function call time, socket round-trip)
-- [ ] v1.0: Add configurable telemetry endpoint (optional, privacy-respecting)
+- [ ] v1.0: Structured logging (JSON) for major operations
+- [ ] v1.0: Latency metrics (command/func exec time, socket round-trip)
+- [ ] v1.0: Optional telemetry endpoint (privacy-respecting)
 
 ---
 
 ## Checklist Summary
 
-- [ ] Parser: v0.7.3 quick fixes (logging, loop guard, caching, N-ary)
-- [ ] Parser: v1.0 algorithm replacement + tests
-- [ ] Type safety: strict mode, JSDoc, validation
-- [ ] Error UX: notifications, timeout context, retry logic
-- [ ] CI: GitHub Actions workflow, unit tests, coverage >80%
-- [ ] Docs: CONTRIBUTING.md, architecture overview for developers
-- [ ] Config: allow customization of Comm target and timeout
+- [ ] Timeline: capture, navigate, playback; ipylab launch wired
+- [ ] Numerical: scipy wrappers, conversions, sweeps, notebooks
+- [ ] SymPy: conversion, verification APIs, codegen, visualization
+- [ ] Manim: script generation, render orchestration, examples
+- [ ] Parser: replace subgraph algo; tests; deprecate legacy
+- [ ] Error UX: exceptions with context, custom timeout, dialogs, retry
+- [ ] Type safety: TS strict, validation, JSDoc/docstrings, audit
+- [ ] CI: GitHub Actions, unit/integration, coverage targets, release
+- [ ] Config: constructor options, settings schema, settings UI
 - [ ] Monitor: logging, metrics, optional telemetry
 
 ---
 
 ## Known Blocking Issues
 
-1. **Parser `parse_subgraph()` on large graphs**: Can hang or timeout. Blocks analytical workflows on complex constructions. **Workaround**: Use graphs with <15 independent roots.
-2. **No CI**: Cannot merge PRs with confidence. Risk of regressions. **Action**: Set up GitHub Actions immediately.
-3. **TypeScript not strict**: Type safety gaps. **Action**: Enable strict mode and fix failures.
-4. **Hardcoded Comm target**: Users cannot override. **Action**: Make configurable in v0.8.
+1. **Launcher fixed arguments**: Cannot inject per-session comm settings. **Action**: Use programmatic launch via ipylab (see [docs/architecture.md](docs/architecture.md)).
+2. **Parser combinatorial explosion**: `parse_subgraph()` is intractable on large graphs. **Action**: Replace with topological pruning; deprecate legacy.
+3. **No CI**: Risk of regressions without automated checks. **Action**: Add GitHub Actions and tests.
+4. **TypeScript not strict**: Type safety gaps. **Action**: Enable strict mode and fix failures.

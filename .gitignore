@@ -7,6 +7,7 @@ node_modules/
 *.egg-info/
 .ipynb_checkpoints
 *.tsbuildinfo
+*.ipynb
 ggblab/labextension
 # Version file is handled by hatchling
 ggblab/_version.py
@@ -38,6 +39,9 @@ develop-eggs/
 dist/*.tar.gz
 downloads/
 eggs/
+# Archived documentation
+docs_archive/
+
 .eggs/
 lib/
 lib64/
