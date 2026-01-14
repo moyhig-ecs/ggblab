@@ -1,4 +1,4 @@
 myst-parser
 sphinx-rtd-theme
 sphinx
--e . ../ggblab
+ggblab
