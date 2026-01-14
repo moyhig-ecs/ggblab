@@ -4,7 +4,7 @@ This document articulates ggblab's **foundational educational mission**: use geo
 
 ---
 
-## 1. The Problem: Python's Scoping Crisis in Education
+## The Problem: Python's Scoping Crisis in Education
 
 ### Why Python Fails at Teaching Scoping
 
@@ -40,7 +40,7 @@ Python's dynamic nature and permissive scoping rules make it a **poor vehicle fo
 
 ---
 
-## 2. The Solution: Geometric Scene Construction as Scoping Model
+## The Solution: Geometric Scene Construction as Scoping Model
 
 ### Why Geometry Works
 
@@ -111,7 +111,7 @@ Construction Protocol:
 
 ---
 
-## 3. Computational Thinking via Geometric Construction
+## Computational Thinking via Geometric Construction
 
 ### The Four Pillars
 
@@ -124,7 +124,7 @@ Construction Protocol:
 
 **Geometric construction naturally teaches all four**:
 
-#### 3.1 Decomposition
+#### Decomposition
 
 **Geometry**: "Construct an equilateral triangle"
 - Step 1: Define base segment AB
@@ -140,7 +140,7 @@ Construction Protocol:
 
 **Skill transfer**: Both require breaking monolithic tasks into ordered subtasks.
 
-#### 3.2 Pattern Recognition
+#### Pattern Recognition
 
 **Geometry**: Recognize that "perpendicular bisector + midpoint" pattern appears in many constructions
 - Isosceles triangle construction
@@ -154,7 +154,7 @@ Construction Protocol:
 
 **Skill transfer**: Both require identifying reusable templates.
 
-#### 3.3 Abstraction
+#### Abstraction
 
 **Geometry**: 
 - Abstract away specific coordinates: "Triangle ABC" (not "Triangle at (0,0), (1,0), (0.5, √3/2)")
@@ -166,7 +166,7 @@ Construction Protocol:
 
 **Skill transfer**: Both require ignoring low-level details to reason at higher levels.
 
-#### 3.4 Algorithm Design
+#### Algorithm Design
 
 **Geometry**: "Given three non-collinear points, construct the circumcircle"
 - Algorithm 1: Perpendicular bisectors of two sides intersect at circumcenter
@@ -182,9 +182,9 @@ Construction Protocol:
 
 ---
 
-## 4. Scoping Pedagogy: From Math to Code
+## Scoping Pedagogy: From Math to Code
 
-### 4.1 Concrete Example: Isosceles Triangle Construction
+### Concrete Example: Isosceles Triangle Construction
 
 **Mathematical Statement**:
 > Construct an isosceles triangle ABC where AB is the base.
@@ -265,7 +265,7 @@ assert triangle.is_isosceles()  # Reads A, B, C from nested scopes
 
 **Key insight**: The geometric construction makes scoping **tangible and visual**, not abstract.
 
-### 4.2 Parameter Sweeps and Scope Evolution
+### Parameter Sweeps and Scope Evolution
 
 **Geometric Scenario**: Vary the height of point C along the perpendicular bisector.
 
@@ -319,9 +319,9 @@ print(times_3(5))  # 15 (uses n=3)
 
 ---
 
-## 5. Implementation in ggblab
+## Implementation in ggblab
 
-### 5.1 Dependency Graph as Scope Tree
+### Dependency Graph as Scope Tree
 
 **ggblab's `parse()` method** (in `ggblab/parser.py`) constructs a directed graph:
 
@@ -389,7 +389,7 @@ for i, level in enumerate(scope_levels):
 
 **Students see**: The graph structure reveals scoping hierarchy.
 
-### 5.2 SymPy Integration and Symbolic Scoping
+### SymPy Integration and Symbolic Scoping
 
 **SymPy objects have explicit dependencies** (unlike Python variables):
 
@@ -458,9 +458,9 @@ for name, obj in sympy_objects['objects'].items():
 
 ---
 
-## 6. Classroom Integration
+## Classroom Integration
 
-### 6.1 Lesson Progression
+### Lesson Progression
 
 **Lesson 1: Introduction to Scope via Points and Lines**
 
@@ -501,7 +501,7 @@ for name, obj in sympy_objects['objects'].items():
   4. Compare to Python function accessing outer scopes
 - Learning Outcome: "Verification scope can read (but not modify) construction scopes"
 
-### 6.2 Assessment Rubric
+### Assessment Rubric
 
 **Objective**: Can students transfer geometric scoping to programming scoping?
 
@@ -512,7 +512,7 @@ for name, obj in sympy_objects['objects'].items():
 | **Closure behavior** | Cannot explain parameter binding | Understands that snapshots capture parameters | Can implement closures in Python using geometric intuition |
 | **Transfer to code** | Cannot relate geometry to programming | Can see similarities but not apply | Can write scoped Python code using geometric templates |
 
-### 6.3 Example Exercise
+### Example Exercise
 
 **Geometric Problem**:
 > Given points A, B, C, construct the incenter I of triangle ABC.
@@ -562,9 +562,9 @@ assert distance(incenter, side_AB) == distance(incenter, side_BC)
 
 ---
 
-## 7. Why This Matters: The Meta-Goal
+## Why This Matters: The Meta-Goal
 
-### 7.1 Computational Thinking Is Transferable
+### Computational Thinking Is Transferable
 
 **The educational research consensus** (Barr & Stephenson, 2011; Brennan & Resnick, 2012):
 - Computational thinking skills transfer across domains
@@ -583,7 +583,7 @@ Programming scoping (abstract, conceptual)
 
 **Traditional CS education fails** because it starts with abstract scoping rules. **ggblab succeeds** because it starts with concrete geometric relationships.
 
-### 7.2 The Pipeline: From Geometry to Professional Programming
+### The Pipeline: From Geometry to Professional Programming
 
 **Stage 1: Geometric Exploration (K-8)**
 - Students learn geometric constructions in GeoGebra
@@ -606,7 +606,7 @@ Programming scoping (abstract, conceptual)
 
 **ggblab is the missing link** between Stages 2 and 3.
 
-### 7.3 Addressing Python's Weaknesses
+### Addressing Python's Weaknesses
 
 **Python's educational value is undeniable** (simple syntax, rich libraries). **But its scoping weaknesses are real**.
 
@@ -619,7 +619,7 @@ Programming scoping (abstract, conceptual)
 
 ---
 
-## 8. Implementation Roadmap
+## Implementation Roadmap
 
 ### v0.8: Basic Scoping Visualization
 
@@ -654,7 +654,7 @@ Programming scoping (abstract, conceptual)
 
 ---
 
-## 9. Success Metrics
+## Success Metrics
 
 ### Short-Term (v1.0)
 
@@ -676,7 +676,7 @@ Programming scoping (abstract, conceptual)
 
 ---
 
-## 10. Related Work
+## Related Work
 
 ### Computational Thinking Frameworks
 
@@ -703,7 +703,7 @@ Programming scoping (abstract, conceptual)
 
 ---
 
-## 11. Philosophical Stance: Mathematics First
+## Philosophical Stance: Mathematics First
 
 ### Why Not Teach Scoping Directly in Python?
 

@@ -65,7 +65,7 @@ ggblab's design philosophy and implementation details are documented across seve
 
 **Full documentation available at**: https://ggblab.readthedocs.io/
 
-Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
+Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md) or [philosophy.md](docs/philosophy.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
 
 ### Core Documentation
 
@@ -134,9 +134,9 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 - Sample notebook: [examples/example.ipynb](examples/example.ipynb)
 - Demo video:
 
-<video src="https://github.com/user/repo/assets/example.mov" controls width="100%">
-  <source src="examples/example.mov" type="video/quicktime">
-  Your browser does not support the video tag. Please <a href="examples/example.mov">download the video</a> directly.
+<video src="https://github.com/user/repo/assets/example.mp4" controls width="100%">
+  <source src="examples/example.mp4" type="video/mp4">
+  Your browser does not support the video tag. Please <a href="examples/example.mp4">download the video</a> directly.
 </video>
 
 Run steps:
@@ -458,7 +458,7 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
    - Reduce time complexity from $O(2^n)$ to $O(n(n+m))$
    - Support arbitrary N-ary dependencies (not limited to 2 parents)
    - Eliminate infinite loop risk through deterministic algorithm
-   - See [ARCHITECTURE.md § Dependency Parser Architecture](ARCHITECTURE.md#dependency-parser-architecture) for detailed design
+   - See [architecture.md § Dependency Parser Architecture](docs/architecture.md#dependency-parser-architecture) for detailed design
 
 3. **Advanced Features**
    - **Multi-panel support**: Allow multiple GeoGebra instances in different notebook cells
