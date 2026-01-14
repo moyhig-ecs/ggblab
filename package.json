@@ -7,13 +7,13 @@
         "jupyterlab",
         "jupyterlab-extension"
     ],
-    "homepage": "https://github.com/ggblab/ggblab",
+    "homepage": "https://github.com/moyhig-ecs/ggblab#readme",
     "bugs": {
-        "url": "https://github.com/ggblab/ggblab/issues"
+        "url": "https://github.com/moyhig-ecs/ggblab/issues"
     },
     "license": "BSD-3-Clause",
     "author": {
-        "name": "ggblab",
+        "name": "Manabu Higashida",
         "email": "manabu@higashida.net"
     },
     "files": [
@@ -27,7 +27,7 @@
     "style": "style/index.css",
     "repository": {
         "type": "git",
-        "url": ".git"
+        "url": "https://github.com/moyhig-ecs/ggblab"
     },
     "scripts": {
         "build": "jlpm build:lib && jlpm build:labextension:dev",
