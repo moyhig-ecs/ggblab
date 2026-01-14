@@ -1,15 +1,15 @@
 {
     "name": "ggblab",
-    "version": "0.8.0",
+    "version": "0.8.3",
     "description": "A JupyterLab extension.",
     "keywords": [
         "jupyter",
         "jupyterlab",
         "jupyterlab-extension"
     ],
-    "homepage": "",
+    "homepage": "https://github.com/ggblab/ggblab",
     "bugs": {
-        "url": "https://github.com/your-repo/issues"
+        "url": "https://github.com/ggblab/ggblab/issues"
     },
     "license": "BSD-3-Clause",
     "author": {
@@ -56,16 +56,14 @@
         "watch:src": "tsc -w --sourceMap",
         "watch:labextension": "jupyter labextension watch ."
     },
-    "networkx-parser": "^1.0.0",
+    "dependencies": {
         "@jupyterlab/application": "^4.0.0",
         "@jupyterlab/apputils": "^4.6.1",
         "@jupyterlab/launcher": "^4.5.1",
         "@jupyterlab/settingregistry": "^4.0.0",
         "@lumino/widgets": "^2.7.2",
         "@marshallku/react-postscribe": "^0.2.0",
-        "react-meta-tags": "^1.0.1",
-        "networkx": "^2.5"
-        "networkx-parser": "^1.0.0",
+        "react-meta-tags": "^1.0.1"
     },
     "devDependencies": {
         "@jupyterlab/builder": "^4.0.0",
