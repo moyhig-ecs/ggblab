@@ -9,18 +9,19 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.14"
+  # Skip frontend build; only install Python dependencies
+  environment:
+    SKIP_FRONTEND: "true"
 
 # Build documentation in the "docs/" directory with Sphinx
-# docs_dir: docs/
-
 sphinx:
    configuration: docs/conf.py
 
-# Install the project and documentation dependencies
+# Install project dependencies without building frontend
 python:
    install:
    - method: pip
-     path: .
+     args: "--no-build-isolation -e ."
    - requirements: docs/requirements.txt
 
 formats:
