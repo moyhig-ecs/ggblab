@@ -22,8 +22,8 @@ python:
   install:
   - path: .
   - requirements: docs/requirements.txt
-  - method: pip
-    args: "--no-build-isolation -e ."
+  # - method: pip
+  #   args: "--no-build-isolation -e ."
 
 
 formats:
