@@ -29,7 +29,9 @@ dependencies = [
     "aiofiles",
     "xmltodict",
     "xmlschema",
+    "copier",
     "networkx",
+    "ipykernel",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
