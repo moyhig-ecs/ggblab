@@ -35,8 +35,8 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-#dist/
-dist/*.tar.gz
+dist/
+# dist/*.tar.gz
 downloads/
 eggs/
 # Archived documentation
