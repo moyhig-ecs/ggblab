@@ -1,3 +1,4 @@
+-e .
 myst-parser
 sphinx-rtd-theme
 sphinx
