@@ -10,8 +10,8 @@ build:
   tools:
     python: "3.14"
   # Skip frontend build; only install Python dependencies
-  env:
-    SKIP_FRONTEND: "true"
+  # env:
+  #   SKIP_FRONTEND: "true"
 
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:
