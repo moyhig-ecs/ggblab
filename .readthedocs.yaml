@@ -15,15 +15,16 @@ build:
 
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:
-   configuration: docs/conf.py
+  configuration: docs/conf.py
 
 # Install project dependencies without building frontend
 python:
-   install:
-   - method: pip
-     args: "--no-build-isolation -e ."
-   - path: .
-   - requirements: docs/requirements.txt
+  install:
+  - path: .
+  - requirements: docs/requirements.txt
+  - method: pip
+    args: "--no-build-isolation -e ."
+
 
 formats:
   - "pdf"
