@@ -27,6 +27,7 @@ jobs:
       - name: Install frontend dependencies
         run: |
           npm install -g yarn
+          pip install jupyterlab
           jlpm install
 
       - name: Build frontend
