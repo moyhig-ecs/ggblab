@@ -1,4 +1,5 @@
 myst-parser
 sphinx-rtd-theme
 sphinx
+copier
 ggblab
