@@ -1,7 +1,8 @@
 myst-parser
 sphinx-rtd-theme
 sphinx
--e .
-# copier
-# ipykernel
+#
+copier
+ipykernel
 # ggblab
+-e .
