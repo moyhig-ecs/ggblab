@@ -3,6 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
+[![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 
 ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
 
