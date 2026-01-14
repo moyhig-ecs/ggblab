@@ -134,13 +134,7 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 - Sample notebook: [examples/example.ipynb](examples/example.ipynb)
 - Demo video:
 
-<video src="https://github.com/user/repo/assets/example.mp4" controls width="100%">
-  <source src="examples/example.mp4" type="video/mp4">
-  Your browser does not support the video tag. Please <a href="examples/example.mp4">download the video</a> directly.
-</video>
-
-https://github.com/user-attachments/assets/b02122bb-7fdd-42ac-bb53-9d58ab288973
-
+![Demo video](https://github.com/user-attachments/assets/b02122bb-7fdd-42ac-bb53-9d58ab288973)
 
 Run steps:
 
