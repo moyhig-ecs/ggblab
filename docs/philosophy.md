@@ -4,6 +4,8 @@ This document articulates the design principles, scope boundaries, and education
 
 **Core Educational Mission**: ggblab uses geometric scene construction to teach **variable scoping** and **computational thinking**—concepts often poorly understood in Python education. Geometric dependencies (points → lines → circles) are isomorphic to programming scopes (global → function → nested). See [scoping.md](scoping.md) for the complete pedagogical framework.
 
+**Side-by-side layout principle**: ggblab intentionally keeps the GeoGebra applet in a fixed JupyterLab main-area panel while the notebook remains scrollable on the side. Embedding the applet inside the notebook causes it to scroll out of view when editing code; the side-by-side layout preserves continuous visual feedback as code evolves the Geometric Scene.
+
 ## 1. Communication Architecture: Achieved & Plateaued
 
 ### Current State

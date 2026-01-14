@@ -36,7 +36,7 @@ class GeoGebra:
             self.app = JupyterFrontEnd()
             self.app.commands.execute('ggblab:create', {
                 'kernelId': self.kernel_id,
-                'commTarget': 'test3',
+                'commTarget': 'ggblab-comm',
                 'insertMode': 'split-right',
                 'socketPath': self.comm.socketPath,
               # 'wsPort': self.comm.wsPort,

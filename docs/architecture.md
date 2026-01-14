@@ -140,7 +140,7 @@ Python Cell (running)            Frontend (Browser)            ggb_comm (backend
 
 **Responsibilities**:
 - Start Unix socket server (POSIX) or TCP WebSocket server (Windows)
-- Register IPython Comm target (`test3` by default)
+- Register IPython Comm target (`ggblab-comm`), kept singular because IPython Comm cannot receive during cell execution and multiplexing via multiple targets would not solve that constraint
 - Provide `send_recv(msg)` API that:
   1. Sends `msg` via IPython Comm to frontend
   2. Waits for response on the out-of-band socket
@@ -180,7 +180,7 @@ async def client_handle(self, client_id):
 
 **Comm Setup**:
 ```typescript
-const comm = kernel.createComm(props.commTarget || 'test');
+const comm = kernel.createComm(props.commTarget || 'ggblab-comm');
 comm.open('HELO from GGB').done;
 
 comm.onMsg = async (msg) => {

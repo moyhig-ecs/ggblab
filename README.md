@@ -1,5 +1,9 @@
 # ggblab
 
+[![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
+[![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
+[![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
+
 ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
 
 ### Features
@@ -9,6 +13,7 @@ ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab 
 - Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
 - Settings schema is wired up (no user options yet) for future configuration
+- Single Comm target name `ggblab-comm`; multiplexing via multiple targets is avoided because IPython Comm cannot receive during cell execution, so reliability comes from the out-of-band socket channel instead.
 
 ### Requirements
 
@@ -35,6 +40,8 @@ pip uninstall ggblab
 1. Open JupyterLab
 2. Run "React Widget" from the Command Palette (category "Tutorial") or click the Launcher tile under "example"
 3. A GeoGebra panel opens in the main area; layout restoration and launcher integration are enabled
+
+Design note: ggblab is optimized for a side-by-side workflow—GeoGebra stays pinned in the main area while the notebook scrolls independently. Embedding the applet inside a notebook cell is possible but not recommended because it scrolls out of view during code edits.
 
 ### Quick Start (Notebook/Python)
 

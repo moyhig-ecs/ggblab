@@ -25,7 +25,7 @@ class ggb_comm:
 
     def __init__(self):
         self.target_comm = None
-        self.target_name = 'test3'
+        self.target_name = 'ggblab-comm'
         self.server_handle = None
         self.server_thread = None
         self.clients = set()
