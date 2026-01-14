@@ -14,6 +14,37 @@ import os
 from IPython import get_ipython
 
 class ggb_comm:
+    """Dual-channel communication layer for kernel↔widget messaging.
+    
+    Implements a combination of IPython Comm (primary) and out-of-band socket
+    (Unix domain socket on POSIX, TCP WebSocket on Windows) to enable message
+    delivery during cell execution when IPython Comm is blocked.
+    
+    IPython Comm cannot receive messages while a notebook cell is executing,
+    which breaks interactive workflows. The out-of-band socket solves this by
+    providing a secondary channel for GeoGebra responses.
+    
+    Architecture:
+        - IPython Comm: Command dispatch, event notifications, heartbeat
+        - Out-of-band socket: Response delivery during cell execution
+    
+    Comm target is fixed at 'ggblab-comm' because multiplexing via multiple
+    targets would not solve the IPython Comm receive limitation.
+    
+    Attributes:
+        target_comm: IPython Comm object
+        target_name (str): Comm target name ('ggblab-comm')
+        server_handle: WebSocket server handle
+        server_thread: Background thread running the socket server
+        clients (set): Currently connected WebSocket clients
+        socketPath (str): Unix domain socket path (POSIX)
+        wsPort (int): TCP port number (Windows)
+        recv_logs (dict): Response storage keyed by message ID
+        recv_events (queue.Queue): Event queue for frontend notifications
+    
+    See:
+        docs/architecture.md for detailed communication architecture.
+    """
     # [Frontent to kernel callback - JupyterLab - Jupyter Community Forum]
     # (https://discourse.jupyter.org/t/frontent-to-kernel-callback/1666)
     recv_msgs = {}
@@ -34,10 +65,16 @@ class ggb_comm:
 
     # oob websocket (unix_domain socket in posix)
     def start(self):
+        """Start the out-of-band socket server in a background thread.
+        
+        Creates a Unix domain socket (POSIX) or TCP WebSocket server (Windows)
+        and runs it in a daemon thread. The server listens for GeoGebra responses.
+        """
         self.server_thread = threading.Thread(target=lambda: asyncio.run(self.server()), daemon=True)
         self.server_thread.start()
 
     def stop(self):
+        """Stop the out-of-band socket server."""
         self.server_handle.close()
 
     async def server(self):
@@ -113,6 +150,32 @@ class ggb_comm:
         return self.target_comm.send(msg)
 
     async def send_recv(self, msg):
+        """Send a message via IPython Comm and wait for response via out-of-band socket.
+        
+        This method:
+        1. Generates a unique message ID (UUID)
+        2. Sends the message via IPython Comm to the frontend
+        3. Waits for the response to arrive via the out-of-band socket
+        4. Returns the response payload
+        
+        The 3-second timeout is sufficient for interactive operations.
+        For long-running operations, decompose into smaller steps.
+        
+        Args:
+            msg (dict or str): Message to send (will be JSON-serialized).
+        
+        Returns:
+            dict: Response payload from GeoGebra.
+            
+        Raises:
+            TimeoutError: If no response arrives within 3 seconds.
+            
+        Example:
+            >>> response = await comm.send_recv({
+            ...     "type": "command",
+            ...     "payload": "A=(0,0)"
+            ... })
+        """
         try:
             async with asyncio.timeout(3.0):
                 if isinstance(msg, str):

@@ -5,6 +5,37 @@ from copier import Iterable
 from itertools import combinations, chain
 
 class ggb_parser:
+    """Dependency graph parser for GeoGebra constructions.
+    
+    Analyzes object relationships in GeoGebra constructions by building
+    directed graphs using NetworkX. Provides two graph representations:
+    
+    - G (full dependency graph): Complete construction dependencies
+    - G2 (simplified subgraph): Minimal construction sequences (DEPRECATED)
+    
+    The parse() method builds the forward/backward dependency graph (G).
+    The parse_subgraph() method attempts minimal extraction but has critical
+    performance limitations (see method docstring and ARCHITECTURE.md).
+    
+    Attributes:
+        df (polars.DataFrame): Construction protocol dataframe
+        G (nx.DiGraph): Full dependency graph
+        G2 (nx.DiGraph): Simplified subgraph (from parse_subgraph)
+        roots (list): Objects with no dependencies (in-degree = 0)
+        leaves (list): Terminal objects (out-degree = 0)
+        rd (dict): Reverse mapping from object name to DataFrame row number
+        ft (dict): Tokenized function definitions, flattened
+    
+    Example:
+        >>> parser = ggb_parser()
+        >>> parser.df = construction_dataframe
+        >>> parser.parse()
+        >>> print(parser.roots)  # Independent objects
+        >>> print(parser.leaves)  # Terminal constructions
+    
+    See:
+        docs/architecture.md § Dependency Parser Architecture
+    """
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "polygon", "triangle", "quadrilateral"]
@@ -13,6 +44,26 @@ class ggb_parser:
         pass
 
     def parse(self):
+        """Build the full dependency graph (G) from construction protocol.
+        
+        Analyzes the construction dataframe (self.df) and builds:
+        - Forward dependencies: Object A depends on B (B → A edge)
+        - Backward dependencies: Object A is used by B (A → B edge)
+        
+        The graph nodes are GeoGebra object names; edges represent dependencies.
+        
+        Attributes set:
+            - self.G: NetworkX DiGraph of dependencies
+            - self.roots: Objects with no dependencies (starting points)
+            - self.leaves: Objects with no dependents (endpoints)
+            - self.rd: Reverse dict (name → DataFrame row index)
+            - self.ft: Tokenized function calls for each object
+        
+        Example:
+            >>> parser.df = polars.DataFrame(construction_protocol)
+            >>> parser.parse()
+            >>> print(list(parser.G.edges()))  # [(A, B), (B, C), ...]
+        """
         # reverse dict from name to row number of dataframe
         self.rd = {v: k for k, v in enumerate(self.df["Name"])}
 
@@ -216,15 +267,32 @@ class ggb_parser:
             return []
 
 def tokenize_with_commas(cmd_string):  #, regexp=False
-    """
-    Tokenizes a mathematical or GeoGebra-like command string into a structured list representation,
-    including commas and parentheses/brackets as part of the structured list.
-
+    """Tokenize a GeoGebra command string into a structured list representation.
+    
+    Parses a mathematical or GeoGebra-like command string and converts it into
+    a nested list structure that preserves parentheses, brackets, and commas.
+    This is useful for analyzing GeoGebra command syntax and extracting object
+    dependencies.
+    
     Args:
-        cmd_string (str): Input command string.
-
+        cmd_string (str): Input command string (e.g., "Circle(A, Distance(A, B))").
+    
     Returns:
-        list: Nested list structure with tokens.
+        list: Nested list structure with tokens. Parentheses/brackets create
+              nested lists; commas are preserved as ',' tokens.
+    
+    Raises:
+        ValueError: If parentheses/brackets are mismatched.
+    
+    Examples:
+        >>> tokenize_with_commas("Circle(A, 2)")
+        ['Circle', ['A', ',', '2']]
+        
+        >>> tokenize_with_commas("Distance(Point(1, 2), B)")
+        ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
+    
+    Note:
+        Empty or non-string input returns an empty list without raising an error.
     """
     if not cmd_string or not isinstance(cmd_string, str):
         # raise ValueError("Input must be a non-empty string.")
@@ -261,15 +329,34 @@ def tokenize_with_commas(cmd_string):  #, regexp=False
 
 
 def reconstruct_from_tokens(parsed_tokens):
-    """
-    Reconstructs the original string from the tokenized structured list with
-    parentheses/brackets and commas.
-
+    """Reconstruct the original command string from tokenized structured list.
+    
+    Takes a nested list structure produced by tokenize_with_commas() and
+    reconstructs the original command string with proper parentheses, commas,
+    and spacing.
+    
     Args:
-        parsed_tokens (list or str): Tokenized structured list, or a single token as a string.
-
+        parsed_tokens (list or str): Tokenized structured list, or a single
+                                      token as a string.
+    
     Returns:
-        str: A reconstructed string matching the original input structure.
+        str: Reconstructed command string matching the original input structure.
+    
+    Raises:
+        ValueError: If parsed_tokens contains unexpected types.
+    
+    Examples:
+        >>> tokens = ['Circle', ['A', ',', '2']]
+        >>> reconstruct_from_tokens(tokens)
+        'Circle(A, 2)'
+        
+        >>> tokens = ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
+        >>> reconstruct_from_tokens(tokens)
+        'Distance(Point(1, 2), B)'
+    
+    Note:
+        This function is the inverse of tokenize_with_commas(). It handles
+        proper spacing around operators and parentheses.
     """
     if isinstance(parsed_tokens, str):
         # If the token is a string, return it directly
@@ -296,6 +383,32 @@ def reconstruct_from_tokens(parsed_tokens):
         raise ValueError("Unexpected token type in parsed_tokens.")
     
 def flatten(items):
+    """Recursively flatten nested iterables into a flat generator.
+    
+    Takes nested lists, tuples, or other iterables and yields all non-iterable
+    elements in depth-first order. Strings and bytes are treated as atomic
+    elements (not iterated character-by-character).
+    
+    Args:
+        items: An iterable (possibly nested) to flatten, or None.
+    
+    Yields:
+        Non-iterable elements from the input structure.
+    
+    Examples:
+        >>> list(flatten([1, [2, 3], [[4], 5]]))
+        [1, 2, 3, 4, 5]
+        
+        >>> list(flatten(['a', ['b', 'c'], 'd']))
+        ['a', 'b', 'c', 'd']
+        
+        >>> list(flatten([1, [2, [3, [4]]]]))
+        [1, 2, 3, 4]
+    
+    Note:
+        This is particularly useful for flattening tokenized command structures
+        to extract all object names referenced in a GeoGebra construction.
+    """
     if items is None:
         return
     for x in items:

@@ -1,2 +1,10 @@
 myst-parser
 sphinx-rtd-theme
+sphinx
+websockets
+ipylab
+polars
+aiofiles
+xmltodict
+xmlschema
+networkx

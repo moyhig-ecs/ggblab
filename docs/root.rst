@@ -28,6 +28,12 @@ A JupyterLab extension for interactive geometric scene construction with Python 
 
    sympy_integration.md
 
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+
+   api
+
 .. .. toctree::
 ..    :maxdepth: 1
 ..    :caption: Development

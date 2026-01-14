@@ -8,10 +8,59 @@ import os
 from .schema import ggb_schema
 
 class ggb_construction:
+    """GeoGebra construction file (.ggb) loader and saver.
+    
+    Handles multiple file formats:
+    - .ggb files (base64-encoded ZIP archives)
+    - Plain ZIP archives
+    - JSON format
+    - Plain XML (geogebra.xml)
+    
+    The loader automatically detects file type from magic bytes and extracts
+    the construction XML. The geogebra_xml is automatically stripped to the
+    <construction> element and scientific notation is normalized.
+    
+    Attributes:
+        ggb_schema: XML schema for validation
+        source_file (str): Path to the loaded file
+        base64_buffer (bytes): Base64-encoded .ggb archive (if applicable)
+        geogebra_xml (str): Extracted construction XML
+    
+    Example:
+        >>> construction = ggb_construction()
+        >>> construction.load('myfile.ggb')
+        >>> construction.save('output.ggb')
+    """
     def __init__(self):
         self.ggb_schema = ggb_schema().schema
     
     def load(self, file):
+        """Load a GeoGebra construction from file.
+        
+        Supports multiple formats:
+        - Base64-encoded .ggb (starts with 'UEsD')
+        - ZIP archive (starts with 'PK')
+        - JSON format (starts with '{' or '[')
+        - Plain XML
+        
+        The construction XML is automatically extracted and normalized:
+        - Stripped to <construction> element only
+        - Scientific notation fixed (e-1 → E-1)
+        
+        Args:
+            file (str): Path to the .ggb, .zip, .json, or .xml file.
+        
+        Returns:
+            ggb_construction: Self reference for method chaining.
+            
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            RuntimeError: If file loading fails.
+            
+        Example:
+            >>> c = ggb_construction().load('circle.ggb')
+            >>> print(c.geogebra_xml[:100])
+        """
         self.source_file = file
 
         self.base64_buffer = None
@@ -70,6 +119,33 @@ class ggb_construction:
         return self
     
     def save(self, overwrite=False, file=None):
+        """Save the construction to a file.
+        
+        Saving behavior:
+        - If base64_buffer is set: writes decoded archive (.ggb format)
+        - If base64_buffer is None: writes plain XML (geogebra_xml)
+        - Target extension does not enforce format (e.g., saving to .ggb with
+          no base64_buffer will write plain XML bytes)
+        
+        Args:
+            overwrite (bool): If True, overwrite source_file. Defaults to False.
+            file (str, optional): Target file path. If None, auto-generates
+                next available filename (name_1.ggb, name_2.ggb, ...).
+        
+        Returns:
+            ggb_construction: Self reference for method chaining.
+            
+        Example:
+            >>> c = ggb_construction().load('circle.ggb')
+            >>> c.save()  # Saves to circle_1.ggb
+            >>> c.save(overwrite=True)  # Overwrites circle.ggb
+            >>> c.save(file='output.ggb')  # Saves to output.ggb
+        
+        Note:
+            getBase64() from the applet may not include non-XML artifacts
+            (thumbnails, etc.) from the original archive. Saving after API
+            changes produces a leaner .ggb file.
+        """
 
         def get_next_revised_filename(filename):
             """
