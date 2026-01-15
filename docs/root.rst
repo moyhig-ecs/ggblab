@@ -21,12 +21,15 @@ A JupyterLab extension for interactive geometric scene construction with Python 
    philosophy.md
    scoping.md
    architecture.md
+   validation_strategy.md
+   scoping_system.md
 
 .. toctree::
    :maxdepth: 2
    :caption: Advanced Topics
 
    sympy_integration.md
+   scoping_implementation.md
 
 .. toctree::
    :maxdepth: 2
