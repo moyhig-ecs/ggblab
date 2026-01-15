@@ -30,7 +30,7 @@ except ImportError:
 from .parser import ggb_parser
 from .construction import ggb_construction
 from .comm import ggb_comm
-from .ggbapplet import GeoGebra
+from .ggbapplet import GeoGebra, GeoGebraSyntaxError, GeoGebraSemanticsError
 
 def _jupyter_labextension_paths():
     """Return the JupyterLab extension paths.

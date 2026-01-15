@@ -9,6 +9,58 @@ from .comm import ggb_comm
 from .construction import ggb_construction
 from .parser import ggb_parser
 
+
+class GeoGebraSyntaxError(Exception):
+    """Exception raised for syntax errors in GeoGebra commands.
+    
+    Raised when a command string cannot be properly tokenized or
+    contains invalid syntax that prevents parsing.
+    
+    Attributes:
+        command (str): The command that caused the error
+        message (str): Explanation of the error
+    """
+    def __init__(self, command, message):
+        self.command = command
+        self.message = message
+        super().__init__(f"Syntax error in command '{command}': {message}")
+
+
+class GeoGebraSemanticsError(Exception):
+    """Exception raised for semantic errors in GeoGebra commands.
+    
+    Raised when a command references objects that don't exist in the applet,
+    or violates other semantic constraints.
+    
+    Current capabilities:
+        - Object existence checking: Verifies referenced objects are present
+          in the applet via getAllObjectNames()
+    
+    Future capabilities (when metadata becomes available):
+        - Type checking: Validate argument types match command signatures
+        - Scope/visibility checking: Ensure objects are in appropriate scope
+        - Overload resolution: Handle commands with multiple signatures
+    
+    Limitations:
+        Complete command validation is not performed because GeoGebra does not
+        maintain a public, versioned, machine-readable command schema. The official
+        GitHub repository is outdated and does not reflect the live API.
+        
+        Strategy: Validation is passive—we check what we can (object existence),
+        then rely on GeoGebra to accept or reject the command. This is more robust
+        than maintaining a potentially incorrect static schema.
+    
+    Attributes:
+        command (str): The command that caused the error
+        message (str): Explanation of the error
+        missing_objects (list, optional): List of referenced but non-existent objects
+    """
+    def __init__(self, command, message, missing_objects=None):
+        self.command = command
+        self.message = message
+        self.missing_objects = missing_objects or []
+        super().__init__(f"Semantics error in command '{command}': {message}")
+
 class GeoGebra:
     """Main interface for controlling GeoGebra applets from Python.
     
@@ -26,12 +78,43 @@ class GeoGebra:
         comm (ggb_comm): Communication layer (initialized after init())
         kernel_id (str): Current Jupyter kernel ID
         app (JupyterFrontEnd): ipylab frontend interface
+        check_syntax (bool): Enable syntax validation for commands (default: False)
+        check_semantics (bool): Enable semantic validation for commands (default: False)
+    
+    Validation Notes:
+        Syntax validation parses GeoGebra command strings using tokenization.
+        
+        Semantic validation currently checks object existence only. A complete
+        schema of available GeoGebra commands is not maintained because:
+        
+        1. **No canonical command schema exists**: GeoGebra's command list is not
+           publicly maintained in a machine-readable format.
+        
+        2. **Official source is outdated**: The public GitHub repository
+           (github.com/geogebra/geogebra) lags behind live GeoGebra versions.
+           Newer APIs like evalCommandGetLabels() are missing from the repo.
+        
+        3. **Dynamic API evolution**: GeoGebra commands and signatures evolve
+           without stable versioning, making static schemas fragile.
+        
+        Strategy: Validation is intentionally passive. We validate that referenced
+        objects exist in the applet, but trust that GeoGebra will accept or reject
+        the command at execution time. Invalid commands will fail gracefully with
+        GeoGebra's error feedback.
+        
+        Future: Semantic validation can extend to type checking or visibility scoping
+        once command metadata is available.
     
     Example:
         >>> ggb = GeoGebra()
         >>> await ggb.init()
         >>> await ggb.command("A=(0,0)")
         >>> result = await ggb.function("getValue", ["A"])
+        
+        >>> # Enable validation
+        >>> ggb.check_syntax = True
+        >>> ggb.check_semantics = True
+        >>> await ggb.command("Circle(A, B)")  # Validates syntax and object existence
     """
     _instance = None
 
@@ -44,6 +127,8 @@ class GeoGebra:
         self.initialized = False
         self.construction = ggb_construction()
         self.parser = ggb_parser()
+        self.check_syntax = False
+        self.check_semantics = False
   
     async def init(self):
         """Initialize the GeoGebra widget and communication channels.
@@ -119,11 +204,53 @@ class GeoGebra:
         Returns:
             dict: Response from GeoGebra (typically includes object label).
             
+        Raises:
+            GeoGebraSyntaxError: If syntax check is enabled and the command has syntax errors.
+            GeoGebraSemanticsError: If semantics check is enabled and referenced objects don't exist.
+            
         Example:
             >>> await ggb.command("A=(0,0)")
             >>> await ggb.command("B=(3,4)")
             >>> await ggb.command("Circle(A, Distance(A, B))")
         """
+        # Syntax check: validate command can be tokenized
+        if self.check_syntax:
+            try:
+                from .parser import tokenize_with_commas
+                tokenize_with_commas(c)
+            except Exception as e:
+                raise GeoGebraSyntaxError(c, str(e))
+        
+        # Semantics check: validate referenced objects exist in applet
+        if self.check_semantics:
+            try:
+                from .parser import tokenize_with_commas, flatten
+                tokens = list(flatten(tokenize_with_commas(c)))
+                # Get all object names from applet
+                all_objects = await self.function("getAllObjectNames")
+                if all_objects is None:
+                    all_objects = []
+                
+                # Filter out non-identifier tokens (operators, numbers, etc.)
+                # Only check tokens that look like object names (start with letter)
+                object_tokens = [t for t in tokens if t and isinstance(t, str) 
+                                and t[0].isalpha() and t != 'true' and t != 'false']
+                
+                # Check if referenced objects exist
+                missing_objects = [obj for obj in object_tokens 
+                                  if obj not in all_objects]
+                
+                if missing_objects:
+                    raise GeoGebraSemanticsError(
+                        c, 
+                        f"Referenced object(s) do not exist in applet: {missing_objects}",
+                        missing_objects
+                    )
+            except GeoGebraSemanticsError:
+                raise
+            except Exception as e:
+                raise GeoGebraSemanticsError(c, f"Validation error: {e}")
+        
         return await self.comm.send_recv({
             "type": "command",
             "payload": c

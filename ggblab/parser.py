@@ -1,4 +1,5 @@
 import re
+import shelve
 import polars as pl
 import networkx as nx
 from copier import Iterable
@@ -17,6 +18,11 @@ class ggb_parser:
     The parse_subgraph() method attempts minimal extraction but has critical
     performance limitations (see method docstring and ARCHITECTURE.md).
     
+    Command tracking:
+    - Automatically tracks GeoGebra commands extracted from construction protocols
+    - Persists command names to a shelve database for learning/caching
+    - Supports enable/disable of persistence
+    
     Attributes:
         df (polars.DataFrame): Construction protocol dataframe
         G (nx.DiGraph): Full dependency graph
@@ -25,6 +31,8 @@ class ggb_parser:
         leaves (list): Terminal objects (out-degree = 0)
         rd (dict): Reverse mapping from object name to DataFrame row number
         ft (dict): Tokenized function definitions, flattened
+        command_cache (shelve.DbfilenameShelf): Persistent command database
+        cache_enabled (bool): Enable/disable automatic persistence
     
     Example:
         >>> parser = ggb_parser()
@@ -32,6 +40,7 @@ class ggb_parser:
         >>> parser.parse()
         >>> print(parser.roots)  # Independent objects
         >>> print(parser.leaves)  # Terminal constructions
+        >>> parser.get_known_commands()  # Retrieve cached commands
     
     See:
         docs/architecture.md § Dependency Parser Architecture
@@ -40,8 +49,22 @@ class ggb_parser:
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "polygon", "triangle", "quadrilateral"]
 
-    def __init__(self):
-        pass
+    def __init__(self, cache_path=None, cache_enabled=True):
+        """Initialize the parser with optional command caching.
+        
+        Args:
+            cache_path (str, optional): Path to shelve database for command persistence.
+                                       Defaults to '.ggblab_command_cache' in current directory.
+            cache_enabled (bool): Enable automatic persistence of discovered commands.
+                                 Default: True
+        """
+        self.cache_enabled = cache_enabled
+        self.cache_path = cache_path or '.ggblab_command_cache'
+        
+        # Initialize command cache (shelve is opened lazily on first use)
+        self.command_cache = None
+        if self.cache_enabled:
+            self._open_cache()
 
     def parse(self):
         """Build the full dependency graph (G) from construction protocol.
@@ -59,6 +82,8 @@ class ggb_parser:
             - self.rd: Reverse dict (name → DataFrame row index)
             - self.ft: Tokenized function calls for each object
         
+        Also extracts and persists command names if caching is enabled.
+        
         Example:
             >>> parser.df = polars.DataFrame(construction_protocol)
             >>> parser.parse()
@@ -70,6 +95,13 @@ class ggb_parser:
         # tokenized function, flattened
         self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
                    for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
+
+        # Extract and cache command names from all commands in the dataframe
+        if self.cache_enabled:
+            for command_str in self.df["Command"]:
+                if command_str:
+                    result = tokenize_with_commas(command_str, extract_commands=True)
+                    self._cache_commands(result['commands'])
 
         # graph in forward/backward dependency
         # self.graph  = {k: self.ffd(k) for k in self.df.filter(pl.col("Type") != "text")["Name"]}
@@ -91,6 +123,72 @@ class ggb_parser:
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
+    
+    def _open_cache(self):
+        """Open the shelve database for command persistence."""
+        try:
+            self.command_cache = shelve.open(self.cache_path)
+        except Exception as e:
+            print(f"Warning: Could not open command cache at {self.cache_path}: {e}")
+            self.command_cache = None
+    
+    def _cache_commands(self, commands):
+        """Store discovered command names in the persistent cache.
+        
+        Args:
+            commands (set or iterable): Command names to cache (e.g., {'Circle', 'Point'})
+        """
+        if not self.cache_enabled or self.command_cache is None:
+            return
+        
+        for cmd in commands:
+            if cmd:  # Skip empty strings
+                try:
+                    # Track command with count
+                    count = self.command_cache.get(cmd, 0)
+                    self.command_cache[cmd] = count + 1
+                    self.command_cache.sync()
+                except Exception as e:
+                    print(f"Warning: Could not cache command '{cmd}': {e}")
+    
+    def get_known_commands(self):
+        """Retrieve all cached command names from persistent storage.
+        
+        Returns:
+            dict: Command names mapped to usage counts.
+            
+        Example:
+            >>> commands = parser.get_known_commands()
+            >>> print(commands)  # {'Circle': 5, 'Point': 10, 'Distance': 3}
+        """
+        if not self.cache_enabled or self.command_cache is None:
+            return {}
+        
+        try:
+            return dict(self.command_cache)
+        except Exception as e:
+            print(f"Warning: Could not retrieve cached commands: {e}")
+            return {}
+    
+    def clear_command_cache(self):
+        """Clear all cached commands from persistent storage."""
+        if not self.cache_enabled or self.command_cache is None:
+            return
+        
+        try:
+            self.command_cache.clear()
+            self.command_cache.sync()
+        except Exception as e:
+            print(f"Warning: Could not clear command cache: {e}")
+    
+    def close_cache(self):
+        """Close the command cache. Should be called on cleanup."""
+        if self.command_cache is not None:
+            try:
+                self.command_cache.close()
+                self.command_cache = None
+            except Exception as e:
+                print(f"Warning: Could not close command cache: {e}")
     
     def parse_subgraph(self):
         """
@@ -266,7 +364,7 @@ class ggb_parser:
         else:
             return []
 
-def tokenize_with_commas(cmd_string):  #, regexp=False
+def tokenize_with_commas(cmd_string, extract_commands=False):  #, regexp=False
     """Tokenize a GeoGebra command string into a structured list representation.
     
     Parses a mathematical or GeoGebra-like command string and converts it into
@@ -276,10 +374,25 @@ def tokenize_with_commas(cmd_string):  #, regexp=False
     
     Args:
         cmd_string (str): Input command string (e.g., "Circle(A, Distance(A, B))").
+        extract_commands (bool, optional): If True, also extract command name candidates
+                                          (tokens preceding '(' or '['). Returns a dict
+                                          with 'tokens' and 'commands' keys. If False
+                                          (default), returns only the token list for
+                                          backward compatibility. Default: False
+        # regexp (bool, optional): Future feature - if True, replace object references
+        #                          with abstract labels like ${0}, ${1}, etc. based on
+        #                          generation order in the construction protocol.
+        #                          This is useful because GeoGebra applets may rename
+        #                          objects at runtime, but the generation order remains
+        #                          stable within a construction. Not yet implemented.
     
     Returns:
-        list: Nested list structure with tokens. Parentheses/brackets create
-              nested lists; commas are preserved as ',' tokens.
+        list or dict: 
+            - If extract_commands=False (default): Nested list structure with tokens.
+              Parentheses/brackets create nested lists; commas are preserved as ','.
+            - If extract_commands=True: Dict with keys:
+              - 'tokens': Nested list structure (as above)
+              - 'commands': Set of command name candidates (tokens preceding '(' or '[')
     
     Raises:
         ValueError: If parentheses/brackets are mismatched.
@@ -288,44 +401,73 @@ def tokenize_with_commas(cmd_string):  #, regexp=False
         >>> tokenize_with_commas("Circle(A, 2)")
         ['Circle', ['A', ',', '2']]
         
+        >>> tokenize_with_commas("Circle(A, 2)", extract_commands=True)
+        {'tokens': ['Circle', ['A', ',', '2']], 'commands': {'Circle'}}
+        
         >>> tokenize_with_commas("Distance(Point(1, 2), B)")
         ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
+        
+        >>> tokenize_with_commas("Distance(Point(1, 2), B)", extract_commands=True)
+        {'tokens': ['Distance', [['Point', ['1', ',', '2']], ',', 'B']], 'commands': {'Distance', 'Point'}}
     
     Note:
-        Empty or non-string input returns an empty list without raising an error.
+        Empty or non-string input returns an empty list (or empty dict if
+        extract_commands=True) without raising an error.
+        
+        Future (regexp parameter): When implemented, would enable stable object
+        references by using construction order indices instead of runtime labels.
+        Example output: ['Circle', ['${0}', ',', '${1}']] if regexp=True
+        and the objects were the 0th and 1st in the protocol.
     """
     if not cmd_string or not isinstance(cmd_string, str):
         # raise ValueError("Input must be a non-empty string.")
+        if extract_commands:
+            return {'tokens': [], 'commands': set()}
         return []
 
     # Regex pattern to match (1) parentheses, (2) commas, or (3) any sequence of non-spacing characters.
     tokens = re.findall(r'[()\[\],]|[^()\[\]\s,]+', cmd_string)
 
     stack = [[]]
+    commands = set() if extract_commands else None
+    prev_token = None
+
     for token in tokens:
         if token in ['(', '[']:
+            # If extracting commands and previous token looks like a command name, save it
+            if extract_commands and prev_token and isinstance(prev_token, str) and prev_token[0].isalpha():
+                commands.add(prev_token)
             # Begin a new nested list
             new_list = []
             stack[-1].append(new_list)
             stack.append(new_list)
+            prev_token = None
         elif token in [')', ']']:
             # Close an active nested list
             if len(stack) > 1:
                 stack.pop()
             else:
                 raise ValueError("Mismatched parentheses/brackets in input string.")
+            prev_token = None
         elif token == ',':
             # Treat commas as tokens
             stack[-1].append(',')
+            prev_token = None
         else:
             # Normal token gets added to the current list
-            # if regexp and token in rd:
-            #     token = f"${rd[token]}"
+            # Future: if regexp and token in rd:
+            #     token = f"${rd[token]}"  # Replace with abstract order-based label
             stack[-1].append(token)
+            prev_token = token
 
     if len(stack) != 1:
         raise ValueError("Mismatched parentheses/brackets in input string.")
+    
+    if extract_commands:
+        return {'tokens': stack[0], 'commands': commands}
     return stack[0]
+
+
 
 
 def reconstruct_from_tokens(parsed_tokens):
