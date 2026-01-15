@@ -58,7 +58,7 @@ Construct:
   - Triangle ABC       [Scope 4: depends on A, B, C]
   
 Property to prove:
-  - Triangle ABC is isosceles  [Verification scope: accesses A, B, C, M, L]
+  - Triangle ABC is isosceles  [Verification scope: accesses A, B, C, M, L] 
 ```
 
 **This is a scoping hierarchy**:

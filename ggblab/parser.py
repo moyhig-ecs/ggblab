@@ -1,9 +1,10 @@
 import re
-import shelve
 import polars as pl
 import networkx as nx
-from copier import Iterable
 from itertools import combinations, chain
+from .persistent_counter import PersistentCounter
+from .utils import flatten
+
 
 class ggb_parser:
     """Dependency graph parser for GeoGebra constructions.
@@ -58,11 +59,8 @@ class ggb_parser:
             cache_enabled (bool): Enable automatic persistence of discovered commands.
                                  Default: True
         """
-        self.cache_enabled = cache_enabled
-        self.cache_path = cache_path or '.ggblab_command_cache'
-        self.command_cache = None
-        if self.cache_enabled:
-            self._open_cache()
+        cache_path = cache_path or '.ggblab_command_cache'
+        self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
 
     def parse(self):
         """Build the full dependency graph (G) from construction protocol.
@@ -91,15 +89,14 @@ class ggb_parser:
         self.rd = {v: k for k, v in enumerate(self.df["Name"])}
 
         # tokenized function, flattened
-        self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
+        self.ft = {n: list([e for e in flatten(self.tokenize_with_commas(c)) if e != ','])
                    for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
 
         # Extract and cache command names from all commands in the dataframe
-        if self.cache_enabled:
-            for command_str in self.df["Command"]:
-                if command_str:
-                    result = tokenize_with_commas(command_str, extract_commands=True)
-                    self._cache_commands(result['commands'])
+        for command_str in self.df["Command"]:
+            if command_str:
+                result = self.tokenize_with_commas(command_str, extract_commands=True)
+                self.command_cache.increment(result['commands'])
 
         # graph in forward/backward dependency
         # self.graph  = {k: self.ffd(k) for k in self.df.filter(pl.col("Type") != "text")["Name"]}
@@ -121,72 +118,6 @@ class ggb_parser:
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
-    
-    def _open_cache(self):
-        """Open the shelve database for command persistence."""
-        try:
-            self.command_cache = shelve.open(self.cache_path)
-        except Exception as e:
-            print(f"Warning: Could not open command cache at {self.cache_path}: {e}")
-            self.command_cache = None
-    
-    def _cache_commands(self, commands):
-        """Store discovered command names in the persistent cache.
-        
-        Args:
-            commands (set or iterable): Command names to cache (e.g., {'Circle', 'Point'})
-        """
-        if not self.cache_enabled or self.command_cache is None:
-            return
-        
-        for cmd in commands:
-            if cmd:  # Skip empty strings
-                try:
-                    # Track command with count
-                    count = self.command_cache.get(cmd, 0)
-                    self.command_cache[cmd] = count + 1
-                    self.command_cache.sync()
-                except Exception as e:
-                    print(f"Warning: Could not cache command '{cmd}': {e}")
-    
-    def get_known_commands(self):
-        """Retrieve all cached command names from persistent storage.
-        
-        Returns:
-            dict: Command names mapped to usage counts.
-            
-        Example:
-            >>> commands = parser.get_known_commands()
-            >>> print(commands)  # {'Circle': 5, 'Point': 10, 'Distance': 3}
-        """
-        if not self.cache_enabled or self.command_cache is None:
-            return {}
-        
-        try:
-            return dict(self.command_cache)
-        except Exception as e:
-            print(f"Warning: Could not retrieve cached commands: {e}")
-            return {}
-    
-    def clear_command_cache(self):
-        """Clear all cached commands from persistent storage."""
-        if not self.cache_enabled or self.command_cache is None:
-            return
-        
-        try:
-            self.command_cache.clear()
-            self.command_cache.sync()
-        except Exception as e:
-            print(f"Warning: Could not clear command cache: {e}")
-    
-    def close_cache(self):
-        """Close the command cache. Should be called on cleanup."""
-        if self.command_cache is not None:
-            try:
-                self.command_cache.close()
-                self.command_cache = None
-            except Exception as e:
-                print(f"Warning: Could not close command cache: {e}")
     
     def parse_subgraph(self):
         """
@@ -362,196 +293,165 @@ class ggb_parser:
         else:
             return []
 
-def tokenize_with_commas(cmd_string, extract_commands=False):  #, regexp=False
-    """Tokenize a GeoGebra command string into a structured list representation.
-    
-    Parses a mathematical or GeoGebra-like command string and converts it into
-    a nested list structure that preserves parentheses, brackets, and commas.
-    This is useful for analyzing GeoGebra command syntax and extracting object
-    dependencies.
-    
-    Args:
-        cmd_string (str): Input command string (e.g., "Circle(A, Distance(A, B))").
-        extract_commands (bool, optional): If True, also extract command name candidates
-                                          (tokens preceding '(' or '['). Returns a dict
-                                          with 'tokens' and 'commands' keys. If False
-                                          (default), returns only the token list for
-                                          backward compatibility. Default: False
-        # regexp (bool, optional): Future feature - if True, replace object references
-        #                          with abstract labels like ${0}, ${1}, etc. based on
-        #                          generation order in the construction protocol.
-        #                          This is useful because GeoGebra applets may rename
-        #                          objects at runtime, but the generation order remains
-        #                          stable within a construction. Not yet implemented.
-    
-    Returns:
-        list or dict: 
-            - If extract_commands=False (default): Nested list structure with tokens.
-              Parentheses/brackets create nested lists; commas are preserved as ','.
-            - If extract_commands=True: Dict with keys:
-              - 'tokens': Nested list structure (as above)
-              - 'commands': Set of command name candidates (tokens preceding '(' or '[')
-    
-    Raises:
-        ValueError: If parentheses/brackets are mismatched.
-    
-    Examples:
-        >>> tokenize_with_commas("Circle(A, 2)")
-        ['Circle', ['A', ',', '2']]
+    def tokenize_with_commas(self, cmd_string, extract_commands=False):  # register_expr=False
+        """Tokenize a GeoGebra command string into a structured list representation.
         
-        >>> tokenize_with_commas("Circle(A, 2)", extract_commands=True)
-        {'tokens': ['Circle', ['A', ',', '2']], 'commands': {'Circle'}}
+        Parses a mathematical or GeoGebra-like command string and converts it into
+        a nested list structure that preserves parentheses, brackets, and commas.
+        This is useful for analyzing GeoGebra command syntax and extracting object
+        dependencies.
         
-        >>> tokenize_with_commas("Distance(Point(1, 2), B)")
-        ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
+        Args:
+            cmd_string (str): Input command string (e.g., "Circle(A, Distance(A, B))").
+            extract_commands (bool, optional): If True, also extract command name candidates
+                                              (tokens preceding '(' or '['). Returns a dict
+                                              with 'tokens' and 'commands' keys. If False
+                                              (default), returns only the token list for
+                                              backward compatibility. Default: False
+            # register_expr (bool, optional): Future feature - if True, replace object references
+            #                          with abstract labels like ${0}, ${1}, etc. based on
+            #                          generation order in the construction protocol.
+            #                          This is useful because GeoGebra applets may rename
+            #                          objects at runtime, but the generation order remains
+            #                          stable within a construction. Not yet implemented.
         
-        >>> tokenize_with_commas("Distance(Point(1, 2), B)", extract_commands=True)
-        {'tokens': ['Distance', [['Point', ['1', ',', '2']], ',', 'B']], 'commands': {'Distance', 'Point'}}
-    
-    Note:
-        Empty or non-string input returns an empty list (or empty dict if
-        extract_commands=True) without raising an error.
+        Returns:
+            list or dict: 
+                - If extract_commands=False (default): Nested list structure with tokens.
+                  Parentheses/brackets create nested lists; commas are preserved as ','.
+                - If extract_commands=True: Dict with keys:
+                  - 'tokens': Nested list structure (as above)
+                  - 'commands': Set of command name candidates (tokens preceding '(' or '[')
         
-        Future (regexp parameter): When implemented, would enable stable object
-        references by using construction order indices instead of runtime labels.
-        Example output: ['Circle', ['${0}', ',', '${1}']] if regexp=True
-        and the objects were the 0th and 1st in the protocol.
-    """
-    if not cmd_string or not isinstance(cmd_string, str):
-        # raise ValueError("Input must be a non-empty string.")
-        if extract_commands:
-            return {'tokens': [], 'commands': set()}
-        return []
-
-    # Regex pattern to match (1) parentheses, (2) commas, or (3) any sequence of non-spacing characters.
-    tokens = re.findall(r'[()\[\],]|[^()\[\]\s,]+', cmd_string)
-
-    stack = [[]]
-    commands = set() if extract_commands else None
-    prev_token = None
-
-    for token in tokens:
-        if token in ['(', '[']:
-            # If extracting commands and previous token looks like a command name, save it
-            if extract_commands and prev_token and isinstance(prev_token, str) and prev_token[0].isalpha():
-                commands.add(prev_token)
-            # Begin a new nested list
-            new_list = []
-            stack[-1].append(new_list)
-            stack.append(new_list)
-            prev_token = None
-        elif token in [')', ']']:
-            # Close an active nested list
-            if len(stack) > 1:
-                stack.pop()
-            else:
-                raise ValueError("Mismatched parentheses/brackets in input string.")
-            prev_token = None
-        elif token == ',':
-            # Treat commas as tokens
-            stack[-1].append(',')
-            prev_token = None
-        else:
-            # Normal token gets added to the current list
-            # Future: if regexp and token in rd:
-            #     token = f"${rd[token]}"  # Replace with abstract order-based label
-            stack[-1].append(token)
-            prev_token = token
-
-    if len(stack) != 1:
-        raise ValueError("Mismatched parentheses/brackets in input string.")
-    
-    if extract_commands:
-        return {'tokens': stack[0], 'commands': commands}
-    return stack[0]
-
-
-def reconstruct_from_tokens(parsed_tokens):
-    """Reconstruct the original command string from tokenized structured list.
-    
-    Takes a nested list structure produced by tokenize_with_commas() and
-    reconstructs the original command string with proper parentheses, commas,
-    and spacing.
-    
-    Args:
-        parsed_tokens (list or str): Tokenized structured list, or a single
-                                      token as a string.
-    
-    Returns:
-        str: Reconstructed command string matching the original input structure.
-    
-    Raises:
-        ValueError: If parsed_tokens contains unexpected types.
-    
-    Examples:
-        >>> tokens = ['Circle', ['A', ',', '2']]
-        >>> reconstruct_from_tokens(tokens)
-        'Circle(A, 2)'
+        Raises:
+            ValueError: If parentheses/brackets are mismatched.
         
-        >>> tokens = ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
-        >>> reconstruct_from_tokens(tokens)
-        'Distance(Point(1, 2), B)'
-    
-    Note:
-        This function is the inverse of tokenize_with_commas(). It handles
-        proper spacing around operators and parentheses.
-    """
-    if isinstance(parsed_tokens, str):
-        # If the token is a string, return it directly
-        return parsed_tokens
+        Examples:
+            >>> tokenize_with_commas("Circle(A, 2)")
+            ['Circle', ['A', ',', '2']]
+            
+            >>> tokenize_with_commas("Circle(A, 2)", extract_commands=True)
+            {'tokens': ['Circle', ['A', ',', '2']], 'commands': {'Circle'}}
+            
+            >>> tokenize_with_commas("Distance(Point(1, 2), B)")
+            ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
+            
+            >>> tokenize_with_commas("Distance(Point(1, 2), B)", extract_commands=True)
+            {'tokens': ['Distance', [['Point', ['1', ',', '2']], ',', 'B']], 'commands': {'Distance', 'Point'}}
+        
+        Note:
+            Empty or non-string input returns an empty list (or empty dict if
+            extract_commands=True) without raising an error.
+            
+            Future (register_expr parameter): When implemented, would enable stable object
+            references by using construction order indices instead of runtime labels.
+            Example output: ['Circle', ['${0}', ',', '${1}']] if register_expr=True
+            and the objects were the 0th and 1st in the protocol.
+        """
+        if not cmd_string or not isinstance(cmd_string, str):
+            # raise ValueError("Input must be a non-empty string.")
+            if extract_commands:
+                return {'tokens': [], 'commands': set()}
+            return []
 
-    elif isinstance(parsed_tokens, list):
-        result = []
-        for i, token in enumerate(parsed_tokens):
-            if isinstance(token, list):
-                # For nested lists, recursively reconstruct and wrap in parentheses
-                result.append(f"({reconstruct_from_tokens(token)})")
+        # Regex pattern to match (1) parentheses, (2) commas, or (3) any sequence of non-spacing characters.
+        tokens = re.findall(r'[()\[\],]|[^()\[\]\s,]+', cmd_string)
+
+        stack = [[]]
+        commands = set() if extract_commands else None
+        prev_token = None
+
+        for token in tokens:
+            if token in ['(', '[']:
+                # If extracting commands and previous token looks like a command name, save it
+                if extract_commands and prev_token and isinstance(prev_token, str) and prev_token[0].isalpha():
+                    commands.add(prev_token)
+                # Begin a new nested list
+                new_list = []
+                stack[-1].append(new_list)
+                stack.append(new_list)
+                prev_token = None
+            elif token in [')', ']']:
+                # Close an active nested list
+                if len(stack) > 1:
+                    stack.pop()
+                else:
+                    raise ValueError("Mismatched parentheses/brackets in input string.")
+                prev_token = None
             elif token == ',':
-                # Append a comma directly
-                result.append(',')
+                # Treat commas as tokens
+                stack[-1].append(',')
+                prev_token = None
             else:
-                # For normal tokens, add them to the result list
-                result.append(token)
+                # Normal token gets added to the current list
+                # Future: if register_expr and token in rd:
+                #     token = f"${rd[token]}"  # Replace with abstract order-based label
+                stack[-1].append(token)
+                prev_token = token
 
-        # Reconstruct the final string with proper spacing and joining rules
-        return re.sub(r'^\- ', '-',
-                    re.sub(r'([^+\-*/]) \(', r'\1(',
-                            ' '.join(result).replace(' , ', ', ')))
-    else:
-        raise ValueError("Unexpected token type in parsed_tokens.")
-    
-def flatten(items):
-    """Recursively flatten nested iterables into a flat generator.
-    
-    Takes nested lists, tuples, or other iterables and yields all non-iterable
-    elements in depth-first order. Strings and bytes are treated as atomic
-    elements (not iterated character-by-character).
-    
-    Args:
-        items: An iterable (possibly nested) to flatten, or None.
-    
-    Yields:
-        Non-iterable elements from the input structure.
-    
-    Examples:
-        >>> list(flatten([1, [2, 3], [[4], 5]]))
-        [1, 2, 3, 4, 5]
+        if len(stack) != 1:
+            raise ValueError("Mismatched parentheses/brackets in input string.")
         
-        >>> list(flatten(['a', ['b', 'c'], 'd']))
-        ['a', 'b', 'c', 'd']
+        # Auto-cache commands if extract_commands is True
+        if extract_commands and commands:
+            self.command_cache.increment(commands)
+            return {'tokens': stack[0], 'commands': commands}
         
-        >>> list(flatten([1, [2, [3, [4]]]]))
-        [1, 2, 3, 4]
-    
-    Note:
-        This is particularly useful for flattening tokenized command structures
-        to extract all object names referenced in a GeoGebra construction.
-    """
-    if items is None:
-        return
-    for x in items:
-        # イテラブルだが、strではない場合、再帰的に処理
-        if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
-            yield from flatten(x)
+        return stack[0]
+
+    def reconstruct_from_tokens(self, parsed_tokens):
+        """Reconstruct the original command string from tokenized structured list.
+        
+        Takes a nested list structure produced by tokenize_with_commas() and
+        reconstructs the original command string with proper parentheses, commas,
+        and spacing.
+        
+        Args:
+            parsed_tokens (list or str): Tokenized structured list, or a single
+                                          token as a string.
+        
+        Returns:
+            str: Reconstructed command string matching the original input structure.
+        
+        Raises:
+            ValueError: If parsed_tokens contains unexpected types.
+        
+        Examples:
+            >>> parser.reconstruct_from_tokens(['Circle', ['A', ',', '2']])
+            'Circle(A, 2)'
+            
+            >>> parser.reconstruct_from_tokens(['Distance', [['Point', ['1', ',', '2']], ',', 'B']])
+            'Distance(Point(1, 2), B)'
+        
+        Note:
+            This function is the inverse of tokenize_with_commas(). It handles
+            proper spacing around operators and parentheses.
+            
+            The 'register_expr' parameter (commented out) was intended for register expressions,
+            where applet-assigned labels could be replaced with construction-order-based
+            abstract expressions like '${n}', since GeoGebra may reassign object labels
+            but construction order remains stable.
+        """
+        if isinstance(parsed_tokens, str):
+            # If the token is a string, return it directly
+            return parsed_tokens
+
+        elif isinstance(parsed_tokens, list):
+            result = []
+            for i, token in enumerate(parsed_tokens):
+                if isinstance(token, list):
+                    # For nested lists, recursively reconstruct and wrap in parentheses
+                    result.append(f"({self.reconstruct_from_tokens(token)})")
+                elif token == ',':
+                    # Append a comma directly
+                    result.append(',')
+                else:
+                    # For normal tokens, add them to the result list
+                    result.append(token)
+
+            # Reconstruct the final string with proper spacing and joining rules
+            return re.sub(r'^\- ', '-',
+                        re.sub(r'([^+\-*/]) \(', r'\1(',
+                                ' '.join(result).replace(' , ', ', ')))
         else:
-            yield x
+            raise ValueError("Unexpected token type in parsed_tokens.")

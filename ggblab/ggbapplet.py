@@ -7,7 +7,7 @@ from ipylab import JupyterFrontEnd
 
 from .comm import ggb_comm
 from .construction import ggb_construction
-from .parser import ggb_parser, tokenize_with_commas, flatten
+from .parser import ggb_parser
 
 
 class GeoGebraSyntaxError(Exception):
@@ -222,14 +222,14 @@ class GeoGebra:
         # Syntax check: validate command can be tokenized
         if self.check_syntax:
             try:
-                tokenize_with_commas(c)
+                self.parser.tokenize_with_commas(c)
             except Exception as e:
                 raise GeoGebraSyntaxError(c, str(e))
         
         # Semantics check: validate referenced objects exist in applet
         if self.check_semantics:
             try:
-                tokens = list(flatten(tokenize_with_commas(c)))
+                tokens = list(self.parser.flatten(self.parser.tokenize_with_commas(c)))
                 # Filter tokens that look like object names (start with letter)
                 object_tokens = [t for t in tokens if t and isinstance(t, str) 
                                 and t[0].isalpha() and t not in ('true', 'false')]
