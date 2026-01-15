@@ -100,6 +100,25 @@ class ggb_comm:
                 _data = json.loads(msg)
                 _id = _data.get('id')
               # self.logs.append(f"Received message from client: {_id}")
+                
+                # REFACTOR: Route event-type messages to recv_events queue
+                # Currently recv_events is populated from IPython Comm handle_recv(),
+                # which blocks during cell execution. This prevents real-time error
+                # event processing.
+                #
+                # Fix strategy:
+                # 1. Frontend widget.tsx should mark event messages with a flag or
+                #    use id=null for non-response events (e.g., {'type': 'Error', 'payload': '...', 'id': null})
+                # 2. Route based on id presence:
+                #    - if _id and _id in pending_requests: self.recv_logs[_id] = response
+                #    - if not _id or event: self.recv_events.put(message)
+                # 3. Remove event routing from handle_recv() below
+                #
+                # This enables:
+                # - Real-time error capture during cell execution
+                # - Dynamic scope learning from Applet error events
+                # - Cross-domain error pattern analysis
+                
                 self.recv_logs[_id] = _data['payload']
         except Exception as e:
             pass
@@ -135,6 +154,20 @@ class ggb_comm:
         else:
             _data = msg['content']['data']
         # _id = _data.get('id')
+        
+        # REFACTOR: Move event routing to out-of-band socket (client_handle)
+        # This code currently routes non-response events to recv_events via IPython Comm.
+        # However, IPython Comm cannot receive messages during cell execution, which blocks
+        # real-time error event processing.
+        #
+        # After refactor:
+        # - Events should be sent via out-of-band socket instead
+        # - This method should be reserved for responses (messages with id)
+        # - See client_handle() refactoring notes for implementation strategy
+        #
+        # TODO: Once frontend widget.tsx is updated to send events via out-of-band socket,
+        #       remove this condition and assume all messages here are responses.
+        
         if 'id' not in _data:
             self.recv_events.put(_data)
         # if self.mid and self.mid == _id:
