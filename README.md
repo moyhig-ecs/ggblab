@@ -4,6 +4,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
+[![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
 
 ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
 
@@ -29,6 +30,16 @@ ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab 
 pip install ggblab
 jupyter labextension list | grep ggblab
 ```
+
+#### Cloud/JupyterHub Support
+
+This JupyterLab extension supports both local installs and managed cloud deployments:
+
+- Managed JupyterHub on Kubernetes: install via `pip install ggblab` only — no manual labextension build steps required.
+- All communication concerns are addressed and validated in cloud environments (IPython Comm + out-of-band sockets).
+- End users on JupyterHub can use the extension immediately after `pip install`; developers can follow the Development Workflow for local builds.
+
+For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-deployment) section.
 
 Uninstall:
 
@@ -65,7 +76,7 @@ ggblab's design philosophy and implementation details are documented across seve
 
 **Full documentation available at**: https://ggblab.readthedocs.io/
 
-Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
+Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md) or [philosophy.md](docs/philosophy.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
 
 ### Core Documentation
 
@@ -98,6 +109,12 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
   - Version targets (v0.7.3 - v1.0+) with concrete implementation tasks
   - Blocking issues and dependency tracking
   - Quick-fix vs. long-term architectural improvements
+
+- **[ai_assessment.md](docs/ai_assessment.md)** - Independent AI evaluation of project quality and direction
+  - Comprehensive strengths and weaknesses analysis
+  - Technical, educational, and practical usability assessment
+  - Recommended actions and prioritization guidance
+  - Critical questions for project sustainability
 
 ### Advanced Integration
 
@@ -134,10 +151,7 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 - Sample notebook: [examples/example.ipynb](examples/example.ipynb)
 - Demo video:
 
-<video src="https://github.com/user/repo/assets/example.mov" controls width="100%">
-  <source src="examples/example.mov" type="video/quicktime">
-  Your browser does not support the video tag. Please <a href="examples/example.mov">download the video</a> directly.
-</video>
+![Demo video](https://github.com/user-attachments/assets/b02122bb-7fdd-42ac-bb53-9d58ab288973)
 
 Run steps:
 
@@ -337,6 +351,31 @@ This dual-channel approach ensures that interactive operations (e.g., retrieving
 
 See [architecture.md](docs/architecture.md) for detailed design rationale and implementation notes.
 
+##### Architecture Diagram
+
+```mermaid
+flowchart TB
+   subgraph Browser
+      FE[JupyterLab Frontend + GeoGebra Applet]
+   end
+   subgraph Server
+      K[Python Kernel]
+      S[Socket Bridge (Unix/TCP WebSocket)]
+   end
+   FE -- "IPython Comm (WebSocket)\nvia JupyterHub proxy" --> K
+   FE -- "Out-of-band socket (transient)" --> S
+   S --- K
+   FE -. "GeoGebra asset" .-> CDN[cdn.geogebra.org/apps/deployggb.js]
+```
+
+#### Security & Compatibility
+
+- Reverse proxy-friendly: Operates over JupyterLab's IPython Comm/WebSocket within the platform's auth/CSRF boundaries.
+- CORS-aware CDN: GeoGebra is loaded from `https://cdn.geogebra.org/apps/deployggb.js` as a static asset; no cross-origin API calls from the browser beyond this script.
+- Same-origin messaging: Kernel↔widget interactions remain within Jupyter's origin; no custom headers or cookies required.
+- Optional socket bridge: Transient Unix/TCP bridge opens per transaction and closes immediately to avoid long-lived external listeners; improves responsiveness during cell execution.
+- JupyterHub readiness: Validated in managed JupyterHub (Kubernetes) behind reverse proxies.
+
 #### Error Handling and Limitations
 
 **Primary channel (IPython Comm)**: Error handling is managed automatically by Jupyter/JupyterHub infrastructure. Connection failures are detected and handled transparently; kernel status is visible in the JupyterLab UI.
@@ -458,7 +497,7 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
    - Reduce time complexity from $O(2^n)$ to $O(n(n+m))$
    - Support arbitrary N-ary dependencies (not limited to 2 parents)
    - Eliminate infinite loop risk through deterministic algorithm
-   - See [ARCHITECTURE.md § Dependency Parser Architecture](ARCHITECTURE.md#dependency-parser-architecture) for detailed design
+   - See [architecture.md § Dependency Parser Architecture](docs/architecture.md#dependency-parser-architecture) for detailed design
 
 3. **Advanced Features**
    - **Multi-panel support**: Allow multiple GeoGebra instances in different notebook cells
@@ -512,3 +551,64 @@ For major changes, please open an issue first to discuss.
 ### License
 
 BSD-3-Clause
+
+## Cloud Deployment
+
+This section outlines how to deploy and operate ggblab in common cloud setups. ggblab is a prebuilt JupyterLab 4 federated extension packaged in Python, so cloud installs typically require only `pip install ggblab`.
+
+### JupyterHub (Kubernetes)
+
+- Image bake (recommended): Add ggblab to your single-user image.
+
+   ```dockerfile
+   FROM quay.io/jupyter/base-notebook:latest
+   RUN pip install --no-cache-dir ggblab
+   ```
+
+- Runtime install (quick test): From a user session terminal, install and restart the server.
+
+   ```bash
+   pip install -U ggblab
+   jupyter labextension list | grep ggblab
+   # Stop the server from the menu or via Control Panel, then start again
+   ```
+
+- Notes:
+   - No Node.js or `jlpm build` is required in cloud environments; the extension is prebuilt and registered via Python packaging.
+   - Verify installation with `jupyter labextension list` — ggblab should appear as enabled and OK.
+   - If users share a base image, prefer baking ggblab into the image to avoid per-user installs.
+
+#### Admin Tips (JupyterHub)
+
+- Prefer image bake: reduce per-user variance and avoid cold-start installs.
+- Restart single-user servers after runtime install: use Control Panel or admin culling to ensure extension loads.
+- Ensure same environment: `pip` must target the environment used by `jupyter lab` (check `which jupyter` and `python -m site`).
+- Allow egress to GeoGebra CDN: whitelist `cdn.geogebra.org` in cluster/network policies.
+- Monitor logs: check Hub and single-user server logs for proxy/WebSocket errors during Comm operations.
+- Version pinning: bake a specific ggblab version in images; use `pip install -U ggblab` only when you intentionally roll forward.
+- Dev vs prod: reserve `pip install -e ".[dev]"` for development images; production should use pinned releases.
+- No inbound ports: the out-of-band socket bridge is transient and initiated from the kernel; no extra public ports need exposure.
+
+
+
+### Generic Cloud VM
+
+- Install in your environment and start JupyterLab:
+
+   ```bash
+   pip install ggblab
+   jupyter lab
+   ```
+
+### Troubleshooting
+
+- Extension not visible:
+   - Confirm JupyterLab >= 4 and that you are installing into the same environment used by JupyterLab.
+   - Run `jupyter labextension list` to verify ggblab is enabled.
+   - Fully restart JupyterLab; a simple browser refresh may not load new extensions.
+- Network/CDN restrictions:
+   - ggblab loads GeoGebra from `https://cdn.geogebra.org/apps/deployggb.js`. Ensure your cluster egress policy allows this domain.
+- Communication checks:
+   - ggblab uses IPython Comm and an optional socket bridge. These work in managed JupyterHub environments; if you see timeouts, check proxy/network policies and consider increasing operation timeouts.
+
+For detailed deployment guidance, environment checks, common pitfalls, and verification steps, see [docs/cloud-deployment-guide.md](docs/cloud-deployment-guide.md).

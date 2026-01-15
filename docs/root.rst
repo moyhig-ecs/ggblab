@@ -34,10 +34,10 @@ A JupyterLab extension for interactive geometric scene construction with Python 
 
    api
 
-.. .. toctree::
-..    :maxdepth: 1
-..    :caption: Development
+.. toctree::
+   :maxdepth: 1
+   :caption: Development
 
-..    README.md
-..    TODO.md
+   ai_assessment.md
+   testing.md
 
