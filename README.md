@@ -139,11 +139,11 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 
 | Document | Primary Audience | Key Insight |
 |----------|-----------------|-------------|
-| **SCOPING.md** | Educators, Students | Geometric construction teaches programming scoping |
-| **PHILOSOPHY.md** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
-| **SYMPY_INTEGRATION.md** | Math/CS Instructors | Symbolic proof + code generation + manim export |
-| **ARCHITECTURE.md** | Developers | Dual-channel communication; parser needs v1.0 redesign |
-| **TODO.md** | Contributors | Concrete next steps prioritized by learning value |
+| **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
+| **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
+| **[docs/sympy_integration.md](docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
+| **[docs/architecture.md](docs/architecture.md)** | Developers | Dual-channel communication; parser needs v1.0 redesign |
+| **[TODO.md](TODO.md)** | Contributors | Concrete next steps prioritized by learning value |
 | **[API Reference](https://ggblab.readthedocs.io/en/latest/api.html)** | Developers | Complete Python API documentation |
 
 ### Examples
@@ -360,7 +360,7 @@ flowchart TB
    end
    subgraph Server
       K[Python Kernel]
-      S[Socket Bridge (Unix/TCP WebSocket)]
+      S["Socket Bridge (Unix or TCP WebSocket)"]
    end
    FE -- "IPython Comm (WebSocket)\nvia JupyterHub proxy" --> K
    FE -- "Out-of-band socket (transient)" --> S
