@@ -65,7 +65,7 @@ utilities that every developer needs. Here are some legitimate complaints:
    
    If you introduce a feature, TEACH IT. Otherwise, what's the point?
 
-End rant. Now, the actual utilities:
+Now, the actual utilities:
 """
 
 from collections.abc import Iterable

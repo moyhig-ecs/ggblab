@@ -159,6 +159,52 @@ class GeoGebra:
             self._initialized = True
         return self
     
+    def _is_literal(self, token):
+        """Check if token is a literal value (number, string, boolean, math function).
+        
+        Literals should not be validated as object references. This includes:
+        - Numeric literals: 2, 3.14, -5, 1e-3
+        - String literals: "text", 'string'
+        - Boolean constants: true, false
+        - Math functions: sin, cos, sqrt, etc.
+        
+        Args:
+            token: Token to check
+            
+        Returns:
+            bool: True if token is a literal, False if it could be an object reference
+        """
+        if not isinstance(token, str) or not token:
+            return True
+        
+        # Numeric literals (integers, decimals, scientific notation)
+        try:
+            float(token)
+            return True
+        except ValueError:
+            pass
+        
+        # String literals (quoted)
+        if token[0] in ('"', "'"):
+            return True
+        
+        # Boolean constants
+        if token in ('true', 'false'):
+            return True
+        
+        # Common GeoGebra/math functions
+        math_functions = {
+            'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+            'sinh', 'cosh', 'tanh',
+            'sqrt', 'abs', 'log', 'ln', 'log10', 'exp',
+            'floor', 'ceil', 'round', 'sgn',
+            'random', 'min', 'max', 'sum', 'mean',
+        }
+        if token in math_functions:
+            return True
+        
+        return False
+    
     async def refresh_object_cache(self):
         """Refresh the cached set of known objects from the applet.
         
@@ -229,10 +275,16 @@ class GeoGebra:
         # Semantics check: validate referenced objects exist in applet
         if self.check_semantics:
             try:
-                tokens = list(self.parser.flatten(self.parser.tokenize_with_commas(c)))
-                # Filter tokens that look like object names (start with letter)
-                object_tokens = [t for t in tokens if t and isinstance(t, str) 
-                                and t[0].isalpha() and t not in ('true', 'false')]
+                # Refresh object cache before checking
+                await self.refresh_object_cache()
+                
+                # Extract object tokens: tokens in the flattened structure that are
+                # not commands (not in command_cache), not commas, and not literals
+                t = self.parser.tokenize_with_commas(c)
+                object_tokens = [o for o in self.parser.flatten(t) 
+                                if o not in self.parser.command_cache 
+                                and o != ","
+                                and not self._is_literal(o)]
                 
                 # Check if referenced objects exist
                 missing_objects = [obj for obj in object_tokens 
@@ -253,6 +305,23 @@ class GeoGebra:
             "type": "command",
             "payload": c
         })
+        
+        # FUTURE: Error event queue processing for enhanced scope learning
+        # After command execution, GeoGebra appends error events to self.comm.recv_events.queue:
+        #   {'type': 'Error', 'payload': 'Unbalanced brackets'}
+        #   {'type': 'Error', 'payload': 'Circle(A, 1 '}
+        # 
+        # This enables:
+        # 1. Real-time error capture: Complement pre-flight validation with actual GeoGebra errors
+        # 2. Dynamic scope updates: Track which objects were created despite errors
+        # 3. Cross-domain learning: Correlate error patterns with domain-specific semantics
+        # 4. Validation refinement: Use GeoGebra's error feedback to improve check_semantics logic
+        # 
+        # Implementation strategy:
+        #   - Drain error queue: while self.comm.recv_events.queue: event = popleft()
+        #   - Classify errors: syntax vs semantic vs type errors
+        #   - Update validation rules based on error patterns
+        #   - Store error context for cross-session learning via parser.command_cache
         
         # Update object cache on successful command
         if result and 'label' in result:

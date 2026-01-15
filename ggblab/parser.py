@@ -301,6 +301,32 @@ class ggb_parser:
         This is useful for analyzing GeoGebra command syntax and extracting object
         dependencies.
         
+        === COMMA PRESERVATION AND GEOGEBRA'S IMPLICIT MULTIPLICATION ===
+        
+        This tokenizer preserves commas as explicit tokens for a critical reason:
+        GeoGebra outputs commands with implicit multiplication operators omitted.
+        
+        Example:
+            Internal representation: Circle(2 * a, b)
+            GeoGebra output:         Circle(2a, b)  <- Information loss!
+        
+        The '*' operator is completely omitted, destroying information. This is a
+        one-way transformation: we can't reliably reconstruct "2*a" from "2a" without
+        external context (is it "2 times a" or "variable named 2a"?).
+        
+        BUT: GeoGebra ALWAYS uses comma-separation for parameter lists. We exploit
+        this invariant. By preserving commas in the token stream, we can:
+        1. Identify parameter boundaries (comma = separator)
+        2. Use whitespace/context to infer where implicit multiplication occurred
+        
+        This is a workaround for GeoGebra's poor design. So the question becomes:
+        
+        - BLAME GeoGebra for being a one-way encoder (lose the *? Why?)
+        - PRAISE the developer who recognized the comma-separation invariant
+        
+        Engineering lesson: deal with imperfect systems and find creative solutions.
+        GeoGebra didn't help us. We had to be smarter than it.
+        
         Args:
             cmd_string (str): Input command string (e.g., "Circle(A, Distance(A, B))").
             extract_commands (bool, optional): If True, also extract command name candidates
@@ -342,6 +368,9 @@ class ggb_parser:
         Note:
             Empty or non-string input returns an empty list (or empty dict if
             extract_commands=True) without raising an error.
+            
+            Commas are INTENTIONALLY preserved as tokens to work around GeoGebra's
+            implicit multiplication. This is not a quirk; it's the core design decision.
             
             Future (register_expr parameter): When implemented, would enable stable object
             references by using construction order indices instead of runtime labels.
