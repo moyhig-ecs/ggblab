@@ -225,7 +225,11 @@ class GeoGebra:
         if self.check_semantics:
             try:
                 from .parser import tokenize_with_commas, flatten
-                tokens = list(flatten(tokenize_with_commas(c)))
+                # Extract both tokens and commands
+                result = tokenize_with_commas(c, extract_commands=True)
+                tokens = list(flatten(result['tokens']))
+                commands = result['commands']
+                
                 # Get all object names from applet
                 all_objects = await self.function("getAllObjectNames")
                 if all_objects is None:
@@ -233,8 +237,11 @@ class GeoGebra:
                 
                 # Filter out non-identifier tokens (operators, numbers, etc.)
                 # Only check tokens that look like object names (start with letter)
+                # Exclude command names and reserved keywords
                 object_tokens = [t for t in tokens if t and isinstance(t, str) 
-                                and t[0].isalpha() and t != 'true' and t != 'false']
+                                and t[0].isalpha() 
+                                and t != 'true' and t != 'false'
+                                and t not in commands]  # Exclude command names
                 
                 # Check if referenced objects exist
                 missing_objects = [obj for obj in object_tokens 
