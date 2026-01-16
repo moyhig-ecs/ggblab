@@ -1,0 +1,10 @@
+--editable .
+jupyterlab>=4.0
+ipylab
+ipywidgets
+networkx
+sympy
+numpy
+pandas
+matplotlib
+notebook

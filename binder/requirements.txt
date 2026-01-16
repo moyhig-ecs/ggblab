@@ -1,0 +1,9 @@
+myst-parser
+sphinx-rtd-theme
+sphinx
+# docs build tooling
+copier
+ipykernel
+# install package in editable mode
+-e .
+matplotlib
