@@ -34,6 +34,16 @@ jobs:
           JEKYLL_ENV: production
         run: bundle exec jekyll build --source . --destination ../public
 
+      - name: Copy Google verification files to site root
+        run: |
+          # Copy any google*.html verification files from repo root to public/
+          for f in google*.html; do
+            if [ -e "$f" ]; then
+              echo "Copying $f to public/"
+              cp "$f" public/
+            fi
+          done
+
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v3
         with:
