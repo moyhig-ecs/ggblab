@@ -1,13 +1,1 @@
-myst-parser
-sphinx-rtd-theme
-sphinx
-# docs build tooling
-copier
-ipykernel
-# example/runtime dependencies (installed separately when ggblab is installed)
-ipylab
-ipywidgets
-networkx
-xmlschema
-polars
-matplotlib
+ggblab
