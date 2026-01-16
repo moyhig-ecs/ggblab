@@ -48,6 +48,23 @@ This JupyterLab extension supports both local installs and managed cloud deploym
 
 For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-deployment) section.
 
+#### ⚠️ Known Browser Compatibility Issue: JupyterLab on Safari and iPadOS
+
+**Classroom Deployment Notice**: JupyterLab's UI framework (Lumino) has known compatibility issues with Safari browser and all browsers on iPadOS. This is a **JupyterLab/Lumino limitation related to WebKit browser engine restrictions, not specific to ggblab**. Affected functionality includes:
+- **Affected platforms**: 
+  - iPad running iPadOS 26 (2025) — **all browsers on iPadOS are forced to use WebKit engine, making this unsolvable at the browser level**
+  - macOS with Safari browser
+- **Issue**: JupyterLab's Lumino UI framework relies on browser APIs that WebKit (Safari) restricts or handles differently, affecting layout rendering, widget lifecycle, and frontend-to-kernel communication reliability
+- **Not affected**: JupyterLab on Chromium-based browsers (Chrome, Edge) and Firefox on macOS, Windows, and Linux remain fully supported
+- **Impact on ggblab**: ggblab's frontend widget relies on JupyterLab's Lumino framework; when Lumino itself is compromised by WebKit limitations, ggblab functionality may degrade
+- **Workaround for classrooms**: 
+  - **iPadOS**: No browser-level workaround available (all browsers use WebKit). Consider alternatives to iPad, or use iPad only for static Jupyter notebooks
+  - **macOS**: Use Chromium-based browsers (Chrome, Edge) or Firefox instead of Safari for interactive JupyterLab sessions
+  - **Recommended**: Deploy JupyterLab on macOS, Windows, or Linux systems for classroom use; these platforms have no browser restrictions and full JupyterLab/ggblab support
+  - If JupyterHub is deployed, document these limitations and restrict interactive JupyterLab access from iPad or Safari
+
+This is an upstream JupyterLab/Lumino + WebKit browser engine limitation, not a ggblab-specific problem. See [JupyterLab documentation](https://jupyterlab.readthedocs.io/) and [GitHub Issues](https://github.com/moyhig-ecs/ggblab/issues) for current status.
+
 Uninstall:
 
 ```bash
