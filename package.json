@@ -1,6 +1,6 @@
 {
     "name": "ggblab",
-    "version": "0.9.0",
+    "version": "0.9.1",
     "description": "A JupyterLab extension that opens a GeoGebra applet inside JupyterLab.",
     "keywords": [
         "jupyter",
