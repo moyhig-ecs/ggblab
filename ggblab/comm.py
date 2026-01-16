@@ -13,6 +13,9 @@ import os
 
 from IPython import get_ipython
 
+from .errors import GeoGebraAppletError
+
+
 class ggb_comm:
     """Dual-channel communication layer for kernel↔widget messaging.
     
@@ -101,25 +104,20 @@ class ggb_comm:
                 _id = _data.get('id')
               # self.logs.append(f"Received message from client: {_id}")
                 
-                # REFACTOR: Route event-type messages to recv_events queue
-                # Currently recv_events is populated from IPython Comm handle_recv(),
-                # which blocks during cell execution. This prevents real-time error
-                # event processing.
-                #
-                # Fix strategy:
-                # 1. Frontend widget.tsx should mark event messages with a flag or
-                #    use id=null for non-response events (e.g., {'type': 'Error', 'payload': '...', 'id': null})
-                # 2. Route based on id presence:
-                #    - if _id and _id in pending_requests: self.recv_logs[_id] = response
-                #    - if not _id or event: self.recv_events.put(message)
-                # 3. Remove event routing from handle_recv() below
-                #
+                # Route event-type messages to recv_events queue
+                # Messages with 'id' are command responses; messages without 'id' are events.
                 # This enables:
                 # - Real-time error capture during cell execution
                 # - Dynamic scope learning from Applet error events
                 # - Cross-domain error pattern analysis
                 
-                self.recv_logs[_id] = _data['payload']
+                if _id:
+                    # Response message: store in recv_logs for send_recv() to retrieve
+                    self.recv_logs[_id] = _data['payload']
+                else:
+                    # Event message: queue for event processing
+                    # Error handling is deferred to send_recv() for proper exception propagation
+                    self.recv_events.put(_data)
         except Exception as e:
             pass
           # self.logs.append(f"Connection closed: {e}")
@@ -149,35 +147,19 @@ class ggb_comm:
         self.target_comm = None
 
     def handle_recv(self, msg):
+        # Note: All event-type messages are now routed to recv_events via the
+        # out-of-band socket (client_handle). This method is reserved for command
+        # responses (messages with id) sent via IPython Comm.
+        # 
+        # IPython Comm cannot receive messages during cell execution, so real-time
+        # error event processing happens on the out-of-band socket instead.
         if isinstance(msg['content']['data'], str):
             _data = json.loads(msg['content']['data'])
         else:
             _data = msg['content']['data']
-        # _id = _data.get('id')
         
-        # REFACTOR: Move event routing to out-of-band socket (client_handle)
-        # This code currently routes non-response events to recv_events via IPython Comm.
-        # However, IPython Comm cannot receive messages during cell execution, which blocks
-        # real-time error event processing.
-        #
-        # After refactor:
-        # - Events should be sent via out-of-band socket instead
-        # - This method should be reserved for responses (messages with id)
-        # - See client_handle() refactoring notes for implementation strategy
-        #
-        # TODO: Once frontend widget.tsx is updated to send events via out-of-band socket,
-        #       remove this condition and assume all messages here are responses.
-        
-        if 'id' not in _data:
-            self.recv_events.put(_data)
-        # if self.mid and self.mid == _id:
-        #     self.recv_msgs[_id] = [_data]
-        #     self.mid = None
-        # else:
-        #     if _id in self.recv_msgs:
-        #         # self.recv_msgs[_id].append(_data)
-        #     else:
-        #         self.recv_msgs[_id] = [_data]
+        # All messages here are assumed to be responses with 'id'
+        # (event messages are handled via client_handle in the out-of-band socket)
 
     def send(self, msg):
         return self.target_comm.send(msg)
@@ -189,7 +171,8 @@ class ggb_comm:
         1. Generates a unique message ID (UUID)
         2. Sends the message via IPython Comm to the frontend
         3. Waits for the response to arrive via the out-of-band socket
-        4. Returns the response payload
+        4. Raises GeoGebraAppletError if error events are received
+        5. Returns the response payload
         
         The 3-second timeout is sufficient for interactive operations.
         For long-running operations, decompose into smaller steps.
@@ -201,7 +184,8 @@ class ggb_comm:
             dict: Response payload from GeoGebra.
             
         Raises:
-            TimeoutError: If no response arrives within 3 seconds.
+            asyncio.TimeoutError: If no response arrives within 3 seconds.
+            GeoGebraAppletError: If the applet produces error events.
             
         Example:
             >>> response = await comm.send_recv({
@@ -210,23 +194,50 @@ class ggb_comm:
             ... })
         """
         try:
-            async with asyncio.timeout(3.0):
-                if isinstance(msg, str):
-                    _data = json.loads(msg)
-                else:
-                    _data = msg
+            if isinstance(msg, str):
+                _data = json.loads(msg)
+            else:
+                _data = msg
 
-                _id = str(uuid.uuid4())
-                self.mid = _id
-                msg['id'] = _id
-                self.send(json.dumps(_data))
-                
+            _id = str(uuid.uuid4())
+            self.mid = _id
+            msg['id'] = _id
+            self.send(json.dumps(_data))
+            
+            # Wait for response with 3-second timeout
+            async def wait_for_response():
                 while not (_id in self.recv_logs):
                     await asyncio.sleep(0.01)
-
-                #       self.recv_msgs.pop(_id, None)
-                value = self.recv_logs.pop(_id, None)
-                return value
-        except TimeoutError:
+            
+            await asyncio.wait_for(wait_for_response(), timeout=3.0)
+            
+            value = self.recv_logs.pop(_id, None)
+            
+            # If response value is empty, check for error events
+            if value is None:
+                # Wait a bit for error events to arrive
+                await asyncio.sleep(0.5)
+                
+                # Check for error events in recv_events
+                error_messages = []
+                while True:
+                    try:
+                        event = self.recv_events.get_nowait()
+                        if event.get('type') == 'Error':
+                            error_messages.append(event.get('payload', 'Unknown error'))
+                    except queue.Empty:
+                        break
+                
+                # If errors were collected, raise GeoGebraAppletError
+                if error_messages:
+                    combined_message = '\n'.join(error_messages)
+                    raise GeoGebraAppletError(
+                        error_message=combined_message,
+                        error_type='AppletError'
+                    )
+            
+            return value
+        except (asyncio.TimeoutError, TimeoutError):
+            # On timeout, raise the error
             print(f"TimeoutError in send_recv {msg}")
-            return { 'type': 'error', 'message': 'TimeoutError in send_recv' }
+            raise

@@ -27,9 +27,7 @@ dependencies = [
     "ipylab",
     "polars",
     "aiofiles",
-    "xmltodict",
     "xmlschema",
-    "copier",
     "networkx",
     "ipykernel",
 ]

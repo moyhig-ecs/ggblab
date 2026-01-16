@@ -89,6 +89,216 @@ Unlike the persistent IPython Comm connection, the out-of-band channel:
 - If a transaction fails, the caller (Python code) receives an exception and can retry
 - The primary Comm channel (managed by Jupyter) handles persistent connectivity
 
+## Command Validation (Pre-Flight Checks)
+
+Before sending commands to GeoGebra, ggblab performs optional validation to catch errors early and provide Python-side feedback instead of relying on GeoGebra's timeout-based error signaling.
+
+### Syntax Validation
+
+**Purpose**: Verify command strings can be parsed into valid tokens
+
+**Implementation** (`ggblab/ggbapplet.py`):
+```python
+if self.check_syntax:
+    try:
+        self.parser.tokenize_with_commas(c)
+    except Exception as e:
+        raise GeoGebraSyntaxError(c, str(e))
+```
+
+**What it checks**:
+- Command string can be tokenized by the parser
+- Parentheses, brackets, and braces are balanced
+- Basic lexical structure is valid
+
+**What it does NOT check**:
+- Command name existence (GeoGebra may support commands not in the parser's command cache)
+- Argument count or types
+- Semantic correctness (use `check_semantics` for that)
+
+**Usage**:
+```python
+ggb = await GeoGebra().init()
+ggb.check_syntax = True  # Enable syntax validation
+
+try:
+    await ggb.command("A=(0,0)")  # Valid
+except GeoGebraSyntaxError as e:
+    print(f"Syntax error: {e}")
+```
+
+**Raises**: `GeoGebraSyntaxError` if tokenization fails
+
+### Semantic Validation
+
+**Purpose**: Verify referenced objects exist in the applet before sending the command
+
+**Status**: Partial implementation (see limitations below)
+
+**Implementation** (`ggblab/ggbapplet.py`):
+```python
+if self.check_semantics:
+    try:
+        # Refresh object cache from applet
+        await self.refresh_object_cache()
+        
+        # Extract object tokens: tokens that are
+        # not commands (not in command_cache), not commas, and not literals
+        t = self.parser.tokenize_with_commas(c)
+        object_tokens = [o for o in flatten(t) 
+                        if o not in self.parser.command_cache 
+                        and o != ","
+                        and not self._is_literal(o)]
+        
+        # Check if referenced objects exist
+        missing_objects = [obj for obj in object_tokens 
+                          if obj not in self._applet_objects]
+        
+        if missing_objects:
+            raise GeoGebraSemanticsError(
+                c, 
+                f"Referenced object(s) do not exist in applet: {missing_objects}",
+                missing_objects
+            )
+    except GeoGebraSemanticsError:
+        raise
+    except Exception as e:
+        raise GeoGebraSemanticsError(c, f"Validation error: {e}")
+```
+
+**What it checks**:
+- Object references in the command exist in the applet's object cache
+- Refreshes the cache before checking to catch recent additions/deletions
+
+**What it does NOT check** (limitations):
+- Command name validity (if `check_syntax` passes, command is assumed valid)
+- Argument types or counts (would require full GeoGebra API metadata)
+- Scope/visibility (static analysis cannot determine runtime scope)
+- Overload resolution (multiple command signatures not distinguished)
+- N-ary dependencies (3+ objects creating a single dependent object)
+
+**Why incomplete**: GeoGebra does not maintain a public, versioned, machine-readable command schema. The official GitHub repository is outdated and does not reflect the live API. Maintaining a static schema would be error-prone and fragile.
+
+**Usage**:
+```python
+ggb = await GeoGebra().init()
+ggb.check_semantics = True  # Enable semantic validation
+
+# Attempt to use non-existent object
+try:
+    await ggb.command("Circle(A, 2)")  # A does not exist
+except GeoGebraSemanticsError as e:
+    print(f"Semantic error: {e}")
+    print(f"Missing objects: {e.missing_objects}")
+```
+
+**Raises**: `GeoGebraSemanticsError` if referenced objects don't exist
+
+### Cache Management
+
+**Object Cache**:
+- Initialized on `GeoGebra().init()` via `refresh_object_cache()`
+- Updated after each successful `command()` execution
+- Can be manually refreshed: `await ggb.refresh_object_cache()`
+
+**Cache Accuracy**:
+- Reflects the current applet state at check time
+- May become stale if objects are added/removed via:
+  - Frontend UI (direct user actions in GeoGebra)
+  - Multiple Python kernels (if multiple notebooks control the same applet)
+- Calling `refresh_object_cache()` explicitly ensures fresh data
+
+**Trade-off**: Prevents false positives (rejecting valid commands) at the cost of occasional false negatives (accepting commands that reference recently-deleted objects, which will timeout).
+
+### Validation Strategy
+
+**Recommended practice**:
+
+```python
+# Enable both checks for maximum safety
+ggb.check_syntax = True
+ggb.check_semantics = True
+
+try:
+    await ggb.command("Circle(A, Distance(A, B))")
+except GeoGebraSyntaxError:
+    print("Command syntax is invalid")
+except GeoGebraSemanticsError as e:
+    print(f"Objects not found: {e.missing_objects}")
+except TimeoutError:
+    # Command may have been rejected by GeoGebra despite passing pre-flight checks
+    # Check recv_events for error dialogs
+    print("Command timed out or was rejected by GeoGebra")
+```
+
+**Validation Flow**:
+
+```
+Python command(c)
+    ↓
+check_syntax enabled? → tokenize → SyntaxError
+    ↓ (pass)
+check_semantics enabled? → refresh cache → extract tokens → check existence → SemanticError
+    ↓ (pass)
+Send to GeoGebra via out-of-band socket
+    ↓
+GeoGebra processes (may still fail internally)
+    ↓
+Timeout after 3 seconds? → Check recv_events for error events
+    ↓
+Errors found? → GeoGebraAppletError
+    ↓
+No errors? → Return value or None
+```
+
+### Runtime Error Handling: GeoGebraAppletError
+
+**Purpose**: Capture errors that occur during GeoGebra execution, not during pre-flight validation
+
+**How it works**:
+1. **Asynchronous error capture**: GeoGebra error events (`{'type': 'Error', 'payload': '...'}`) are queued via the out-of-band socket
+2. **Multiple error consolidation**: Consecutive error events are automatically combined into a single exception
+3. **Timeout-triggered check**: When `send_recv()` times out waiting for a response, it checks `recv_events` for accumulated error messages
+4. **Empty response handling**: If the response arrives but the payload is empty (`None`), a 0.5-second wait allows additional errors to arrive before checking
+
+**Exception hierarchy**:
+```
+GeoGebraError (base)
+├── GeoGebraCommandError (pre-flight validation)
+│   ├── GeoGebraSyntaxError
+│   └── GeoGebraSemanticsError
+└── GeoGebraAppletError (runtime, from applet)
+```
+
+**Usage**:
+```python
+from ggblab.errors import GeoGebraAppletError
+
+try:
+    await ggb.command("Unbalanced(")
+except GeoGebraAppletError as e:
+    print(f"Applet error: {e.error_message}")
+    print(f"Error type: {e.error_type}")
+```
+
+**Example error flow**:
+```
+GeoGebra applet receives: "Unbalanced("
+    ↓
+Applet generates error events:
+    {'type': 'Error', 'payload': 'Unbalanced brackets '}
+    {'type': 'Error', 'payload': 'Unbalanced( '}
+    ↓
+send_recv() waits for response (doesn't arrive)
+    ↓
+Timeout triggers recv_events check
+    ↓
+Errors found and combined:
+    "Unbalanced brackets \nUnbalanced( "
+    ↓
+GeoGebraAppletError raised with combined message
+```
+
 ## Data Flow Diagrams
 
 ### Normal Command Execution (Primary Channel)
@@ -97,6 +307,8 @@ Unlike the persistent IPython Comm connection, the out-of-band channel:
 Python Kernel                    Frontend (Browser)
      |                                  |
      |  1. command("A=(0,0)")           |
+     |  2. Syntax & semantic checks     |
+     |  3. Send via IPython Comm        |
      |--------------------------------->|
      |      via IPython Comm            |
      |                                  |
@@ -132,6 +344,30 @@ Python Cell (running)            Frontend (Browser)            ggb_comm (backend
      |                                  |                              |
      |  (await completes)               |  6. Close connection         |
      |                                  |<-----------------------------|
+```
+
+### Error Event Capture (Dual Channel)
+
+```
+Python Cell (running)            Frontend (Browser)            ggb_comm (backend)
+     |                                  |                              |
+     |  1. command("Unbalanced(")       |                              |
+     |--------------------------------->|                              |
+     |                                  |                              |
+     |                      2. Execute → Error!
+     |                                  |                              |
+     |                                  |  3. Queue error events       |
+     |                                  |----------------------------->|
+     |                                  |  Error event #1              |
+     |                                  |  Error event #2              |
+     |  (Python blocked waiting)        |                              |
+     |                                  |                              |
+     |  4. Timeout after 3 seconds      |                              |
+     |                                  |                              |
+     |  5. Check recv_events            |                              |
+     |<----|  Retrieve error events     |                              |
+     |     |  Combine messages          |                              |
+     |     |  Raise GeoGebraAppletError |                              |
 ```
 
 ## Implementation Details
@@ -171,10 +407,24 @@ async def client_handle(self, client_id):
         async for msg in client_id:
             _data = json.loads(msg)
             _id = _data.get('id')
-            self.recv_logs[_id] = _data['payload']  # Store response keyed by message ID
+            
+            # Route event-type messages to recv_events queue
+            # Messages with 'id' are command responses; messages without 'id' are events.
+            if _id:
+                # Response message: store in recv_logs for send_recv() to retrieve
+                self.recv_logs[_id] = _data['payload']
+            else:
+                # Event message: queue for event processing
+                self.recv_events.put(_data)
     finally:
         self.clients.remove(client_id)
 ```
+
+**Message Routing Strategy**:
+- **Responses** (with `id`): Keyed by message ID in `recv_logs` for `send_recv()` to retrieve
+- **Events** (without `id`): Queued in `recv_events` for asynchronous event processing
+
+This enables real-time error event capture and dialog message delivery during cell execution.
 
 ### Frontend: Widget Connection Logic (src/widget.tsx)
 
@@ -249,96 +499,132 @@ No explicit error handling required in ggblab for the primary channel.
 ### Out-of-Band Channel Error Handling
 
 **Responsibility**: ggblab backend and frontend  
-**Status**: Basic (timeout-based)
+**Status**: Timeout-based with event queueing
 
-The out-of-band channel operates independently and has limited error detection:
+The out-of-band channel operates independently with dual responsibilities:
 
-#### Timeout Model
+#### 1. Response Delivery (Timeout-Based)
 
-The out-of-band socket has a **3-second timeout**:
+The out-of-band socket has a **3-second timeout** for command responses:
 
 ```python
 # In ggblab/comm.py send_recv()
 try:
-    response = await asyncio.wait_for(
-        future,  # Waiting for response to arrive
-        timeout=3.0  # 3-second timeout
-    )
-except asyncio.TimeoutError:
-    raise TimeoutError(f"Out-of-band response timeout for message id={msg_id}")
+    async with asyncio.timeout(3.0):
+        # Wait for response to arrive via out-of-band socket
+        while not (_id in self.recv_logs):
+            await asyncio.sleep(0.01)
+        value = self.recv_logs.pop(_id, None)
+        return value
+except TimeoutError:
+    print(f"TimeoutError in send_recv {msg}")
+    return { 'type': 'error', 'message': 'TimeoutError in send_recv' }
 ```
 
-If no response arrives within 3 seconds, a `TimeoutError` exception is raised in Python code:
+If no response arrives within 3 seconds, a timeout error is returned.
+
+#### 2. Event Delivery (Queue-Based)
+
+Real-time events (error dialogs, object notifications) are captured and queued via the out-of-band socket:
 
 ```python
-try:
-    label = await applet.evalCommand("GetValue(a)")
-except TimeoutError:
-    print("GeoGebra did not respond within 3 seconds")
+# In frontend widget.tsx
+const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+            try {
+                // Detect GeoGebra error dialogs
+                (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach((n) => {
+                    const msg = JSON.stringify({
+                        "type": n.textContent,  // e.g., "Error", "Warning"
+                        "payload": n2.textContent
+                    });
+                    // Send via both channels during cell execution
+                    comm.send(msg);  // Primary channel (blocked during execution)
+                    await callRemoteSocketSend(kernel2, msg, socketPath, wsUrl);  // Out-of-band channel
+                });
+            } catch (e) { /* handle */ }
+        });
+    });
+});
+```
+
+**Backend event processing**:
+```python
+# Events arrive via out-of-band socket without 'id' field
+if not _id:
+    self.recv_events.put(_data)  # Queue for later processing
+```
+
+Python code can then drain the event queue after commands complete:
+```python
+# Future implementation: Process queued events
+while not self.comm.recv_events.empty():
+    event = self.comm.recv_events.get_nowait()
+    if event['type'] == 'Error':
+        print(f"GeoGebra error: {event['payload']}")
 ```
 
 #### GeoGebra API Constraint: No Explicit Error Responses
 
-**Critical limitation**: The GeoGebra API does NOT provide explicit error response codes or callbacks.
+**Critical limitation**: The GeoGebra API does NOT provide explicit error response codes or callbacks for invalid commands.
 
 This means:
 - When a command fails (e.g., invalid syntax, reference to non-existent object), GeoGebra does not send an error response via the out-of-band socket
 - No error codes, error messages, or structured error data are returned
-- The only error signal is **timeout after 3 seconds**
+- The only signals are:
+  1. **Timeout after 3 seconds** (command was rejected silently)
+  2. **Error dialog popup** (captured and forwarded via out-of-band socket)
 
 **Example**:
 ```python
-# This will timeout, not return an error message
+# This will timeout because GeoGebra sends no response for invalid commands
 try:
     result = await applet.evalCommand("DeleteObject(NonExistent)")
 except TimeoutError:
     print("GeoGebra rejected the command (no explicit error returned)")
-```
-
-#### Dialog-Based Error Signaling
-
-GeoGebra communicates errors primarily through **native UI dialogs** (popup windows):
-
-- When a command fails, GeoGebra displays an error dialog in the browser
-- ggblab's frontend widget **hooks GeoGebra's dialog events** and forwards them via the primary IPython Comm channel
-- This allows Python code to detect dialog-based errors:
-
-```python
-# Pseudo-code: Dialog event signaled via Comm
-message = await applet.getNextEvent()  # Receives dialog event
-if message['type'] == 'dialog':
-    print(f"GeoGebra error: {message['message']}")
+    # Check if an error dialog was posted
+    if not applet.comm.recv_events.empty():
+        event = applet.comm.recv_events.get_nowait()
+        if event['type'] == 'Error':
+            print(f"Error details: {event['payload']}")
 ```
 
 #### Error Handling Summary
 
-| Channel | Error Detection | Status | Recovery |
-|---------|-----------------|--------|----------|
-| IPython Comm | Jupyter infrastructure | Automatic | Jupyter handles reconnection |
-| Out-of-band socket | 3-sec timeout | Basic | `TimeoutError` exception to Python |
-| GeoGebra API | Dialog popups | External dependency | Frontend monitors dialog events |
+| Channel | Error Detection | Delivery | Recovery |
+|---------|-----------------|----------|----------|
+| IPython Comm | Jupyter infrastructure | Command dispatch | Jupyter handles reconnection |
+| Out-of-band socket (responses) | 3-sec timeout | Message ID correlation | `TimeoutError` exception to Python |
+| Out-of-band socket (events) | Event queue | Type-based routing | Queue processing via `recv_events` |
+| GeoGebra API | Dialog popups | DOM mutation observer | Dialog events forwarded to Python |
 
-**Current Limitation**: Non-dialog errors result in timeout with minimal context information.
+**Current Limitations**:
+- Non-dialog errors result in timeout with minimal context
+- Response timeout is fixed at 3 seconds (not configurable)
 
 ### Future Error Handling Improvements (v0.8.x)
 
 To improve error handling on the out-of-band channel:
 
-1. **Timeout Detection and Python Exceptions**
-   - Convert timeout to Python exceptions with context (command, timestamp)
-   - Propagate exception details to user with stack trace
+1. **Event Queue Processing**
+   - Drain `recv_events` queue after command execution
+   - Extract error dialogs and parse for context information
+   - Return structured error objects with type and message
 
 2. **Custom Timeout Configuration**
    - Allow `GeoGebra(timeout=5.0)` to set custom timeout per applet instance
-   - Allow `evalCommand(..., timeout=10.0)` for command-specific timeout
+   - Allow `command(..., timeout=10.0)` for command-specific timeout
 
 3. **Dialog Message Extraction**
-   - Parse GeoGebra dialog content for error details
-   - Return structured error information (error code, message, object reference)
+   - Parse GeoGebra dialog DOM for structured error details
+   - Map dialog types to error codes (e.g., "Syntax error", "Undefined variable")
+   - Return error object with context to Python
 
-4. **Retry Logic for Transient Errors**
-   - Distinguish transient (network, timing) vs. permanent (API) errors
-   - Implement exponential backoff for transient failures
+4. **Dynamic Scope Learning from Errors**
+   - Capture error events in `recv_events` queue
+   - Correlate with `check_semantics` validation logic
+   - Refine validation rules based on actual GeoGebra responses
 
 ## Resource Cleanup and Lifecycle Management
 
@@ -452,24 +738,81 @@ The out-of-band socket server uses `async with` context managers:
 
 ## Testing Strategies
 
-### Unit Tests
+### Unit Tests (v0.7.3 - COMPLETE)
 
-- Mock IPython Comm: Test message dispatch and response handling
-- Mock socket server: Test out-of-band delivery independent of Comm
+**Backend Test Suite** ([tests/](../tests/)):
 
-### Integration Tests
+1. **Parser Tests** ([tests/test_parser.py](../tests/test_parser.py)):
+   - 18 test classes, 70+ test methods
+   - Dependency graph construction and analysis
+   - Topological sorting, generations, reachability analysis
+   - Edge cases: empty constructions, single objects, N-ary dependencies
+   - Performance tests: 30+ independent objects, linear chains
+   - All tests with `cache_enabled=False` for isolation
 
-- Playwright/Galata: Full browser + kernel workflow
-- Test scenarios:
-  - Command execution during idle kernel
-  - Function calls during long-running cell
-  - Multiple rapid function calls (concurrency)
-  - Socket reconnection after backend restart
+2. **GeoGebra Applet Tests** ([tests/test_ggbapplet.py](../tests/test_ggbapplet.py)):
+   - 6 test classes, 16 test methods
+   - Singleton initialization and state management
+   - Syntax/semantic validation with mocked applet
+   - Object cache management and None-response handling
+   - Literal detection (numeric, string, boolean, math functions)
+   - Exception handling: `GeoGebraSyntaxError`, `GeoGebraSemanticsError`
 
-### Platform-Specific Tests
+3. **Construction File Handling** ([tests/test_construction.py](../tests/test_construction.py)):
+   - 5 test classes, 20+ test methods
+   - File loading: `.ggb` (ZIP), `.ggb` (Base64), JSON, XML
+   - File saving: Round-trip integrity, format preservation
+   - Scientific notation handling (implementation-aware testing)
 
-- POSIX: Verify Unix socket creation and permissions
-- Windows: Verify TCP WebSocket fallback behavior
+**Coverage**:
+- `pytest tests/ --cov=ggblab --cov-report=html`
+- Coverage metrics automatically uploaded to Codecov on CI
+
+### Integration Tests (GitHub Actions)
+
+**CI/CD Pipeline** ([.github/workflows/tests.yml](.github/workflows/tests.yml)):
+
+- **Automated on every push** to `main`/`dev` branches
+- **Automated on all pull requests**
+- **Multi-platform testing**:
+  - Ubuntu (Linux), macOS, Windows
+  - Python 3.10, 3.11, 3.12
+- **30 test matrix combinations** automatically executed
+- **Coverage reports** uploaded to Codecov
+
+**Running Tests Locally**:
+
+```bash
+# Install test dependencies
+pip install -e ".[dev]"
+pip install pytest pytest-cov
+
+# Run all tests with coverage
+pytest tests/ -v --cov=ggblab --cov-report=html
+
+# Run specific test class
+pytest tests/test_parser.py::TestDependencyGraphConstruction -v
+
+# Run with XML output (for CI integration)
+pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
+```
+
+### Browser/Integration Tests (Playwright/Galata)
+
+**Not yet implemented** - planned for v0.8+
+
+- Full browser + kernel workflow validation
+- Command execution during idle kernel
+- Function calls during long-running cell
+- Multiple rapid function calls (concurrency)
+- Socket reconnection after backend restart
+
+See [ui-tests/README.md](../ui-tests/README.md) for setup instructions.
+
+### Platform-Specific Tests (via CI)
+
+- **POSIX**: Unix socket creation and permissions tested on Ubuntu/macOS
+- **Windows**: TCP WebSocket fallback behavior tested on Windows
 
 ---
 
@@ -681,6 +1024,543 @@ def test_parse_subgraph_nary_deps():
     """3+ parents creating single output: A,B,C -> D"""
     # Expected: G2 has edges A->D, B->D, C->D
 ```
+
+---
+
+## Asyncio Design Challenges in Jupyter
+
+### The Core Problem: Jupyter + Asyncio Impedance Mismatch
+
+Python's `asyncio` module is widely used but has significant limitations in the Jupyter Kernel environment:
+
+1. **IPython Comm Cannot Receive During Cell Execution**
+   - While a cell is running, the IPython event loop is blocked
+   - Incoming Comm messages cannot be processed until the cell completes
+   - This is a fundamental architectural constraint, not a bug
+
+2. **Asyncio Requires Explicit Yield Points**
+   - Every `await` statement is a potential yield point where other tasks can run
+   - Without explicit `await asyncio.sleep()` calls, **asyncio has no opportunity to switch tasks**
+   - Most developers are unaware of this requirement
+
+3. **No Native Event-Based Waiting**
+   - `asyncio` lacks a clean way to wait for dictionary updates or queue population
+   - Current ggblab implementation uses polling: `while not (_id in self.recv_logs): await asyncio.sleep(0.01)`
+   - This is **inefficient and inelegant** compared to event-based systems (e.g., threading.Event)
+
+### Evidence from ggblab/comm.py
+
+**Problematic code pattern**:
+```python
+async def send_recv(self, msg):
+    _id = str(uuid.uuid4())
+    self.send(msg)
+    
+    # Polling loop: check every 10ms if response arrived
+    async def wait_for_response():
+        while not (_id in self.recv_logs):
+            await asyncio.sleep(0.01)  # <-- Explicit yield point required!
+    
+    await asyncio.wait_for(wait_for_response(), timeout=3.0)
+    value = self.recv_logs.pop(_id, None)
+```
+
+**Why this is suboptimal**:
+- ❌ **Busy-waiting simulation**: Polls every 10ms instead of waiting for an event
+- ❌ **Arbitrary sleep time**: 0.01 seconds is a guess; too short = CPU waste, too long = latency
+- ❌ **No condition variable**: Threading has `threading.Event` and `threading.Condition`; asyncio has no equivalent
+- ❌ **Inefficient for Jupyter**: The Jupyter event loop should be managing concurrency, not application code
+
+**Alternative (if asyncio had better primitives)**:
+```python
+# This would be cleaner (but asyncio doesn't provide it natively)
+response_event = asyncio.Event()
+
+def on_response_received(id):
+    response_event.set()
+
+await asyncio.wait_for(response_event.wait(), timeout=3.0)
+```
+
+### Why This Matters for Language Selection
+
+This complexity reveals why **TypeScript/Node.js backend might have been technically superior**:
+
+| Aspect | Python asyncio | Node.js async/await |
+|--------|---|---|
+| **Event loop** | Complex, user must manage | Simple, built-in, always running |
+| **Waiting for events** | Manual polling required | `async/await` + Promise chains |
+| **Blocking during cell execution** | Blocks Jupyter event loop | Would block Node.js event loop (similar issue) |
+| **Learning curve** | High; requires deep understanding | Medium; familiar to web developers |
+| **Operational context** | Not standard in Jupyter | Even less standard in Jupyter |
+
+**Key insight**: The problem isn't Python's asyncio per se—it's that **any framework must bridge the gap between Jupyter's execution model and concurrent communication**. TypeScript wouldn't solve this; it just moves the problem to a less-familiar runtime.
+
+### Deployment Reality: Why Python Wins Despite Complexity
+
+Despite asyncio's technical shortcomings, Python remains the better choice because:
+
+1. **Jupyter already assumes Python**: Most institutional deployments have Python; Node.js doesn't
+2. **Users expect Python**: ggblab students are already Python programmers
+3. **Complexity is hidden**: Users don't see `comm.py`; they call `await ggb.command()`
+4. **Works well enough**: Even with polling, the 10ms cycle is imperceptible to users
+
+The lesson: **Operational constraints (kernel availability) trump technical elegance (language features)**.
+
+### Recommendations for Future Work
+
+#### Current Implementation: Best Practical Solution
+
+The current implementation using polling with explicit `await asyncio.sleep(0.01)` **is the best practical solution** given Jupyter's constraints:
+
+**Why asyncio.Event doesn't solve the problem**:
+- `asyncio.Event` has been tested extensively but does not circumvent the IPython Comm limitation
+- The issue is not waiting mechanism (Event vs polling)—it's that IPython's event loop itself is blocked during cell execution
+- When a cell runs, IPython's event loop cannot process **any** incoming Comm messages, regardless of how elegantly the backend waits
+- Polling is necessary because Comm messages may arrive via the out-of-band socket at unpredictable times
+
+**Why threading doesn't work**:
+- Threading would require the Comm handler to run in a different thread, creating race conditions
+- IPython Comm operations are not thread-safe; they assume single-threaded kernel execution
+- Refactoring to thread-safe Comm would require changes to IPython itself
+
+**Current design is robust**:
+- ✅ Polling with 0.01s sleep is imperceptible to users (10ms is below human reaction time)
+- ✅ Timeout-based fallback (3 seconds) is sufficient for interactive operations
+- ✅ Event queue (`recv_events`) properly captures async error events
+- ✅ Dual-channel architecture elegantly sidesteps the IPython Comm blocking limitation
+
+**Conclusion**: The current implementation is **not a compromise**—it's the **optimal solution** given the architectural constraints of Jupyter and IPython Comm.
+
+#### Global Scope Buffer Requirement
+
+A critical constraint often missed: asyncio data exchange buffers **must be class variables (global scope)**, not instance variables.
+
+**Current implementation** (ggblab/comm.py):
+```python
+class ggb_comm:
+    # These MUST be at class scope, not instance scope
+    recv_logs = {}          # Response storage by message ID
+    recv_events = queue.Queue()  # Error event queue
+    logs = []               # Diagnostic logs
+```
+
+**Why class scope is required**:
+
+1. **Multiple async tasks access the same buffers**:
+   - `client_handle()` (server connection handler) populates `recv_logs` and `recv_events`
+   - `send_recv()` (command sender) reads from `recv_logs` and `recv_events`
+   - Both run concurrently in the same event loop
+
+2. **Async task isolation prevents instance variable sharing**:
+   - Each `await` point creates a suspension boundary
+   - If buffers were instance variables, different async tasks would be looking at different dictionaries
+   - This breaks message correlation
+
+3. **Event loop singleton**:
+   - There is one event loop per Python kernel process
+   - `ggb_comm` is instantiated once per kernel
+   - Putting buffers at class scope ensures they persist across all `await` points and async task switches
+
+**Example of what FAILS with instance variables**:
+```python
+class ggb_comm_broken:
+    def __init__(self):
+        self.recv_logs = {}  # ❌ Instance variable
+        self.recv_events = queue.Queue()  # ❌ Instance variable
+
+    async def send_recv(self, msg):
+        _id = str(uuid.uuid4())
+        self.send(msg)
+        
+        # This checks a DIFFERENT recv_logs than client_handle() populates!
+        while not (_id in self.recv_logs):  # ❌ Sees empty dict
+            await asyncio.sleep(0.01)
+        
+        # Message ID never arrives because it went to a different dictionary
+```
+
+**Why this fails**:
+- Instance variables are created per object instance
+- `self.recv_logs` refers to the instance's dictionary
+- `client_handle()` may be running in a different async task context
+- No guarantee that `send_recv()`'s `self` refers to the same object as `client_handle()`'s `self`
+- Even if it does, the timing of async task scheduling can cause data races
+
+**Proper design with class variables**:
+```python
+class ggb_comm:
+    # Class variables: shared across all async tasks
+    recv_logs = {}          # All tasks see the same dict
+    recv_events = queue.Queue()  # All tasks see the same queue
+    
+    async def send_recv(self, msg):
+        _id = str(uuid.uuid4())
+        self.send(msg)
+        
+        # This checks THE SAME recv_logs that client_handle() populates
+        while not (_id in self.recv_logs):  # ✅ Sees shared dict
+            await asyncio.sleep(0.01)
+```
+
+**Reference**:
+- [Jupyter Community Forum: Frontend to Kernel Callback](https://discourse.jupyter.org/t/frontent-to-kernel-callback/1666)
+- This constraint is documented in the discussion but often overlooked by developers new to asyncio
+
+#### No Near-Term Refactoring Recommended
+
+Attempts to replace polling with `asyncio.Event`, `asyncio.Condition`, or other primitives have proven unsuccessful because they don't address the root cause (IPython event loop blocking during cell execution). The current implementation should remain stable.
+
+---
+
+#### Long-Term: Jupyter Kernel Architecture Evolution
+
+True improvement would require changes at the Jupyter/IPython level:
+
+1. **IPython Comm receives during cell execution**: Requires IPython architecture redesign (unlikely)
+2. **Async-first kernel**: Redesign kernel messaging to be fully asynchronous (ambitious, long-term)
+3. **Separate kernel-side event loop**: Run communication on a different event loop than cell execution (complex isolation required)
+
+These are beyond the scope of ggblab and would require Jupyter/IPython community effort.
+
+---
+
+## Design Decision: Backend Language Selection (Python vs. TypeScript)
+
+### Context: Why Python for `ggb_comm.py`?
+
+The backend communication handler (`ggblab/comm.py`) is implemented in **Python**, even though the frontend is **TypeScript/React**. This decision involves trade-offs worth documenting for future maintainers.
+
+### Option Analysis
+
+#### Option A: Python Backend (Current Choice)
+
+**Advantages**:
+- ✅ **Kernel ecosystem**: Jupyter kernels for Python are ubiquitous; most Jupyter environments have Python available
+- ✅ **Asyncio maturity**: Python's `asyncio` is well-documented and battle-tested for educational purposes
+- ✅ **Single language for data science stack**: Scientific computing typically uses Python (NumPy, SciPy, SymPy, etc.)
+- ✅ **Wider adoption**: Python dominates STEM education; ggblab students are already Python programmers
+- ✅ **Package distribution**: PyPI distribution is straightforward; pip install handles versioning
+
+**Disadvantages**:
+- ❌ **Runtime dependency**: Python must be installed and available in the Jupyter environment
+- ❌ **Version management**: Requires Python 3.10+; older environments may not have it
+- ❌ **Kernel startup overhead**: Python kernel startup is slower than lightweight runtimes
+
+#### Option B: TypeScript/Node.js Backend
+
+**Hypothetical advantages** if implemented:
+- ✅ **Single language**: Frontend and backend in same language (DRY principle)
+- ✅ **Code sharing**: Message types, validation logic could be reused via TypeScript interfaces
+- ✅ **Lighter runtime**: Node.js faster startup than Python
+- ✅ **NPM distribution**: Familiar to JavaScript ecosystem
+
+**Critical disadvantages**:
+- ❌ **Kernel availability**: Jupyter Node.js kernels are **not standard**. Most Jupyter installations lack Node.js runtime
+- ❌ **Deployment complexity**: Users would need to install Node.js separately or use alternative kernels (like `ijavascript` or `jp-ts`)
+- ❌ **Educational friction**: Students expect Python in Jupyter; adding Node.js requirement increases setup complexity
+- ❌ **Version parity problem**: Frontend (TypeScript) and backend (Node.js) would be separate versioned products with sync requirements
+- ❌ **Kernel infrastructure**: Standard Jupyter assumes Python kernel; Node.js kernels require additional setup
+- ❌ **IPython Comm**: While IPython Comm is language-agnostic, Node.js kernels have variable support quality
+
+### Operational Constraints
+
+#### Jupyter Kernel Availability
+
+**Current reality**:
+- Python kernel: **Always present** in any Jupyter installation (assumption: Jupyter >= 4.0)
+- Node.js kernel: **Optional**, requires separate installation and configuration
+- R kernel: **Common** but optional
+- Julia kernel: **Rare**, requires additional setup
+
+**Implication**: ggblab's Python backend ensures the extension works out-of-the-box. Users don't need to think about runtime selection.
+
+#### Deployment Context
+
+**JupyterHub in Educational Settings**:
+- Sysadmins control what kernels are available
+- Adding Node.js requirement would require admin approval and installation
+- Creates additional maintenance burden on institutions
+
+**Cloud Deployments** (Google Colab, JupyterHub SaaS):
+- Colab provides Python by default; Node.js not available
+- Enterprise JupyterHub usually provides Python only (Typescript/Node optional)
+- Python backend maximizes compatibility
+
+### The Communication Stack
+
+Despite the backend being Python, the communication stack is **language-neutral**:
+
+```
+Frontend (TypeScript)  ←→  IPython Comm (JSON messages)  ←→  Backend (Python async)
+    ↓                                                           ↓
+GeoGebra API                                          Kernel + socket server
+    ↓                                                           ↓
+    └─────── Out-of-band socket (WebSocket/Unix) ──────────────┘
+                   (Protocol-agnostic transport)
+```
+
+This design means:
+- ✅ Frontend can be written in any language (TypeScript chosen for React ecosystem)
+- ✅ Backend can be written in any Jupyter-supported language (Python chosen for ubiquity)
+- ✅ Communication protocol is language-independent (JSON + WebSocket)
+
+### Lessons Learned
+
+**Key insight**: Tight coupling of frontend and backend languages (TypeScript for both) is **not justified** when:
+1. The kernel availability determines deployment success more than implementation language
+2. The target audience (Python programmers) expects Python
+3. The communication protocol is already language-agnostic
+4. Code sharing benefits are minimal (message types are simple JSON, validation logic is kernel-specific)
+
+**Recommendation for future changes**:
+- Keep frontend in TypeScript (React ecosystem is mature; switching gains nothing)
+- Keep backend in Python (addresses operational constraints; switching to Node.js creates problems)
+- If non-Python kernel support is desired, implement additional *kernels* (e.g., Julia, R) via separate language-specific packages, not by switching the reference implementation
+
+### TypeScript Backend: When It Could Work
+
+TypeScript backend would be viable **only if**:
+1. **Standard Node.js kernel** emerges as Jupyter standard (unlikely)
+2. **Deployment targets only advanced users** who already manage Node.js (educational loss)
+3. **Code sharing between frontend and backend is critical** (currently minimal benefit)
+
+None of these conditions are currently met, so Python remains the better choice.
+
+---
+
+## Non-Python Kernel Support (Julia, R, etc.)
+
+### Protocol Portability
+
+The ggblab communication architecture is **language-agnostic** at the protocol level:
+
+- ✅ **IPython Comm**: Supported by any Jupyter kernel (uses JSON messages)
+- ✅ **WebSocket/Unix Socket**: Language-independent transport (any language can open sockets)
+- ✅ **Message Format**: JSON-based, not Python-specific
+
+However, implementing language-specific client libraries requires addressing several challenges.
+
+### Critical Implementation Notes for Non-Python Kernels
+
+#### 1. Asynchronous Execution Model Must Match
+
+**Challenge**: Different languages have different async patterns.
+
+| Aspect | Python | Julia | R |
+|--------|--------|-------|---|
+| **Async syntax** | `async/await` | `@async` / `Task` | `future` / promise-like |
+| **Blocking behavior** | `await` blocks on Awaitable | `wait()` on Task | `resolve()` on future |
+| **Event loop** | `asyncio.run()` | `@async` tasks | Single-threaded |
+| **Multiple concurrent operations** | Multiple `await` in same scope | Multiple tasks in same scope | Parallel evaluation or callbacks |
+
+**Recommendation**: Implement `send_recv()` with the language's native async primitives, not by wrapping Python's asyncio.
+
+**Example (Julia pseudocode)**:
+```julia
+async function send_recv(msg::Dict)::Dict
+    id = uuid4()
+    put!(comm_channel, merge(msg, Dict("id" => id)))
+    
+    # Wait for response with matching id
+    while true
+        response = take!(response_channel)  # Blocking wait
+        if response["id"] == id
+            return response
+        end
+    end
+end
+```
+
+#### 2. Message ID Correlation
+
+**Requirement**: Backend and frontend must exchange `id` fields to correlate responses with requests.
+
+**Format** (JSON):
+```json
+{
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "command",
+    "payload": "A=(0,0)",
+    ...
+}
+```
+
+All languages must:
+1. Generate a unique `id` (UUID/UUID4) for each `send_recv()` call
+2. Include `id` in the Comm message to frontend
+3. Receive response with matching `id` via out-of-band socket
+4. Match response by `id` before returning to caller
+
+**Error case**: If response arrives with wrong `id`, queue it and continue waiting. This handles concurrent requests.
+
+#### 3. Out-of-Band Socket Connection (Language-Specific)
+
+**Python**: Uses `asyncio` WebSocket client (see `ggblab/comm.py`)
+
+**Julia**: Use Julia's WebSocket library:
+```julia
+using WebSockets
+ws = WebSocket("ws://localhost:$port")  # TCP on Windows
+# or
+ws = connect(socket_path)  # Unix socket on POSIX (if library supports)
+```
+
+**R**: Use R's WebSocket library:
+```r
+library(websocket)
+ws <- WebSocket$new("ws://localhost:port")
+```
+
+**Critical**: Each `send_recv()` must open a **separate, transient connection** for that specific request. Do NOT maintain a persistent connection.
+
+#### 4. IPython Comm Target Registration
+
+**Requirement**: Register a Comm target handler to receive commands from frontend.
+
+The Comm target name must be `ggblab-comm` (hardcoded in frontend).
+
+**Python implementation** (reference):
+```python
+def comm_handler(comm, open_msg):
+    @comm.on_msg
+    def _recv(msg):
+        content = msg['content']['data']
+        # Process command, store response for out-of-band delivery
+```
+
+**Julia equivalent**:
+```julia
+# Julia kernels expose Comm via kernel API
+kernel_comm = kernel.comm
+comm_handler = message -> begin
+    # Process message
+end
+register_comm("ggblab-comm", comm_handler)
+```
+
+**R equivalent**:
+```r
+# R kernels may use IRkernel package
+IRkernel::register_comm("ggblab-comm", function(msg) {
+    # Process message
+})
+```
+
+**Note**: Exact API varies by language. Consult Jupyter kernel documentation for your language.
+
+#### 5. Object Cache Management (Language-Dependent)
+
+**Challenge**: Python uses a dictionary; other languages may prefer different data structures.
+
+**Requirements** (language-independent):
+- Store GeoGebra object names and metadata
+- Refresh from applet via `evalCommand("GetValue('_json')")`
+- Check object existence before sending commands (optional but recommended)
+
+**Python reference**:
+```python
+self._applet_objects = {}  # Dict[name, metadata]
+
+async def refresh_object_cache(self):
+    json_str = await self.function("getBase64", [])
+    # Parse and store
+    self._applet_objects = parse_geogebra_json(json_str)
+```
+
+#### 6. Error Handling (Critical Differences)
+
+**Key constraint**: GeoGebra sends **NO explicit error responses** for invalid commands.
+
+**Error detection mechanisms** (all languages):
+1. **Timeout after 3 seconds**: Command was rejected or crashed GeoGebra
+2. **Error dialog events**: Captured by frontend and queued in `recv_events`
+3. **Response with no payload**: May indicate error (GeoGebra silently failed)
+
+**Error handling pattern** (pseudo-code):
+```
+try:
+    result = send_recv(command)
+catch TimeoutError:
+    # Command rejected or GeoGebra crashed
+    check recv_events for error dialog
+    if error_event found:
+        raise GeoGebraAppletError(error_event.message)
+    else:
+        raise TimeoutError("No response from GeoGebra")
+```
+
+**Recommendation**: Implement error classes isomorphic to Python's:
+- `GeoGebraError` (base)
+  - `GeoGebraCommandError` (pre-flight)
+    - `GeoGebraSyntaxError`
+    - `GeoGebraSemanticsError`
+  - `GeoGebraAppletError` (runtime)
+
+#### 7. Configuration and Initialization
+
+**Requirement**: The kernel must receive communication settings (Comm target, socket path/port) from the frontend before issuing commands.
+
+**Currently**: Python uses `GeoGebra().init()` which:
+1. Sets up Comm handler for `ggblab-comm`
+2. Starts out-of-band socket server
+3. Triggers frontend command `ggblab:create` with socket path/port
+4. Waits for frontend to confirm connection before returning
+
+**For other languages**: Implement similar initialization:
+- Register Comm target
+- Start socket server
+- Store path/port for `send_recv()` to use
+- Confirm ready before accepting commands
+
+**Example (Julia)**:
+```julia
+mutable struct GeoGebra
+    comm_channel::Channel
+    response_channel::Channel
+    socket_path::String
+    socket_port::Int
+    
+    function init()
+        # Register Comm, start socket, trigger frontend
+        # Return instance
+    end
+end
+```
+
+### Recommended Implementation Path
+
+1. **Document the protocol thoroughly** (beyond this section):
+   - JSON message formats
+   - Comm message structure
+   - Out-of-band socket protocol
+   - Complete example exchange (command → response)
+
+2. **Provide reference implementations** for a second language (e.g., Julia):
+   - Complete `GGBLab.jl` package with same interface as Python
+   - Include tests and examples
+   - Keep parity with Python version
+
+3. **Version the protocol**:
+   - Add protocol version field to messages
+   - Allow graceful degradation if languages use different versions
+   - Document backward compatibility guarantees
+
+4. **Validate with a non-Python kernel**:
+   - Implement Julia support end-to-end
+   - Verify all edge cases work (timeouts, error events, etc.)
+   - Document known limitations per language
+
+### Summary
+
+Non-Python kernel support is **technically feasible** but requires:
+- Careful async/await pattern translation
+- Proper UUID-based message ID correlation
+- Robust timeout and error event handling
+- Language-specific Comm registration
+- Comprehensive protocol documentation
+
+The core communication design (IPython Comm + out-of-band socket) poses **no fundamental barriers** to non-Python languages. The effort is primarily in documentation and reference implementation.
 
 ---
 

@@ -37,6 +37,45 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
         return Array.isArray(value) && value.every(subArray => Array.isArray(subArray));
     }
 
+    /**
+     * Calls a remote procedure on kernel2 to send a message via remote socket between kernel2 to kernel.
+     * Executes Python code on kernel2 that sends the message through either a unix socket or websocket.
+     * 
+     * Note on WebSocket Connection Handling:
+     * Previous attempts to maintain persistent websocket connections using ping/pong (keep-alive)
+     * were unsuccessful. Websocket connections established via kernel2.requestExecute() execute
+     * within isolated contexts that are torn down immediately after the code execution completes.
+     * Even with ping/pong mechanisms, connections would be disconnected once the kernel's
+     * requestExecute() context ended. Therefore, the implementation creates new socket connections
+     * for each message send operation, which is more reliable than attempting to maintain
+     * persistent but fragile connections.
+     * 
+     * @param kernel2 - The kernel to execute the remote procedure on
+     * @param message - The message to send (as a JSON string)
+     * @param socketPath - Optional unix socket path (if provided, uses unix socket; otherwise uses websocket)
+     * @param wsUrl - WebSocket URL (used if socketPath is not provided)
+     */
+    async function callRemoteSocketSend(
+        kernel2: any,
+        message: string,
+        socketPath: string | null,
+        wsUrl: string
+    ): Promise<void> {
+        if (socketPath) {
+            await kernel2.requestExecute({ code: `
+with unix_connect("${socketPath}") as ws:
+    ws.send(r"""${message}""")
+`
+            }).done;
+        } else {
+            await kernel2.requestExecute({ code: `
+with connect("${wsUrl}") as ws:
+    ws.send(r"""${message}""")
+`
+            }).done;
+        }
+    }
+
     useEffect(() => {
         (async () => {
             return await KernelAPI.listRunning();
@@ -101,37 +140,6 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
                 comm.onMsg = async (msg) => {
                     console.log("Message received from server:", msg['content']['data']);
 
-//                  const wsConnected =  false;
-//                  const wsReconnect = async () => {
-//                      await kernel2.requestExecute({ code: `ws.connect("${wsUrl}")` }).done;
-//                  };
-//                  const wsKeepAlive = async (): Promise<boolean> => {
-//                      let wsConnected = false;
-//                      const keepAliveMsg = `
-// try:
-//     ws.ping()
-// except:
-//     print("false")
-// else:
-//     print("true")
-// `;
-//                      const future = kernel2.requestExecute({ code: keepAliveMsg });
-//                      future.onIOPub = (reply) => {
-//                          if (reply.header.msg_type === 'stream' && (reply.content as any).name === 'stdout') {
-//                              wsConnected= JSON.parse((reply.content as any).text.trim());
-//                              console.log("Keep-alive reply:", wsConnected);
-//                          }
-//                      };
-//                      await future.done;
-//                      return wsConnected;
-//                  };
-//                  if (!await wsKeepAlive()) {
-//                      console.log("WebSocket not connected, retrying...");
-//                      await wsReconnect();
-//                      await wsKeepAlive();
-//                  }
-//                  console.log("WebSocket connected:", await wsConnected());
-
                     const command = JSON.parse(msg.content.data as any);
                     console.log("Parsed command:", command.type, command.payload);
                     
@@ -187,19 +195,7 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
                         }); // .replace(/'/g, "\\'");
                     }
                     comm.send(rmsg);
-                    if (socketPath) {
-                        await kernel2.requestExecute({ code: `
-with unix_connect("${socketPath}") as ws:
-    ws.send(r"""${rmsg}""")
-`
-                        }).done;
-                    } else {
-                        await kernel2.requestExecute({ code: `
-with connect("${wsUrl}") as ws:
-    ws.send(r"""${rmsg}""")
-`
-                        }).done;
-                    }
+                    await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
                 }
 
                 // var clientListener = function(data: any) {
@@ -213,7 +209,7 @@ with connect("${wsUrl}") as ws:
                 // }
                 // api.registerClientListener(clientListener);
 
-                var addListener = function(data: any) {
+                var addListener = async function(data: any) {
                  // console.log("Add listener triggered for:", data);
                     var msg = {
                         "type": "add",
@@ -228,40 +224,40 @@ with connect("${wsUrl}") as ws:
                         // }
                     }
                     // console.log("Add detected:", JSON.stringify(msg));
-                    comm.send(JSON.stringify(msg));
+                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
                 }
                 api.registerAddListener(addListener);
 
-                var removeListener = function(data: any) {
+                var removeListener = async function(data: any) {
                  // console.log("Add listener triggered for:", data);
                     var msg = {
                         "type": "remove",
                         "payload": data,
                     }
                     // console.log("Remove detected:", JSON.stringify(msg));
-                    comm.send(JSON.stringify(msg));
+                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
                 }
                 api.registerRemoveListener(removeListener);
 
-                var renameListener = function(data: any) {
+                var renameListener = async function(data: any) {
                  // console.log("Add listener triggered for:", data);
                     var msg = {
                         "type": "rename",
                         "payload": data,
                     }
                     // console.log("Rename detected:", JSON.stringify(msg));
-                    comm.send(JSON.stringify(msg));
+                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
                 }
                 api.registerRenameListener(renameListener);
 
-                var clearListener = function(data: any) {
+                var clearListener = async function(data: any) {
                 // console.log("Add listener triggered for:", data);
                     var msg = {
                         "type": "clear",
                         "payload": data
                     }
                     // console.log("Rename detected:", JSON.stringify(msg));
-                    comm.send(JSON.stringify(msg));
+                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
                 }
                 api.registerClearListener(clearListener);
 
@@ -272,12 +268,14 @@ with connect("${wsUrl}") as ws:
                                 (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach((n) => {
                                  // console.log(n.textContent); 'Error'などのタイトルを検出
                                     ((node as HTMLElement).querySelector('div.dialogContent') as HTMLElement)
-                                        .querySelectorAll(`[class$='Label']`).forEach((n2) => {
-                                            console.log(n2.textContent);
-                                                comm.send(JSON.stringify({
-                                                    "type": n.textContent,
-                                                    "payload": n2.textContent
-                                                }));
+                                        .querySelectorAll(`[class$='Label']`).forEach(async (n2) => {
+                                            // console.log(n2.textContent);
+                                            const msg = JSON.stringify({
+                                                "type": n.textContent,
+                                                "payload": n2.textContent
+                                            });
+                                            // comm.send(msg);
+                                            await callRemoteSocketSend(kernel2, msg, socketPath, wsUrl);
                                         })
                                 })
                             } catch (e) {

@@ -1,12 +1,14 @@
-mv # Scoping: Geometric Scene Evolution as Programming Pedagogy
+# Scoping: Geometric Scene Evolution as Programming Pedagogy
 
 This document articulates ggblab's **foundational educational mission**: use geometric scene construction to teach **variable scoping** and **computational thinking**—concepts often neglected or poorly understood in Python education.
 
 ---
 
-## The Problem: Python's Scoping Crisis in Education
+## Part 1: Pedagogical Foundation
 
-### Why Python Fails at Teaching Scoping
+### The Problem: Python's Scoping Crisis in Education
+
+#### Why Python Fails at Teaching Scoping
 
 Python's dynamic nature and permissive scoping rules make it a **poor vehicle for teaching fundamental programming concepts**:
 
@@ -24,7 +26,7 @@ Python's dynamic nature and permissive scoping rules make it a **poor vehicle fo
 - When values are captured vs. referenced (binding semantics)
 - How to reason about side effects
 
-### Traditional Approaches Fall Short
+#### Traditional Approaches Fall Short
 
 **Textbook explanations**: Abstract diagrams of "local," "enclosing," "global," "built-in" scopes (LEGB rule)
 - ❌ No concrete, visual anchor
@@ -40,9 +42,9 @@ Python's dynamic nature and permissive scoping rules make it a **poor vehicle fo
 
 ---
 
-## The Solution: Geometric Scene Construction as Scoping Model
+### The Solution: Geometric Scene Construction as Scoping Model
 
-### Why Geometry Works
+#### Why Geometry Works
 
 **Mathematical constructions are inherently scoped**:
 
@@ -68,7 +70,7 @@ Property to prove:
 - **Scope 3** (Point C): Depends on Scope 2; long dependency chain
 - **Verification scope**: Reads from multiple scopes; proves emergent properties
 
-### The Isomorphism: Geometry ↔ Programming
+#### The Isomorphism: Geometry ↔ Programming
 
 | Geometric Concept | Programming Concept | ggblab Manifestation |
 |------------------|---------------------|---------------------|
@@ -80,7 +82,7 @@ Property to prove:
 | **Construction sequence** | Call stack / execution order | Topological sort of dependency graph |
 | **Parameter sweep (vary A)** | Closure capturing mutable reference | Scene Timeline records scope evolution |
 
-### Visual Manifestation in GeoGebra
+#### Visual Manifestation in GeoGebra
 
 **GeoGebra's construction protocol IS a scope tree**:
 
@@ -111,9 +113,9 @@ Construction Protocol:
 
 ---
 
-## Computational Thinking via Geometric Construction
+### Computational Thinking via Geometric Construction
 
-### The Four Pillars
+#### The Four Pillars
 
 **Computational Thinking (Wing, 2006)** comprises:
 
@@ -182,9 +184,9 @@ Construction Protocol:
 
 ---
 
-## Scoping Pedagogy: From Math to Code
+### Scoping Pedagogy: From Math to Code
 
-### Concrete Example: Isosceles Triangle Construction
+#### Concrete Example: Isosceles Triangle Construction
 
 **Mathematical Statement**:
 > Construct an isosceles triangle ABC where AB is the base.
@@ -319,7 +321,7 @@ print(times_3(5))  # 15 (uses n=3)
 
 ---
 
-## Implementation in ggblab
+## Part 2: Implementation
 
 ### Dependency Graph as Scope Tree
 
@@ -703,9 +705,11 @@ Programming scoping (abstract, conceptual)
 
 ---
 
-## Philosophical Stance: Mathematics First
+## Part 3: Philosophical Perspective
 
-### Why Not Teach Scoping Directly in Python?
+### Philosophical Stance: Mathematics First
+
+#### Why Not Teach Scoping Directly in Python?
 
 **Standard approach**: Start with `def`, `global`, `nonlocal`, LEGB rule
 - ❌ Students memorize rules without mental models
@@ -719,7 +723,7 @@ Programming scoping (abstract, conceptual)
 
 **Principle**: **Teach concepts first in familiar domain (math), then transfer to code**.
 
-### The Cognitive Science Rationale
+#### The Cognitive Science Rationale
 
 **Dual Coding Theory** (Paivio, 1986):
 - Combining verbal (code) and visual (geometry) representations enhances learning

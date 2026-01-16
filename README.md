@@ -1,22 +1,29 @@
-# ggblab
+# ggblab — A JupyterLab extension for learning geometry and Python programming side-by-side with GeoGebra
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
+[![Tests](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml/badge.svg)](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/moyhig-ecs/ggblab/branch/main/graph/badge.svg)](https://codecov.io/gh/moyhig-ecs/ggblab)
 [![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/moyhig-ecs/ggblab/main?filepath=examples/example.ipynb)
 
-ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
+A JupyterLab extension that displays a GeoGebra applet in a side-by-side panel while your notebook code remains editable on the side—enabling **interactive dual coding** where you manipulate geometry visually and control it from Python. Geometric visualization and computational thinking reinforce each other. Learn programming through geometric construction; reason about geometry through Python code. Grounded in cognitive science (Dual Coding Theory, Transfer of Learning), ggblab bridges visual and symbolic domains so knowledge transfers across disciplines.
+
+The GeoGebra applet displays in a fixed JupyterLab panel while your notebook remains scrollable on the side—preserving continuous visual feedback as you edit code. You can manipulate geometry directly in GeoGebra (dragging points, creating objects) and simultaneously control it from Python code. This side-by-side layout enables true bidirectional interaction: change the applet, see Python respond; run Python code, watch the geometry update.
 
 ### Features
 
+- **Dual Coding System**: Geometric visualization + Python code in a unified workspace—students learn through both visual and symbolic representations
 - Programmatic launch via `GeoGebra().init()` (recommended), which uses ipylab to pass communication settings before widget initialization (Command ID: `ggblab:create`, label: "React Widget"). Command Palette/Launcher work only with fixed arguments and are suitable for default settings.
 - Call GeoGebra commands (`command`) and API functions (`function`) from Python through the `GeoGebra` helper
+- **Domain Bridge**: Construction dependencies in GeoGebra map isomorphically to variable scoping in Python—teach computational thinking through geometric structure
+- **Transfer of Learning**: Knowledge learned in geometric context transfers to computational thinking and vice versa. Dual representations strengthen understanding across both domains.
 - Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
 - Settings schema is wired up (no user options yet) for future configuration
-- Single Comm target name `ggblab-comm`; multiplexing via multiple targets is avoided because IPython Comm cannot receive during cell execution, so reliability comes from the out-of-band socket channel instead.
+- **Single Comm target name `ggblab-comm`** and **singleton instance per kernel session**: Multiplexing via multiple targets is avoided because (1) IPython Comm cannot receive during cell execution, and (2) more fundamentally, **asyncio's concurrency model requires all concurrent `send_recv()` tasks to share a single message buffer at class scope** to safely correlate responses by message ID. See [ggblab/utils.py section 8 — Unexpected Scope Subdivision in asyncio](ggblab/utils.py) for why instance variables fail in asyncio contexts, and [architecture.md § Asyncio Design Challenges](docs/architecture.md#asyncio-design-challenges-in-jupyter) for the full technical rationale.
 
 ### Requirements
 
@@ -41,6 +48,37 @@ This JupyterLab extension supports both local installs and managed cloud deploym
 - End users on JupyterHub can use the extension immediately after `pip install`; developers can follow the Development Workflow for local builds.
 
 For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-deployment) section.
+
+#### ⚠️ Known Browser Compatibility Issue: JupyterLab on Safari and iPadOS
+
+**Classroom Deployment Notice**: JupyterLab's UI framework (Lumino) has known compatibility issues with Safari browser and all browsers on iPadOS. This is a **JupyterLab/Lumino limitation related to WebKit browser engine restrictions, not specific to ggblab**. Affected functionality includes:
+- **Affected platforms**: 
+  - iPad running iPadOS 26 (2025) — **all browsers on iPadOS are forced to use WebKit engine, making this unsolvable at the browser level**
+  - macOS with Safari browser
+- **Issue**: JupyterLab's Lumino UI framework relies on browser APIs that WebKit (Safari) restricts or handles differently, affecting layout rendering, widget lifecycle, and frontend-to-kernel communication reliability
+- **Not affected**: JupyterLab on Chromium-based browsers (Chrome, Edge) and Firefox on macOS, Windows, and Linux remain fully supported
+- **Impact on ggblab**: ggblab's frontend widget relies on JupyterLab's Lumino framework; when Lumino itself is compromised by WebKit limitations, ggblab functionality may degrade
+- **Workaround for classrooms**: 
+  - **iPadOS**: No browser-level workaround available (all browsers use WebKit). Consider alternatives to iPad, or use iPad only for static Jupyter notebooks
+  - **macOS**: Use Chromium-based browsers (Chrome, Edge) or Firefox instead of Safari for interactive JupyterLab sessions
+  - **Recommended**: Deploy JupyterLab on macOS, Windows, or Linux systems for classroom use; these platforms have no browser restrictions and full JupyterLab/ggblab support
+  - If JupyterHub is deployed, document these limitations and restrict interactive JupyterLab access from iPad or Safari
+
+This is an upstream JupyterLab/Lumino + WebKit browser engine limitation, not a ggblab-specific problem. See [JupyterLab documentation](https://jupyterlab.readthedocs.io/) and [GitHub Issues](https://github.com/moyhig-ecs/ggblab/issues) for current status.
+
+#### ⚠️ Known Display Issue: GeoGebra Applet Size Scaling on Window Resize
+
+**Technical Notice**: ggblab applies Applet dimensions via CSS and widget configuration. However, when the JupyterLab window is resized after the Applet is initialized, device resolution scaling can become confused, causing the displayed GeoGebra applet to appear smaller than expected.
+
+- **Issue**: Window resize triggers recalculation of CSS dimensions, but internal DPI/device pixel ratio tracking in GeoGebra may not sync properly with the updated layout
+- **Symptom**: GeoGebra applet appears compressed or smaller after resizing the browser window
+- **Affected configurations**: More common on high-DPI displays (2x+ device pixel ratio), including Retina displays on macOS and high-resolution external monitors
+- **Note**: This scaling issue **cannot be reset via GeoGebra API commands** (e.g., `SetCoords()`) once triggered; it is purely a rendering/layout issue
+- **Workaround**: 
+  - Refresh the browser page after resizing the JupyterLab window to reinitialize display scaling
+  - Avoid frequent window resizing during interactive sessions when possible
+
+This is a display/rendering interaction between JupyterLab's layout manager and GeoGebra's canvas scaling, not a communication or functionality issue. The Applet operates correctly; only the visual presentation is affected.
 
 Uninstall:
 
@@ -71,7 +109,63 @@ print(value)
 
 `init()` fetches the current kernel ID, starts the IPython Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
 
+### Error Handling — Comprehensive Exception Hierarchy
+
+ggblab implements a **sophisticated, multi-layer error handling system** that stands out as a remarkable achievement in transcending GeoGebra's limitations:
+
+**The Challenge**: GeoGebra provides no formal Error API or machine-readable error schema. Error information comes purely as asynchronous event messages from the applet.
+
+**The Breakthrough**: Rather than depending on missing GeoGebra APIs, ggblab implements a **schema-free, observation-driven error capture system** that:
+1. **Validates pre-flight** (syntax, semantics) before GeoGebra ever sees the command
+2. **Captures runtime errors asynchronously** via the dual-channel architecture (out-of-band socket)
+3. **Consolidates multiple error events** automatically
+4. **Distinguishes error sources** (pre-flight vs. runtime) through a rich exception hierarchy
+
+**Result**: ggblab's error handling is **more robust and flexible than GeoGebra's native capabilities**.
+
+```python
+from ggblab.errors import GeoGebraError, GeoGebraAppletError
+
+# Pre-flight validation errors (caught before execution)
+try:
+    ggb.check_syntax = True
+    ggb.check_semantics = True
+    await ggb.command("Circle(A, B)")
+except GeoGebraSyntaxError as e:
+    print(f"Syntax error: {e.command}")
+except GeoGebraSemanticsError as e:
+    print(f"Missing objects: {e.missing_objects}")
+
+# Runtime errors from GeoGebra applet (caught after execution)
+try:
+    await ggb.command("Unbalanced(")
+except GeoGebraAppletError as e:
+    print(f"Applet error: {e.error_message}")
+
+# Catch all GeoGebra errors
+try:
+    await ggb.command("...")
+except GeoGebraError:
+    # Handles all GeoGebra-related exceptions
+    pass
+```
+
+**Error Types:**
+- **GeoGebraSyntaxError**: Command cannot be tokenized (pre-flight)
+- **GeoGebraSemanticsError**: Referenced objects don't exist in applet (pre-flight)
+- **GeoGebraAppletError**: GeoGebra applet produces error events during execution (runtime)
+
+**Architecture Achievements:**
+- Pre-flight validation prevents invalid commands from reaching GeoGebra
+- Runtime errors captured asynchronously via dual-channel communication (IPython Comm + WebSocket)
+- Consecutive error events automatically consolidated into semantic units
+- Full asyncio compliance with timeout handling and queue polling
+- Zero dependency on external error schemas or APIs
+
+See [ggblab/errors.py](ggblab/errors.py) for the complete exception hierarchy and [docs/architecture.md](docs/architecture.md#runtime-error-handling-geogebraappletererror) for implementation details.
+
 ## Documentation
+
 
 ggblab's design philosophy and implementation details are documented across several focused documents:
 
@@ -411,8 +505,35 @@ To remove the dev link, uninstall and delete the `ggblab` symlink listed by `jup
 
 ### Testing
 
-- Frontend: `jlpm install && jlpm test`
-- Integration (Playwright/Galata): see [ui-tests/README.md](ui-tests/README.md); build with `jlpm build:prod`, then `cd ui-tests && jlpm install && jlpm playwright test`
+**Automated Testing (GitHub Actions)**:
+- Continuous integration configured via [.github/workflows/tests.yml](.github/workflows/tests.yml)
+- Runs on `main` and `dev` branches on every push and pull request
+- Tests across Python 3.10, 3.11, 3.12 on Ubuntu, macOS, and Windows
+- Coverage reports uploaded to Codecov
+
+**Running Tests Locally**:
+
+```bash
+# Install test dependencies
+pip install -e ".[dev]"
+pip install pytest pytest-cov
+
+# Run all tests
+pytest tests/ -v
+
+# Run specific test module
+pytest tests/test_parser.py -v
+
+# Run with coverage report
+pytest tests/ --cov=ggblab --cov-report=html
+```
+
+**Frontend Tests**:
+- `jlpm install && jlpm test`
+
+**Integration Tests (Playwright/Galata)**:
+- See [ui-tests/README.md](ui-tests/README.md)
+- Build with `jlpm build:prod`, then `cd ui-tests && jlpm install && jlpm playwright test`
 
 ### Release
 
@@ -445,9 +566,9 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
 
 #### General Limitations
 
-- **No unit tests**: Backend Python code lacks comprehensive unit tests.
-- **Incomplete integration tests**: No Playwright tests yet for critical workflows (command execution, file loading, event handling).
-- **No CI/CD pipeline**: No automated testing on pull requests or releases.
+- ✅ **Unit tests**: Comprehensive Python test suite with pytest (parser, GeoGebra applet, construction handling)
+- ✅ **CI/CD pipeline**: Automated testing on all pull requests via GitHub Actions (Python 3.10+, multi-OS)
+- 🔄 **Incomplete integration tests**: No Playwright tests yet for critical workflows (command execution, file loading, event handling)
 - **Minimal documentation**: No dedicated developer guide beyond code comments; architecture rationale is not documented.
 
 ### Project Assessment (Objective)

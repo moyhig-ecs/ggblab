@@ -1,99 +1,99 @@
-# テスト実装と実施ガイド（ggblab）
+# Testing Guide for ggblab
 
-このドキュメントでは、ggblab のユニットテスト/統合テストの構成、ローカルおよび CI 上での実行方法、カバレッジ目標、拡張方法について説明します。
+This document describes the structure of ggblab's unit and integration tests, how to run them locally and on CI, coverage goals, and how to extend them.
 
-## テスト構成
+## Test Structure
 
-- ディレクトリ構成（抜粋）
-  - `tests/`（ユニットテスト）
-    - `test_construction.py`: 形式別ロード/セーブ (.ggb Base64, ZIP, JSON, XML)、ラウンドトリップ、エッジケース
-    - `test_parser.py`: 依存グラフ構築、ルート/リーフ同定、トポロジカルソート、世代分析
-    - `__init__.py`, `conftest.py`: Pytest 設定・共通フィクスチャ
-  - ルート
-    - `pytest.ini`: カバレッジ/マーカー/出力設定
-    - `.github/workflows/tests.yml`: GitHub Actions 上での自動テスト
+- Directory structure (excerpt)
+  - `tests/` (unit tests)
+    - `test_construction.py`: Loading/saving by format (.ggb Base64, ZIP, JSON, XML), round-trip, edge cases
+    - `test_parser.py`: Dependency graph construction, root/leaf identification, topological sort, generation analysis
+    - `__init__.py`, `conftest.py`: Pytest configuration and shared fixtures
+  - Root
+    - `pytest.ini`: Coverage/marker/output configuration
+    - `.github/workflows/tests.yml`: Automated testing on GitHub Actions
 
-## ローカル実行
+## Local Execution
 
-前提: 仮想環境を有効化（Conda/venv）
+Prerequisite: Activate virtual environment (Conda/venv)
 
 ```bash
 pip install -e ".[dev]"
 pip install pytest pytest-cov
 
-# すべてのテストを実行
+# Run all tests
 pytest
 
-# 詳細出力 + カバレッジ
+# Verbose output + coverage
 pytest -v --cov=ggblab --cov-report=term-missing
 
-# 特定ファイルのみ
+# Specific file only
 pytest tests/test_construction.py -v
 pytest tests/test_parser.py -v
 
-# 失敗したテストのみ再実行
+# Re-run failed tests only
 pytest --lf
 ```
 
-生成物:
-- `htmlcov/`（HTML カバレッジレポート）
-- `coverage.xml`（CI 用カバレッジレポート）
+Generated artifacts:
+- `htmlcov/` (HTML coverage report)
+- `coverage.xml` (coverage report for CI)
 
-## CI（GitHub Actions）
+## CI (GitHub Actions)
 
-- ワークフロー: `.github/workflows/tests.yml`
-- 対象: `ubuntu-latest`, `macos-latest`, `windows-latest` / Python `3.10`〜`3.12`
-- 実行内容:
-  - 依存関係のインストール (`pip install -e ".[dev]"`)
-  - `pytest` によるテスト実行 + カバレッジ生成
-  - Codecov へのアップロード（オプション）
+- Workflow: `.github/workflows/tests.yml`
+- Targets: `ubuntu-latest`, `macos-latest`, `windows-latest` / Python `3.10`–`3.12`
+- Execution steps:
+  - Install dependencies (`pip install -e ".[dev]"`)
+  - Run tests with pytest + generate coverage
+  - Upload to Codecov (optional)
 
-## カバレッジ目標
+## Coverage Goals
 
-- v0.8.0: 50% 以上（`construction`, `parser` を中心に達成）
-- v0.9.0: 70% 以上（`comm`, `ggbapplet` のテスト追加）
-- v1.0.0: 80% 以上（統合テスト/残りのエッジケース）
+- v0.8.0: ≥50% (achieved primarily through `construction`, `parser`)
+- v0.9.0: ≥70% (add tests for `comm`, `ggbapplet`)
+- v1.0.0: ≥80% (integration tests/remaining edge cases)
 
-## テスト作成の指針
+## Test Writing Guidelines
 
-- 単一責務のテスト関数（1テスト = 1挙動）
-- フィクスチャ（`conftest.py`）でテストデータ生成・使い回し
-- エッジケースを優先（空ファイル、破損データ、非存在パス）
-- 失敗時はユーザーに意味のあるメッセージ（例外種別・文言）
-- 可能ならラウンドトリップ（load→save→load）で整合性検証
+- Single responsibility per test function (one test = one behavior)
+- Use fixtures (`conftest.py`) for test data generation and reuse
+- Prioritize edge cases (empty files, corrupted data, non-existent paths)
+- Provide meaningful error messages on failure (exception type/message)
+- Use round-trip testing when possible (load→save→load) for consistency validation
 
-## 代表的なテスト内容（概要）
+## Representative Test Content (Overview)
 
 - `test_construction.py`
-  - Base64 .ggb / ZIP .ggb / JSON / XML のロード
-  - `<construction>` への XML ストリップと科学的記法の正規化（`e-1 → E-1`）
-  - Base64 有無によるセーブ挙動（ZIP/プレーン XML）
-  - 自動ファイル名生成（`name_1.ggb`, `name_2.ggb`）
-  - ラウンドトリップ一致検証
+  - Loading Base64 .ggb / ZIP .ggb / JSON / XML
+  - XML stripping to `<construction>` and normalization of scientific notation (`e-1 → E-1`)
+  - Save behavior with/without Base64 (ZIP/plain XML)
+  - Automatic filename generation (`name_1.ggb`, `name_2.ggb`)
+  - Round-trip consistency validation
 - `test_parser.py`
-  - ノード/エッジ生成（依存関係）
-  - ルート/リーフの同定
-  - トポロジカルソート/世代分析（スコープレベル）
-  - 推移的依存（A→AB→L→C→triangle など）
+  - Node/edge generation (dependencies)
+  - Root/leaf identification
+  - Topological sort/generation analysis (scope levels)
+  - Transitive dependencies (A→AB→L→C→triangle, etc.)
 
-## 拡張計画（提案）
+## Extension Plan (Proposed)
 
-- `tests/test_comm.py`: 通信レイヤ（IPython Comm + OOB ソケット）のモックテスト
-- `tests/test_ggbapplet.py`: `GeoGebra` API の統合テスト（起動→関数呼び出し）
-- Playwright/Galata による UI テスト（別レポジトリ/ディレクトリ）
+- `tests/test_comm.py`: Mock tests for communication layer (IPython Comm + OOB socket)
+- `tests/test_ggbapplet.py`: Integration tests for `GeoGebra` API (init→function calls)
+- Playwright/Galata UI tests (separate repo/directory)
 
-## トラブルシューティング
+## Troubleshooting
 
-- `ImportError: ggblab.* が見つからない`
-  - `conftest.py` が `sys.path` にプロジェクトルートを追加済みか確認
-  - `pip install -e ".[dev]"` を実行
-- Windows で ZIP ファイル関連の失敗
-  - パス/改行コード差異に注意、`zipfile.is_zipfile()` で事前チェック
-- カバレッジが低い
-  - エッジケース追加、分岐を通すテストを増やす
+- `ImportError: ggblab.* not found`
+  - Verify that `conftest.py` adds project root to `sys.path`
+  - Run `pip install -e ".[dev]"`
+- ZIP file-related failures on Windows
+  - Be aware of path/line ending differences, pre-check with `zipfile.is_zipfile()`
+- Low coverage
+  - Add more edge cases, write tests that exercise all branches
 
-## 参考
+## References
 
-- `pytest.ini`: カバレッジ設定・マーカー
-- `.github/workflows/tests.yml`: CI 実行条件/環境
-- `docs/ai_assessment.md`: 技術評価とテスト優先順位の背景
+- `pytest.ini`: Coverage and marker configuration
+- `.github/workflows/tests.yml`: CI execution conditions/environment
+- `docs/ai_assessment.md`: Technical assessment and test prioritization background
