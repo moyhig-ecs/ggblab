@@ -1,0 +1,7 @@
+title: ggblab Blog
+theme: minima
+baseurl: "" # set if serving under a subpath, e.g. /repo-name
+# url: "https://<your-username>.github.io"  # optional for local previews
+
+# Keep collections simple; use default posts folder
+markdown: kramdown
