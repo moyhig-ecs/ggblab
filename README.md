@@ -1,4 +1,4 @@
-# ggblab — A JupyterLab extension that embeds GeoGebra for dual-coded geometry and Python programming
+# ggblab — A JupyterLab extension for learning geometry and Python programming side-by-side with GeoGebra
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
@@ -8,9 +8,9 @@
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
 
-A JupyterLab extension that embeds a GeoGebra applet in your notebook and lets you drive it from Python—enabling **dual coding** where geometric visualization and computational thinking reinforce each other. Learn programming through geometric construction; reason about geometry through Python code. Grounded in cognitive science (Dual Coding Theory, Transfer of Learning), ggblab bridges visual and symbolic domains so knowledge transfers across disciplines.
+A JupyterLab extension that displays a GeoGebra applet in a side-by-side panel while your notebook code remains editable on the side—enabling **interactive dual coding** where you manipulate geometry visually and control it from Python. Geometric visualization and computational thinking reinforce each other. Learn programming through geometric construction; reason about geometry through Python code. Grounded in cognitive science (Dual Coding Theory, Transfer of Learning), ggblab bridges visual and symbolic domains so knowledge transfers across disciplines.
 
-The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
+The GeoGebra applet displays in a fixed JupyterLab panel while your notebook remains scrollable on the side—preserving continuous visual feedback as you edit code. You can manipulate geometry directly in GeoGebra (dragging points, creating objects) and simultaneously control it from Python code. This side-by-side layout enables true bidirectional interaction: change the applet, see Python respond; run Python code, watch the geometry update.
 
 ### Features
 
