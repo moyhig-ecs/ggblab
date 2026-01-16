@@ -89,6 +89,166 @@ Unlike the persistent IPython Comm connection, the out-of-band channel:
 - If a transaction fails, the caller (Python code) receives an exception and can retry
 - The primary Comm channel (managed by Jupyter) handles persistent connectivity
 
+## Command Validation (Pre-Flight Checks)
+
+Before sending commands to GeoGebra, ggblab performs optional validation to catch errors early and provide Python-side feedback instead of relying on GeoGebra's timeout-based error signaling.
+
+### Syntax Validation
+
+**Purpose**: Verify command strings can be parsed into valid tokens
+
+**Implementation** (`ggblab/ggbapplet.py`):
+```python
+if self.check_syntax:
+    try:
+        self.parser.tokenize_with_commas(c)
+    except Exception as e:
+        raise GeoGebraSyntaxError(c, str(e))
+```
+
+**What it checks**:
+- Command string can be tokenized by the parser
+- Parentheses, brackets, and braces are balanced
+- Basic lexical structure is valid
+
+**What it does NOT check**:
+- Command name existence (GeoGebra may support commands not in the parser's command cache)
+- Argument count or types
+- Semantic correctness (use `check_semantics` for that)
+
+**Usage**:
+```python
+ggb = await GeoGebra().init()
+ggb.check_syntax = True  # Enable syntax validation
+
+try:
+    await ggb.command("A=(0,0)")  # Valid
+except GeoGebraSyntaxError as e:
+    print(f"Syntax error: {e}")
+```
+
+**Raises**: `GeoGebraSyntaxError` if tokenization fails
+
+### Semantic Validation
+
+**Purpose**: Verify referenced objects exist in the applet before sending the command
+
+**Status**: Partial implementation (see limitations below)
+
+**Implementation** (`ggblab/ggbapplet.py`):
+```python
+if self.check_semantics:
+    try:
+        # Refresh object cache from applet
+        await self.refresh_object_cache()
+        
+        # Extract object tokens: tokens that are
+        # not commands (not in command_cache), not commas, and not literals
+        t = self.parser.tokenize_with_commas(c)
+        object_tokens = [o for o in flatten(t) 
+                        if o not in self.parser.command_cache 
+                        and o != ","
+                        and not self._is_literal(o)]
+        
+        # Check if referenced objects exist
+        missing_objects = [obj for obj in object_tokens 
+                          if obj not in self._applet_objects]
+        
+        if missing_objects:
+            raise GeoGebraSemanticsError(
+                c, 
+                f"Referenced object(s) do not exist in applet: {missing_objects}",
+                missing_objects
+            )
+    except GeoGebraSemanticsError:
+        raise
+    except Exception as e:
+        raise GeoGebraSemanticsError(c, f"Validation error: {e}")
+```
+
+**What it checks**:
+- Object references in the command exist in the applet's object cache
+- Refreshes the cache before checking to catch recent additions/deletions
+
+**What it does NOT check** (limitations):
+- Command name validity (if `check_syntax` passes, command is assumed valid)
+- Argument types or counts (would require full GeoGebra API metadata)
+- Scope/visibility (static analysis cannot determine runtime scope)
+- Overload resolution (multiple command signatures not distinguished)
+- N-ary dependencies (3+ objects creating a single dependent object)
+
+**Why incomplete**: GeoGebra does not maintain a public, versioned, machine-readable command schema. The official GitHub repository is outdated and does not reflect the live API. Maintaining a static schema would be error-prone and fragile.
+
+**Usage**:
+```python
+ggb = await GeoGebra().init()
+ggb.check_semantics = True  # Enable semantic validation
+
+# Attempt to use non-existent object
+try:
+    await ggb.command("Circle(A, 2)")  # A does not exist
+except GeoGebraSemanticsError as e:
+    print(f"Semantic error: {e}")
+    print(f"Missing objects: {e.missing_objects}")
+```
+
+**Raises**: `GeoGebraSemanticsError` if referenced objects don't exist
+
+### Cache Management
+
+**Object Cache**:
+- Initialized on `GeoGebra().init()` via `refresh_object_cache()`
+- Updated after each successful `command()` execution
+- Can be manually refreshed: `await ggb.refresh_object_cache()`
+
+**Cache Accuracy**:
+- Reflects the current applet state at check time
+- May become stale if objects are added/removed via:
+  - Frontend UI (direct user actions in GeoGebra)
+  - Multiple Python kernels (if multiple notebooks control the same applet)
+- Calling `refresh_object_cache()` explicitly ensures fresh data
+
+**Trade-off**: Prevents false positives (rejecting valid commands) at the cost of occasional false negatives (accepting commands that reference recently-deleted objects, which will timeout).
+
+### Validation Strategy
+
+**Recommended practice**:
+
+```python
+# Enable both checks for maximum safety
+ggb.check_syntax = True
+ggb.check_semantics = True
+
+try:
+    await ggb.command("Circle(A, Distance(A, B))")
+except GeoGebraSyntaxError:
+    print("Command syntax is invalid")
+except GeoGebraSemanticsError as e:
+    print(f"Objects not found: {e.missing_objects}")
+except TimeoutError:
+    # Command may have been rejected by GeoGebra despite passing pre-flight checks
+    # Check recv_events for error dialogs
+    print("Command timed out or was rejected by GeoGebra")
+```
+
+**Validation Flow**:
+
+```
+Python command(c)
+    ↓
+check_syntax enabled? → tokenize → SyntaxError
+    ↓ (pass)
+check_semantics enabled? → refresh cache → extract tokens → check existence → SemanticError
+    ↓ (pass)
+Send to GeoGebra via out-of-band socket
+    ↓
+GeoGebra processes (may still fail internally)
+    ↓
+Timeout after 3 seconds? → TimeoutError
+    ↓
+Check recv_events for error dialogs
+```
+
 ## Data Flow Diagrams
 
 ### Normal Command Execution (Primary Channel)
@@ -97,6 +257,8 @@ Unlike the persistent IPython Comm connection, the out-of-band channel:
 Python Kernel                    Frontend (Browser)
      |                                  |
      |  1. command("A=(0,0)")           |
+     |  2. Syntax & semantic checks     |
+     |  3. Send via IPython Comm        |
      |--------------------------------->|
      |      via IPython Comm            |
      |                                  |
@@ -171,10 +333,24 @@ async def client_handle(self, client_id):
         async for msg in client_id:
             _data = json.loads(msg)
             _id = _data.get('id')
-            self.recv_logs[_id] = _data['payload']  # Store response keyed by message ID
+            
+            # Route event-type messages to recv_events queue
+            # Messages with 'id' are command responses; messages without 'id' are events.
+            if _id:
+                # Response message: store in recv_logs for send_recv() to retrieve
+                self.recv_logs[_id] = _data['payload']
+            else:
+                # Event message: queue for event processing
+                self.recv_events.put(_data)
     finally:
         self.clients.remove(client_id)
 ```
+
+**Message Routing Strategy**:
+- **Responses** (with `id`): Keyed by message ID in `recv_logs` for `send_recv()` to retrieve
+- **Events** (without `id`): Queued in `recv_events` for asynchronous event processing
+
+This enables real-time error event capture and dialog message delivery during cell execution.
 
 ### Frontend: Widget Connection Logic (src/widget.tsx)
 
@@ -249,96 +425,132 @@ No explicit error handling required in ggblab for the primary channel.
 ### Out-of-Band Channel Error Handling
 
 **Responsibility**: ggblab backend and frontend  
-**Status**: Basic (timeout-based)
+**Status**: Timeout-based with event queueing
 
-The out-of-band channel operates independently and has limited error detection:
+The out-of-band channel operates independently with dual responsibilities:
 
-#### Timeout Model
+#### 1. Response Delivery (Timeout-Based)
 
-The out-of-band socket has a **3-second timeout**:
+The out-of-band socket has a **3-second timeout** for command responses:
 
 ```python
 # In ggblab/comm.py send_recv()
 try:
-    response = await asyncio.wait_for(
-        future,  # Waiting for response to arrive
-        timeout=3.0  # 3-second timeout
-    )
-except asyncio.TimeoutError:
-    raise TimeoutError(f"Out-of-band response timeout for message id={msg_id}")
+    async with asyncio.timeout(3.0):
+        # Wait for response to arrive via out-of-band socket
+        while not (_id in self.recv_logs):
+            await asyncio.sleep(0.01)
+        value = self.recv_logs.pop(_id, None)
+        return value
+except TimeoutError:
+    print(f"TimeoutError in send_recv {msg}")
+    return { 'type': 'error', 'message': 'TimeoutError in send_recv' }
 ```
 
-If no response arrives within 3 seconds, a `TimeoutError` exception is raised in Python code:
+If no response arrives within 3 seconds, a timeout error is returned.
+
+#### 2. Event Delivery (Queue-Based)
+
+Real-time events (error dialogs, object notifications) are captured and queued via the out-of-band socket:
 
 ```python
-try:
-    label = await applet.evalCommand("GetValue(a)")
-except TimeoutError:
-    print("GeoGebra did not respond within 3 seconds")
+# In frontend widget.tsx
+const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+            try {
+                // Detect GeoGebra error dialogs
+                (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach((n) => {
+                    const msg = JSON.stringify({
+                        "type": n.textContent,  // e.g., "Error", "Warning"
+                        "payload": n2.textContent
+                    });
+                    // Send via both channels during cell execution
+                    comm.send(msg);  // Primary channel (blocked during execution)
+                    await callRemoteSocketSend(kernel2, msg, socketPath, wsUrl);  // Out-of-band channel
+                });
+            } catch (e) { /* handle */ }
+        });
+    });
+});
+```
+
+**Backend event processing**:
+```python
+# Events arrive via out-of-band socket without 'id' field
+if not _id:
+    self.recv_events.put(_data)  # Queue for later processing
+```
+
+Python code can then drain the event queue after commands complete:
+```python
+# Future implementation: Process queued events
+while not self.comm.recv_events.empty():
+    event = self.comm.recv_events.get_nowait()
+    if event['type'] == 'Error':
+        print(f"GeoGebra error: {event['payload']}")
 ```
 
 #### GeoGebra API Constraint: No Explicit Error Responses
 
-**Critical limitation**: The GeoGebra API does NOT provide explicit error response codes or callbacks.
+**Critical limitation**: The GeoGebra API does NOT provide explicit error response codes or callbacks for invalid commands.
 
 This means:
 - When a command fails (e.g., invalid syntax, reference to non-existent object), GeoGebra does not send an error response via the out-of-band socket
 - No error codes, error messages, or structured error data are returned
-- The only error signal is **timeout after 3 seconds**
+- The only signals are:
+  1. **Timeout after 3 seconds** (command was rejected silently)
+  2. **Error dialog popup** (captured and forwarded via out-of-band socket)
 
 **Example**:
 ```python
-# This will timeout, not return an error message
+# This will timeout because GeoGebra sends no response for invalid commands
 try:
     result = await applet.evalCommand("DeleteObject(NonExistent)")
 except TimeoutError:
     print("GeoGebra rejected the command (no explicit error returned)")
-```
-
-#### Dialog-Based Error Signaling
-
-GeoGebra communicates errors primarily through **native UI dialogs** (popup windows):
-
-- When a command fails, GeoGebra displays an error dialog in the browser
-- ggblab's frontend widget **hooks GeoGebra's dialog events** and forwards them via the primary IPython Comm channel
-- This allows Python code to detect dialog-based errors:
-
-```python
-# Pseudo-code: Dialog event signaled via Comm
-message = await applet.getNextEvent()  # Receives dialog event
-if message['type'] == 'dialog':
-    print(f"GeoGebra error: {message['message']}")
+    # Check if an error dialog was posted
+    if not applet.comm.recv_events.empty():
+        event = applet.comm.recv_events.get_nowait()
+        if event['type'] == 'Error':
+            print(f"Error details: {event['payload']}")
 ```
 
 #### Error Handling Summary
 
-| Channel | Error Detection | Status | Recovery |
-|---------|-----------------|--------|----------|
-| IPython Comm | Jupyter infrastructure | Automatic | Jupyter handles reconnection |
-| Out-of-band socket | 3-sec timeout | Basic | `TimeoutError` exception to Python |
-| GeoGebra API | Dialog popups | External dependency | Frontend monitors dialog events |
+| Channel | Error Detection | Delivery | Recovery |
+|---------|-----------------|----------|----------|
+| IPython Comm | Jupyter infrastructure | Command dispatch | Jupyter handles reconnection |
+| Out-of-band socket (responses) | 3-sec timeout | Message ID correlation | `TimeoutError` exception to Python |
+| Out-of-band socket (events) | Event queue | Type-based routing | Queue processing via `recv_events` |
+| GeoGebra API | Dialog popups | DOM mutation observer | Dialog events forwarded to Python |
 
-**Current Limitation**: Non-dialog errors result in timeout with minimal context information.
+**Current Limitations**:
+- Non-dialog errors result in timeout with minimal context
+- Response timeout is fixed at 3 seconds (not configurable)
 
 ### Future Error Handling Improvements (v0.8.x)
 
 To improve error handling on the out-of-band channel:
 
-1. **Timeout Detection and Python Exceptions**
-   - Convert timeout to Python exceptions with context (command, timestamp)
-   - Propagate exception details to user with stack trace
+1. **Event Queue Processing**
+   - Drain `recv_events` queue after command execution
+   - Extract error dialogs and parse for context information
+   - Return structured error objects with type and message
 
 2. **Custom Timeout Configuration**
    - Allow `GeoGebra(timeout=5.0)` to set custom timeout per applet instance
-   - Allow `evalCommand(..., timeout=10.0)` for command-specific timeout
+   - Allow `command(..., timeout=10.0)` for command-specific timeout
 
 3. **Dialog Message Extraction**
-   - Parse GeoGebra dialog content for error details
-   - Return structured error information (error code, message, object reference)
+   - Parse GeoGebra dialog DOM for structured error details
+   - Map dialog types to error codes (e.g., "Syntax error", "Undefined variable")
+   - Return error object with context to Python
 
-4. **Retry Logic for Transient Errors**
-   - Distinguish transient (network, timing) vs. permanent (API) errors
-   - Implement exponential backoff for transient failures
+4. **Dynamic Scope Learning from Errors**
+   - Capture error events in `recv_events` queue
+   - Correlate with `check_semantics` validation logic
+   - Refine validation rules based on actual GeoGebra responses
 
 ## Resource Cleanup and Lifecycle Management
 
