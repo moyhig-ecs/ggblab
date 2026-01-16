@@ -664,24 +664,81 @@ The out-of-band socket server uses `async with` context managers:
 
 ## Testing Strategies
 
-### Unit Tests
+### Unit Tests (v0.7.3 - COMPLETE)
 
-- Mock IPython Comm: Test message dispatch and response handling
-- Mock socket server: Test out-of-band delivery independent of Comm
+**Backend Test Suite** ([tests/](../tests/)):
 
-### Integration Tests
+1. **Parser Tests** ([tests/test_parser.py](../tests/test_parser.py)):
+   - 18 test classes, 70+ test methods
+   - Dependency graph construction and analysis
+   - Topological sorting, generations, reachability analysis
+   - Edge cases: empty constructions, single objects, N-ary dependencies
+   - Performance tests: 30+ independent objects, linear chains
+   - All tests with `cache_enabled=False` for isolation
 
-- Playwright/Galata: Full browser + kernel workflow
-- Test scenarios:
-  - Command execution during idle kernel
-  - Function calls during long-running cell
-  - Multiple rapid function calls (concurrency)
-  - Socket reconnection after backend restart
+2. **GeoGebra Applet Tests** ([tests/test_ggbapplet.py](../tests/test_ggbapplet.py)):
+   - 6 test classes, 16 test methods
+   - Singleton initialization and state management
+   - Syntax/semantic validation with mocked applet
+   - Object cache management and None-response handling
+   - Literal detection (numeric, string, boolean, math functions)
+   - Exception handling: `GeoGebraSyntaxError`, `GeoGebraSemanticsError`
 
-### Platform-Specific Tests
+3. **Construction File Handling** ([tests/test_construction.py](../tests/test_construction.py)):
+   - 5 test classes, 20+ test methods
+   - File loading: `.ggb` (ZIP), `.ggb` (Base64), JSON, XML
+   - File saving: Round-trip integrity, format preservation
+   - Scientific notation handling (implementation-aware testing)
 
-- POSIX: Verify Unix socket creation and permissions
-- Windows: Verify TCP WebSocket fallback behavior
+**Coverage**:
+- `pytest tests/ --cov=ggblab --cov-report=html`
+- Coverage metrics automatically uploaded to Codecov on CI
+
+### Integration Tests (GitHub Actions)
+
+**CI/CD Pipeline** ([.github/workflows/tests.yml](.github/workflows/tests.yml)):
+
+- **Automated on every push** to `main`/`dev` branches
+- **Automated on all pull requests**
+- **Multi-platform testing**:
+  - Ubuntu (Linux), macOS, Windows
+  - Python 3.10, 3.11, 3.12
+- **30 test matrix combinations** automatically executed
+- **Coverage reports** uploaded to Codecov
+
+**Running Tests Locally**:
+
+```bash
+# Install test dependencies
+pip install -e ".[dev]"
+pip install pytest pytest-cov
+
+# Run all tests with coverage
+pytest tests/ -v --cov=ggblab --cov-report=html
+
+# Run specific test class
+pytest tests/test_parser.py::TestDependencyGraphConstruction -v
+
+# Run with XML output (for CI integration)
+pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
+```
+
+### Browser/Integration Tests (Playwright/Galata)
+
+**Not yet implemented** - planned for v0.8+
+
+- Full browser + kernel workflow validation
+- Command execution during idle kernel
+- Function calls during long-running cell
+- Multiple rapid function calls (concurrency)
+- Socket reconnection after backend restart
+
+See [ui-tests/README.md](../ui-tests/README.md) for setup instructions.
+
+### Platform-Specific Tests (via CI)
+
+- **POSIX**: Unix socket creation and permissions tested on Ubuntu/macOS
+- **Windows**: TCP WebSocket fallback behavior tested on Windows
 
 ---
 

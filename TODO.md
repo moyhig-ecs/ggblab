@@ -9,9 +9,62 @@ This TODO consolidates Roadmap and Future Works from:
 - [docs/sympy_integration.md](docs/sympy_integration.md) — SymPy bridge roadmap (v1.1+)
 
 Version focus:
-- v0.8–v1.0: Scene Timeline, launch strategy, error UX, CI, strict types
+- ✅ **v0.7.3**: Unit test coverage, parser fix, error handling, CI/CD pipeline
+- v0.8–v1.0: Scene Timeline, launch strategy, error UX, strict types
 - v1.0–v1.5: Manim export, numerical integration wrappers
 - v1.1–v1.2: SymPy geometry bridge + verification
+
+---
+
+## Completed Milestones (v0.7.3)
+
+### ✅ Testing & CI/CD Infrastructure
+
+- ✅ **Unit tests**: Comprehensive pytest suite
+  - `tests/test_parser.py`: 18 test classes, 70+ methods covering dependency analysis
+  - `tests/test_ggbapplet.py`: 6 test classes, 16 methods for GeoGebra interface
+  - `tests/test_construction.py`: 5 test classes testing file loading/saving
+  - All tests validate error handling, edge cases, and large constructions
+
+- ✅ **GitHub Actions CI/CD**: Automated testing pipeline
+  - Workflow: [.github/workflows/tests.yml](.github/workflows/tests.yml)
+  - Runs on `main`/`dev` branches for push and pull requests
+  - Tests across Python 3.10, 3.11, 3.12 on Ubuntu, macOS, Windows
+  - Coverage reports uploaded to Codecov
+  - `pytest --cov=ggblab` with full coverage metrics
+
+- ✅ **Error Handling Refactor**:
+  - Syntax validation (tokenization-based) for pre-execution checking
+  - Semantic validation (object existence) with cache integration
+  - Custom exceptions: `GeoGebraSyntaxError`, `GeoGebraSemanticsError`
+  - Timeout handling (3-second default) with exception context
+  - Event queue routing (client_handle distinguishes responses vs. events)
+
+- ✅ **Parser Coverage Expansion**:
+  - New test classes: BinaryTree, Nary, LargeConstruction, Diamond, Reachability, CyclicDetection
+  - Edge case coverage: empty construction, single objects, N-ary dependencies
+  - Performance tests: 30+ objects, linear chains, large graphs
+  - All tests follow `ggb_parser(cache_enabled=False)` for isolation
+
+### ✅ Documentation Updates
+
+- ✅ **README.md**: 
+  - Added CI/CD badge
+  - Updated testing section with GitHub Actions reference
+  - Marked as ✅ completed: Unit tests, CI/CD pipeline
+  - Linked [.github/workflows/tests.yml](.github/workflows/tests.yml)
+
+- ✅ **docs/architecture.md**:
+  - Command Validation section (syntax/semantic checks)
+  - Error Handling strategy (3-layer approach)
+  - Event routing refactor documentation
+  - Parser performance analysis and future improvements
+
+- ✅ **Created supporting docs**:
+  - TEST_FIX_SUMMARY.md - Parser test fixture restructuring
+  - FIX_COMPLETION_REPORT.md - Complete test API alignment
+  - COMPLETION_CHECKLIST.md - Verification of all fixes
+  - AGENTS.md - Extension development standards (maintained)
 
 ---
 
@@ -76,15 +129,19 @@ Version focus:
 
 ---
 
-### 6. Error Handling & User Feedback (v0.8.x)
+### 6. Error Handling & User Feedback (v0.8.x – v0.9)
 
 **Refs**: [docs/architecture.md § Future Error Handling Improvements](docs/architecture.md)
 
-**Actions**:
-- [ ] v0.8: Convert timeout to Python exception with context (command, timestamp)
-- [ ] v0.8: Support custom timeout via `GeoGebra(timeout=5.0)` and per-call overrides
-- [ ] v0.8: Hook GeoGebra dialog events; forward structured error via Comm
-- [ ] v0.8: Basic retry logic (1 retry, 100ms backoff) for transient socket failures
+**Completed (v0.7.3)**:
+- ✅ Convert timeout to Python exception with context (command, timestamp)
+- ✅ Support custom timeout via `GeoGebra(timeout=5.0)` and per-call overrides
+- ✅ Hook GeoGebra dialog events; forward structured error via Comm
+- ✅ Basic retry logic (1 retry, 100ms backoff) for transient socket failures
+
+**Remaining (v0.8+)**:
+- [ ] v0.8: Enhanced error recovery strategies
+- [ ] v0.9: User-facing error dialogs in widget (not console-only)
 
 ---
 

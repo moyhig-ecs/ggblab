@@ -2,6 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
+[![Tests](https://github.com/GeoGebraLab/ggblab/actions/workflows/tests.yml/badge.svg)](https://github.com/GeoGebraLab/ggblab/actions/workflows/tests.yml)
 [![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
@@ -410,8 +411,35 @@ To remove the dev link, uninstall and delete the `ggblab` symlink listed by `jup
 
 ### Testing
 
-- Frontend: `jlpm install && jlpm test`
-- Integration (Playwright/Galata): see [ui-tests/README.md](ui-tests/README.md); build with `jlpm build:prod`, then `cd ui-tests && jlpm install && jlpm playwright test`
+**Automated Testing (GitHub Actions)**:
+- Continuous integration configured via [.github/workflows/tests.yml](.github/workflows/tests.yml)
+- Runs on `main` and `dev` branches on every push and pull request
+- Tests across Python 3.10, 3.11, 3.12 on Ubuntu, macOS, and Windows
+- Coverage reports uploaded to Codecov
+
+**Running Tests Locally**:
+
+```bash
+# Install test dependencies
+pip install -e ".[dev]"
+pip install pytest pytest-cov
+
+# Run all tests
+pytest tests/ -v
+
+# Run specific test module
+pytest tests/test_parser.py -v
+
+# Run with coverage report
+pytest tests/ --cov=ggblab --cov-report=html
+```
+
+**Frontend Tests**:
+- `jlpm install && jlpm test`
+
+**Integration Tests (Playwright/Galata)**:
+- See [ui-tests/README.md](ui-tests/README.md)
+- Build with `jlpm build:prod`, then `cd ui-tests && jlpm install && jlpm playwright test`
 
 ### Release
 
@@ -444,9 +472,9 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
 
 #### General Limitations
 
-- **No unit tests**: Backend Python code lacks comprehensive unit tests.
-- **Incomplete integration tests**: No Playwright tests yet for critical workflows (command execution, file loading, event handling).
-- **No CI/CD pipeline**: No automated testing on pull requests or releases.
+- ✅ **Unit tests**: Comprehensive Python test suite with pytest (parser, GeoGebra applet, construction handling)
+- ✅ **CI/CD pipeline**: Automated testing on all pull requests via GitHub Actions (Python 3.10+, multi-OS)
+- 🔄 **Incomplete integration tests**: No Playwright tests yet for critical workflows (command execution, file loading, event handling)
 - **Minimal documentation**: No dedicated developer guide beyond code comments; architecture rationale is not documented.
 
 ### Project Assessment (Objective)
