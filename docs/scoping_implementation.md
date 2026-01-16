@@ -399,9 +399,11 @@ def get_objects_in_scope(self, scope_name):
 
 ---
 
-## Integration with GeoGebra Construction Protocol
+## Part 2: Integration and Advanced Topics
 
-### Mapping to GeoGebra Commands
+### Integration with GeoGebra Construction Protocol
+
+#### Mapping to GeoGebra Commands
 
 Each geometric construction function maps to GeoGebra commands:
 
@@ -439,7 +441,7 @@ async def _ggb_construct_line(self, ggb: GeoGebra, point1: str, point2: str):
         self.scope_stack.pop()
 ```
 
-### Dependency Graph Parsing
+#### Dependency Graph Parsing
 
 ggblab's `ggb_parser` class builds NetworkX graphs directly from GeoGebra construction protocols:
 
@@ -490,9 +492,9 @@ scope_levels = calculate_scope_levels(parser.G)
 
 ---
 
-## NetworkX Graph Traversal Integration
+### NetworkX Graph Traversal Integration
 
-### Dependency Graph as Directed Acyclic Graph (DAG)
+#### Dependency Graph as Directed Acyclic Graph (DAG)
 
 The geometric dependency structure is isomorphic to a **directed acyclic graph (DAG)**, where:
 - **Nodes** = geometric objects (points, lines, circles, etc.)
@@ -502,7 +504,7 @@ The geometric dependency structure is isomorphic to a **directed acyclic graph (
 
 **ggblab's `ggb_parser.parse()` already builds this NetworkX DiGraph** as `parser.G`. The following sections show how to leverage NetworkX's graph algorithms for educational purposes.
 
-### Human-Centered Subgraph Extraction: `parse_subgraph()`
+#### Human-Centered Subgraph Extraction: `parse_subgraph()`
 
 **Design Philosophy**: ggblab's `parse_subgraph()` method prioritizes **pedagogical clarity over algorithmic efficiency**. Rather than using theoretically optimal algorithms (e.g., topological sort + reachability pruning), it implements a **human-intuitive exploration process** that mirrors how students actually think about geometric construction:
 
@@ -541,7 +543,7 @@ print(f"Simplified G2: {parser.G2.number_of_edges()} edges")
 
 For classroom use with typical constructions (5-15 root objects), this approach provides **understandable, traceable results** that support learning goals.
 
-### Alternative Approaches (For Reference)
+#### Alternative Approaches (For Reference)
 
 For production systems or complex constructions, theoretically efficient algorithms exist:
 
@@ -573,7 +575,7 @@ def extract_subgraph_efficient(G):
 
 **The lesson**: In educational software, **understandability > performance**. ggblab's `parse_subgraph()` sacrifices algorithmic elegance to preserve pedagogical transparency.
 
-### Leveraging NetworkX for Educational Analysis
+#### Leveraging NetworkX for Educational Analysis
 
 NetworkX provides powerful tools for analyzing ggblab's dependency graphs:
 
@@ -647,9 +649,9 @@ class DependencyGraph:
         return nx.descendants(self.graph, obj_name)
 ```
 
-### Graph Traversal Strategies
+#### Graph Traversal Strategies
 
-#### Depth-First Search (DFS) - Recursive Scope Exploration
+##### Depth-First Search (DFS) - Recursive Scope Exploration
 
 DFS naturally corresponds to recursive function calls:
 
@@ -689,7 +691,7 @@ def construct_with_dfs(self, target_object: str):
 - ✅ Exception propagation follows DFS backtracking
 - ❌ May hit stack overflow for deep graphs
 
-#### Breadth-First Search (BFS) - Level-by-Level Construction
+##### Breadth-First Search (BFS) - Level-by-Level Construction
 
 BFS constructs all objects at the same scope level before proceeding:
 
@@ -722,7 +724,7 @@ def construct_with_bfs(self):
 - ✅ Easy to parallelize objects at same level
 - ❌ Doesn't mirror recursive structure as naturally
 
-#### Topological Sort - Guaranteed Valid Order
+##### Topological Sort - Guaranteed Valid Order
 
 Topological sort provides any valid construction sequence:
 
@@ -754,7 +756,7 @@ def construct_topological(self):
             ) from e
 ```
 
-### Scope Level Calculation via Longest Path
+#### Scope Level Calculation via Longest Path
 
 Scope level is the **longest path** from any root node:
 
@@ -795,7 +797,7 @@ def get_longest_path_to_object(self, obj_name: str) -> List[str]:
     return longest_path
 ```
 
-### Detecting and Handling Circular Dependencies
+#### Detecting and Handling Circular Dependencies
 
 ```python
 def detect_circular_dependencies(self) -> List[List[str]]:
@@ -818,7 +820,7 @@ def break_cycle_interactive(self, cycle: List[str]) -> str:
     )
 ```
 
-### Example: Complete Integration
+#### Example: Complete Integration
 
 ```python
 from ggblab import ggb_parser
@@ -858,7 +860,7 @@ dep_graph.construct_with_dfs('C')
 dep_graph.construct_with_bfs()
 ```
 
-### Correspondence: Function Calls ↔ Graph Traversal
+#### Correspondence: Function Calls ↔ Graph Traversal
 
 | Concept | Recursive Functions | NetworkX Graph |
 |---------|-------------------|----------------|
@@ -870,7 +872,7 @@ dep_graph.construct_with_bfs()
 | **Impact analysis** | Modify parameter → rerun dependents | Modify node → traverse descendants |
 | **Circular dependency** | Infinite recursion | Cycle detection in graph |
 
-### Educational Benefits
+#### Educational Benefits
 
 Students learn that:
 1. **Graph structure = Scope structure**: Both are hierarchical dependency trees
@@ -883,9 +885,9 @@ This bridges **graph theory**, **recursive algorithms**, and **programming scope
 
 ---
 
-## Educational Implications
+### Educational Implications
 
-### Teaching Scoping Through Geometry
+#### Teaching Scoping Through Geometry
 
 **Students see the correspondence**:
 
@@ -894,7 +896,7 @@ This bridges **graph theory**, **recursive algorithms**, and **programming scope
 3. **Construction errors** ↔ **Exception propagation**
 4. **Parameter changes** ↔ **Scope re-evaluation**
 
-### Classroom Workflow
+#### Classroom Workflow
 
 ```python
 # Lesson: Understanding nested scopes through geometric construction
@@ -922,7 +924,7 @@ except DependencyError as e:
 # Step 4: Discuss how error propagated from nested scope to top level
 ```
 
-### Assessment Rubric
+#### Assessment Rubric
 
 Students demonstrate understanding by:
 1. Predicting scope depth from geometric construction sequence
@@ -932,9 +934,9 @@ Students demonstrate understanding by:
 
 ---
 
-## Performance Considerations
+### Performance Considerations
 
-### Stack Depth Limits
+#### Stack Depth Limits
 
 Python's default recursion limit is ~1000. For complex scenes:
 
@@ -955,7 +957,7 @@ def construct_iterative(self, base_objects):
     return current_objects
 ```
 
-### Optimization Strategies
+#### Optimization Strategies
 
 1. **Memoization**: Cache constructed objects to avoid redundant computation
 2. **Lazy evaluation**: Only construct objects when accessed
