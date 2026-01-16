@@ -8,6 +8,7 @@ from ipylab import JupyterFrontEnd
 from .comm import ggb_comm
 from .construction import ggb_construction
 from .parser import ggb_parser
+from .utils import flatten
 
 
 class GeoGebraSyntaxError(Exception):
@@ -281,7 +282,7 @@ class GeoGebra:
                 # Extract object tokens: tokens in the flattened structure that are
                 # not commands (not in command_cache), not commas, and not literals
                 t = self.parser.tokenize_with_commas(c)
-                object_tokens = [o for o in self.parser.flatten(t) 
+                object_tokens = [o for o in flatten(t) 
                                 if o not in self.parser.command_cache 
                                 and o != ","
                                 and not self._is_literal(o)]
