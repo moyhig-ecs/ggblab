@@ -1,6 +1,7 @@
 # ggblab — A JupyterLab extension for learning geometry and Python programming side-by-side with GeoGebra
 
-For a hosted demo on Binder and instructions for launching the examples in JupyterLab, see [binder/README.md](binder/README.md).
+🚀 For a hosted demo on Binder and instructions for launching the examples in JupyterLab, see [binder/README.md](binder/README.md).
+
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Tests](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml/badge.svg)](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml)
