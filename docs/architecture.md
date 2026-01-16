@@ -1027,6 +1027,468 @@ def test_parse_subgraph_nary_deps():
 
 ---
 
+## Asyncio Design Challenges in Jupyter
+
+### The Core Problem: Jupyter + Asyncio Impedance Mismatch
+
+Python's `asyncio` module is widely used but has significant limitations in the Jupyter Kernel environment:
+
+1. **IPython Comm Cannot Receive During Cell Execution**
+   - While a cell is running, the IPython event loop is blocked
+   - Incoming Comm messages cannot be processed until the cell completes
+   - This is a fundamental architectural constraint, not a bug
+
+2. **Asyncio Requires Explicit Yield Points**
+   - Every `await` statement is a potential yield point where other tasks can run
+   - Without explicit `await asyncio.sleep()` calls, **asyncio has no opportunity to switch tasks**
+   - Most developers are unaware of this requirement
+
+3. **No Native Event-Based Waiting**
+   - `asyncio` lacks a clean way to wait for dictionary updates or queue population
+   - Current ggblab implementation uses polling: `while not (_id in self.recv_logs): await asyncio.sleep(0.01)`
+   - This is **inefficient and inelegant** compared to event-based systems (e.g., threading.Event)
+
+### Evidence from ggblab/comm.py
+
+**Problematic code pattern**:
+```python
+async def send_recv(self, msg):
+    _id = str(uuid.uuid4())
+    self.send(msg)
+    
+    # Polling loop: check every 10ms if response arrived
+    async def wait_for_response():
+        while not (_id in self.recv_logs):
+            await asyncio.sleep(0.01)  # <-- Explicit yield point required!
+    
+    await asyncio.wait_for(wait_for_response(), timeout=3.0)
+    value = self.recv_logs.pop(_id, None)
+```
+
+**Why this is suboptimal**:
+- ❌ **Busy-waiting simulation**: Polls every 10ms instead of waiting for an event
+- ❌ **Arbitrary sleep time**: 0.01 seconds is a guess; too short = CPU waste, too long = latency
+- ❌ **No condition variable**: Threading has `threading.Event` and `threading.Condition`; asyncio has no equivalent
+- ❌ **Inefficient for Jupyter**: The Jupyter event loop should be managing concurrency, not application code
+
+**Alternative (if asyncio had better primitives)**:
+```python
+# This would be cleaner (but asyncio doesn't provide it natively)
+response_event = asyncio.Event()
+
+def on_response_received(id):
+    response_event.set()
+
+await asyncio.wait_for(response_event.wait(), timeout=3.0)
+```
+
+### Why This Matters for Language Selection
+
+This complexity reveals why **TypeScript/Node.js backend might have been technically superior**:
+
+| Aspect | Python asyncio | Node.js async/await |
+|--------|---|---|
+| **Event loop** | Complex, user must manage | Simple, built-in, always running |
+| **Waiting for events** | Manual polling required | `async/await` + Promise chains |
+| **Blocking during cell execution** | Blocks Jupyter event loop | Would block Node.js event loop (similar issue) |
+| **Learning curve** | High; requires deep understanding | Medium; familiar to web developers |
+| **Operational context** | Not standard in Jupyter | Even less standard in Jupyter |
+
+**Key insight**: The problem isn't Python's asyncio per se—it's that **any framework must bridge the gap between Jupyter's execution model and concurrent communication**. TypeScript wouldn't solve this; it just moves the problem to a less-familiar runtime.
+
+### Deployment Reality: Why Python Wins Despite Complexity
+
+Despite asyncio's technical shortcomings, Python remains the better choice because:
+
+1. **Jupyter already assumes Python**: Most institutional deployments have Python; Node.js doesn't
+2. **Users expect Python**: ggblab students are already Python programmers
+3. **Complexity is hidden**: Users don't see `comm.py`; they call `await ggb.command()`
+4. **Works well enough**: Even with polling, the 10ms cycle is imperceptible to users
+
+The lesson: **Operational constraints (kernel availability) trump technical elegance (language features)**.
+
+### Recommendations for Future Work
+
+#### Current Implementation: Best Practical Solution
+
+The current implementation using polling with explicit `await asyncio.sleep(0.01)` **is the best practical solution** given Jupyter's constraints:
+
+**Why asyncio.Event doesn't solve the problem**:
+- `asyncio.Event` has been tested extensively but does not circumvent the IPython Comm limitation
+- The issue is not waiting mechanism (Event vs polling)—it's that IPython's event loop itself is blocked during cell execution
+- When a cell runs, IPython's event loop cannot process **any** incoming Comm messages, regardless of how elegantly the backend waits
+- Polling is necessary because Comm messages may arrive via the out-of-band socket at unpredictable times
+
+**Why threading doesn't work**:
+- Threading would require the Comm handler to run in a different thread, creating race conditions
+- IPython Comm operations are not thread-safe; they assume single-threaded kernel execution
+- Refactoring to thread-safe Comm would require changes to IPython itself
+
+**Current design is robust**:
+- ✅ Polling with 0.01s sleep is imperceptible to users (10ms is below human reaction time)
+- ✅ Timeout-based fallback (3 seconds) is sufficient for interactive operations
+- ✅ Event queue (`recv_events`) properly captures async error events
+- ✅ Dual-channel architecture elegantly sidesteps the IPython Comm blocking limitation
+
+**Conclusion**: The current implementation is **not a compromise**—it's the **optimal solution** given the architectural constraints of Jupyter and IPython Comm.
+
+#### No Near-Term Refactoring Recommended
+
+Attempts to replace polling with `asyncio.Event`, `asyncio.Condition`, or other primitives have proven unsuccessful because they don't address the root cause (IPython event loop blocking during cell execution). The current implementation should remain stable.
+
+---
+
+#### Long-Term: Jupyter Kernel Architecture Evolution
+
+True improvement would require changes at the Jupyter/IPython level:
+
+1. **IPython Comm receives during cell execution**: Requires IPython architecture redesign (unlikely)
+2. **Async-first kernel**: Redesign kernel messaging to be fully asynchronous (ambitious, long-term)
+3. **Separate kernel-side event loop**: Run communication on a different event loop than cell execution (complex isolation required)
+
+These are beyond the scope of ggblab and would require Jupyter/IPython community effort.
+
+---
+
+## Design Decision: Backend Language Selection (Python vs. TypeScript)
+
+### Context: Why Python for `ggb_comm.py`?
+
+The backend communication handler (`ggblab/comm.py`) is implemented in **Python**, even though the frontend is **TypeScript/React**. This decision involves trade-offs worth documenting for future maintainers.
+
+### Option Analysis
+
+#### Option A: Python Backend (Current Choice)
+
+**Advantages**:
+- ✅ **Kernel ecosystem**: Jupyter kernels for Python are ubiquitous; most Jupyter environments have Python available
+- ✅ **Asyncio maturity**: Python's `asyncio` is well-documented and battle-tested for educational purposes
+- ✅ **Single language for data science stack**: Scientific computing typically uses Python (NumPy, SciPy, SymPy, etc.)
+- ✅ **Wider adoption**: Python dominates STEM education; ggblab students are already Python programmers
+- ✅ **Package distribution**: PyPI distribution is straightforward; pip install handles versioning
+
+**Disadvantages**:
+- ❌ **Runtime dependency**: Python must be installed and available in the Jupyter environment
+- ❌ **Version management**: Requires Python 3.10+; older environments may not have it
+- ❌ **Kernel startup overhead**: Python kernel startup is slower than lightweight runtimes
+
+#### Option B: TypeScript/Node.js Backend
+
+**Hypothetical advantages** if implemented:
+- ✅ **Single language**: Frontend and backend in same language (DRY principle)
+- ✅ **Code sharing**: Message types, validation logic could be reused via TypeScript interfaces
+- ✅ **Lighter runtime**: Node.js faster startup than Python
+- ✅ **NPM distribution**: Familiar to JavaScript ecosystem
+
+**Critical disadvantages**:
+- ❌ **Kernel availability**: Jupyter Node.js kernels are **not standard**. Most Jupyter installations lack Node.js runtime
+- ❌ **Deployment complexity**: Users would need to install Node.js separately or use alternative kernels (like `ijavascript` or `jp-ts`)
+- ❌ **Educational friction**: Students expect Python in Jupyter; adding Node.js requirement increases setup complexity
+- ❌ **Version parity problem**: Frontend (TypeScript) and backend (Node.js) would be separate versioned products with sync requirements
+- ❌ **Kernel infrastructure**: Standard Jupyter assumes Python kernel; Node.js kernels require additional setup
+- ❌ **IPython Comm**: While IPython Comm is language-agnostic, Node.js kernels have variable support quality
+
+### Operational Constraints
+
+#### Jupyter Kernel Availability
+
+**Current reality**:
+- Python kernel: **Always present** in any Jupyter installation (assumption: Jupyter >= 4.0)
+- Node.js kernel: **Optional**, requires separate installation and configuration
+- R kernel: **Common** but optional
+- Julia kernel: **Rare**, requires additional setup
+
+**Implication**: ggblab's Python backend ensures the extension works out-of-the-box. Users don't need to think about runtime selection.
+
+#### Deployment Context
+
+**JupyterHub in Educational Settings**:
+- Sysadmins control what kernels are available
+- Adding Node.js requirement would require admin approval and installation
+- Creates additional maintenance burden on institutions
+
+**Cloud Deployments** (Google Colab, JupyterHub SaaS):
+- Colab provides Python by default; Node.js not available
+- Enterprise JupyterHub usually provides Python only (Typescript/Node optional)
+- Python backend maximizes compatibility
+
+### The Communication Stack
+
+Despite the backend being Python, the communication stack is **language-neutral**:
+
+```
+Frontend (TypeScript)  ←→  IPython Comm (JSON messages)  ←→  Backend (Python async)
+    ↓                                                           ↓
+GeoGebra API                                          Kernel + socket server
+    ↓                                                           ↓
+    └─────── Out-of-band socket (WebSocket/Unix) ──────────────┘
+                   (Protocol-agnostic transport)
+```
+
+This design means:
+- ✅ Frontend can be written in any language (TypeScript chosen for React ecosystem)
+- ✅ Backend can be written in any Jupyter-supported language (Python chosen for ubiquity)
+- ✅ Communication protocol is language-independent (JSON + WebSocket)
+
+### Lessons Learned
+
+**Key insight**: Tight coupling of frontend and backend languages (TypeScript for both) is **not justified** when:
+1. The kernel availability determines deployment success more than implementation language
+2. The target audience (Python programmers) expects Python
+3. The communication protocol is already language-agnostic
+4. Code sharing benefits are minimal (message types are simple JSON, validation logic is kernel-specific)
+
+**Recommendation for future changes**:
+- Keep frontend in TypeScript (React ecosystem is mature; switching gains nothing)
+- Keep backend in Python (addresses operational constraints; switching to Node.js creates problems)
+- If non-Python kernel support is desired, implement additional *kernels* (e.g., Julia, R) via separate language-specific packages, not by switching the reference implementation
+
+### TypeScript Backend: When It Could Work
+
+TypeScript backend would be viable **only if**:
+1. **Standard Node.js kernel** emerges as Jupyter standard (unlikely)
+2. **Deployment targets only advanced users** who already manage Node.js (educational loss)
+3. **Code sharing between frontend and backend is critical** (currently minimal benefit)
+
+None of these conditions are currently met, so Python remains the better choice.
+
+---
+
+## Non-Python Kernel Support (Julia, R, etc.)
+
+### Protocol Portability
+
+The ggblab communication architecture is **language-agnostic** at the protocol level:
+
+- ✅ **IPython Comm**: Supported by any Jupyter kernel (uses JSON messages)
+- ✅ **WebSocket/Unix Socket**: Language-independent transport (any language can open sockets)
+- ✅ **Message Format**: JSON-based, not Python-specific
+
+However, implementing language-specific client libraries requires addressing several challenges.
+
+### Critical Implementation Notes for Non-Python Kernels
+
+#### 1. Asynchronous Execution Model Must Match
+
+**Challenge**: Different languages have different async patterns.
+
+| Aspect | Python | Julia | R |
+|--------|--------|-------|---|
+| **Async syntax** | `async/await` | `@async` / `Task` | `future` / promise-like |
+| **Blocking behavior** | `await` blocks on Awaitable | `wait()` on Task | `resolve()` on future |
+| **Event loop** | `asyncio.run()` | `@async` tasks | Single-threaded |
+| **Multiple concurrent operations** | Multiple `await` in same scope | Multiple tasks in same scope | Parallel evaluation or callbacks |
+
+**Recommendation**: Implement `send_recv()` with the language's native async primitives, not by wrapping Python's asyncio.
+
+**Example (Julia pseudocode)**:
+```julia
+async function send_recv(msg::Dict)::Dict
+    id = uuid4()
+    put!(comm_channel, merge(msg, Dict("id" => id)))
+    
+    # Wait for response with matching id
+    while true
+        response = take!(response_channel)  # Blocking wait
+        if response["id"] == id
+            return response
+        end
+    end
+end
+```
+
+#### 2. Message ID Correlation
+
+**Requirement**: Backend and frontend must exchange `id` fields to correlate responses with requests.
+
+**Format** (JSON):
+```json
+{
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "command",
+    "payload": "A=(0,0)",
+    ...
+}
+```
+
+All languages must:
+1. Generate a unique `id` (UUID/UUID4) for each `send_recv()` call
+2. Include `id` in the Comm message to frontend
+3. Receive response with matching `id` via out-of-band socket
+4. Match response by `id` before returning to caller
+
+**Error case**: If response arrives with wrong `id`, queue it and continue waiting. This handles concurrent requests.
+
+#### 3. Out-of-Band Socket Connection (Language-Specific)
+
+**Python**: Uses `asyncio` WebSocket client (see `ggblab/comm.py`)
+
+**Julia**: Use Julia's WebSocket library:
+```julia
+using WebSockets
+ws = WebSocket("ws://localhost:$port")  # TCP on Windows
+# or
+ws = connect(socket_path)  # Unix socket on POSIX (if library supports)
+```
+
+**R**: Use R's WebSocket library:
+```r
+library(websocket)
+ws <- WebSocket$new("ws://localhost:port")
+```
+
+**Critical**: Each `send_recv()` must open a **separate, transient connection** for that specific request. Do NOT maintain a persistent connection.
+
+#### 4. IPython Comm Target Registration
+
+**Requirement**: Register a Comm target handler to receive commands from frontend.
+
+The Comm target name must be `ggblab-comm` (hardcoded in frontend).
+
+**Python implementation** (reference):
+```python
+def comm_handler(comm, open_msg):
+    @comm.on_msg
+    def _recv(msg):
+        content = msg['content']['data']
+        # Process command, store response for out-of-band delivery
+```
+
+**Julia equivalent**:
+```julia
+# Julia kernels expose Comm via kernel API
+kernel_comm = kernel.comm
+comm_handler = message -> begin
+    # Process message
+end
+register_comm("ggblab-comm", comm_handler)
+```
+
+**R equivalent**:
+```r
+# R kernels may use IRkernel package
+IRkernel::register_comm("ggblab-comm", function(msg) {
+    # Process message
+})
+```
+
+**Note**: Exact API varies by language. Consult Jupyter kernel documentation for your language.
+
+#### 5. Object Cache Management (Language-Dependent)
+
+**Challenge**: Python uses a dictionary; other languages may prefer different data structures.
+
+**Requirements** (language-independent):
+- Store GeoGebra object names and metadata
+- Refresh from applet via `evalCommand("GetValue('_json')")`
+- Check object existence before sending commands (optional but recommended)
+
+**Python reference**:
+```python
+self._applet_objects = {}  # Dict[name, metadata]
+
+async def refresh_object_cache(self):
+    json_str = await self.function("getBase64", [])
+    # Parse and store
+    self._applet_objects = parse_geogebra_json(json_str)
+```
+
+#### 6. Error Handling (Critical Differences)
+
+**Key constraint**: GeoGebra sends **NO explicit error responses** for invalid commands.
+
+**Error detection mechanisms** (all languages):
+1. **Timeout after 3 seconds**: Command was rejected or crashed GeoGebra
+2. **Error dialog events**: Captured by frontend and queued in `recv_events`
+3. **Response with no payload**: May indicate error (GeoGebra silently failed)
+
+**Error handling pattern** (pseudo-code):
+```
+try:
+    result = send_recv(command)
+catch TimeoutError:
+    # Command rejected or GeoGebra crashed
+    check recv_events for error dialog
+    if error_event found:
+        raise GeoGebraAppletError(error_event.message)
+    else:
+        raise TimeoutError("No response from GeoGebra")
+```
+
+**Recommendation**: Implement error classes isomorphic to Python's:
+- `GeoGebraError` (base)
+  - `GeoGebraCommandError` (pre-flight)
+    - `GeoGebraSyntaxError`
+    - `GeoGebraSemanticsError`
+  - `GeoGebraAppletError` (runtime)
+
+#### 7. Configuration and Initialization
+
+**Requirement**: The kernel must receive communication settings (Comm target, socket path/port) from the frontend before issuing commands.
+
+**Currently**: Python uses `GeoGebra().init()` which:
+1. Sets up Comm handler for `ggblab-comm`
+2. Starts out-of-band socket server
+3. Triggers frontend command `ggblab:create` with socket path/port
+4. Waits for frontend to confirm connection before returning
+
+**For other languages**: Implement similar initialization:
+- Register Comm target
+- Start socket server
+- Store path/port for `send_recv()` to use
+- Confirm ready before accepting commands
+
+**Example (Julia)**:
+```julia
+mutable struct GeoGebra
+    comm_channel::Channel
+    response_channel::Channel
+    socket_path::String
+    socket_port::Int
+    
+    function init()
+        # Register Comm, start socket, trigger frontend
+        # Return instance
+    end
+end
+```
+
+### Recommended Implementation Path
+
+1. **Document the protocol thoroughly** (beyond this section):
+   - JSON message formats
+   - Comm message structure
+   - Out-of-band socket protocol
+   - Complete example exchange (command → response)
+
+2. **Provide reference implementations** for a second language (e.g., Julia):
+   - Complete `GGBLab.jl` package with same interface as Python
+   - Include tests and examples
+   - Keep parity with Python version
+
+3. **Version the protocol**:
+   - Add protocol version field to messages
+   - Allow graceful degradation if languages use different versions
+   - Document backward compatibility guarantees
+
+4. **Validate with a non-Python kernel**:
+   - Implement Julia support end-to-end
+   - Verify all edge cases work (timeouts, error events, etc.)
+   - Document known limitations per language
+
+### Summary
+
+Non-Python kernel support is **technically feasible** but requires:
+- Careful async/await pattern translation
+- Proper UUID-based message ID correlation
+- Robust timeout and error event handling
+- Language-specific Comm registration
+- Comprehensive protocol documentation
+
+The core communication design (IPython Comm + out-of-band socket) poses **no fundamental barriers** to non-Python languages. The effort is primarily in documentation and reference implementation.
+
+---
+
 ## References
 
 - [IPython Comm documentation](https://ipython.readthedocs.io/en/stable/development/messaging.html#custom-messages)
