@@ -5,17 +5,6 @@
 - **Binder (Demo)**: Hosted demo and instructions to launch the examples in JupyterLab — see [binder/README.md](binder/README.md).
 - **Blog**: Project news and writeups — published site: https://moyhig-ecs.github.io/ggblab/ (source / local preview: [blog/README.md](blog/README.md)).
 
-## Blog
-
-- **Published:** https://moyhig-ecs.github.io/ggblab/ (auto-deployed to `gh-pages` via GitHub Actions)
-- **Local preview:** See blog/README.md — from the project root run:
-
-```bash
-cd blog
-bundle install
-bundle exec jekyll serve --source .
-# then open http://127.0.0.1:4000/ggblab/
-```
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
