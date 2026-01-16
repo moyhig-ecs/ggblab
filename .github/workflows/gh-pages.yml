@@ -29,9 +29,10 @@ jobs:
           bundle install
 
       - name: Build Jekyll site from blog/
+        working-directory: blog
         env:
           JEKYLL_ENV: production
-        run: bundle exec jekyll build --source blog --destination public
+        run: bundle exec jekyll build --source . --destination ../public
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v3
