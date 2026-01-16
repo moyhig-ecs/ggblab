@@ -194,6 +194,83 @@ Python's Design: Strengths and Grievances
    This is especially painful in geometry where hierarchical scope levels
    are natural to the problem but awkward in Python's model.
 
+8. **Asyncio Scope Separation: Global State Required for Concurrent Operations**
+   
+   A particularly insidious scoping problem emerges when using Python's asyncio:
+   **data exchange buffers for concurrent tasks must be class variables (global scope),
+   not instance variables**. This violates object-oriented encapsulation principles.
+   
+   **The Problem**:
+   
+   When multiple async tasks share data (e.g., one task populates a buffer, another reads it),
+   you might naturally write:
+   
+   ```python
+   class AsyncHandler:
+       def __init__(self):
+           self.recv_logs = {}      # ❌ Instance variable
+       
+       async def send_request(self, msg_id):
+           # This task reads from recv_logs
+           while not (msg_id in self.recv_logs):
+               await asyncio.sleep(0.01)
+           return self.recv_logs[msg_id]
+       
+       async def handle_response(self, msg_id, data):
+           # This task writes to recv_logs
+           self.recv_logs[msg_id] = data
+   ```
+   
+   This **appears to work** because both methods are on the same object. But it breaks
+   in concurrent contexts where async tasks are scheduled unpredictably. The issue is not
+   a Python scoping bug—it's that **the scope boundaries don't match the concurrency model**.
+   
+   **The Fix** (Ugly):
+   
+   ```python
+   class AsyncHandler:
+       # ⚠️ MUST be class variable, not instance variable
+       recv_logs = {}  # Shared across all instances and async tasks!
+       
+       async def send_request(self, msg_id):
+           # Now both tasks see THE SAME recv_logs
+           while not (msg_id in AsyncHandler.recv_logs):  # or just self.recv_logs
+               await asyncio.sleep(0.01)
+           return AsyncHandler.recv_logs[msg_id]
+   ```
+   
+   **Why this is a design flaw**:
+   - ✅ Instance variables are semantically correct (encapsulation)
+   - ❌ Instance variables don't work with asyncio's concurrency model
+   - ⚠️ No clear error; the code silently fails due to scope mismatch
+   - ⚠️ Developers must understand asyncio's execution model to debug this
+   
+   **Real-world impact in ggblab**:
+   In `ggblab/comm.py`, message buffers (recv_logs, recv_events) must be class variables:
+   
+   ```python
+   class ggb_comm:
+       # These MUST be class variables
+       recv_logs = {}          # Response storage for send_recv() tasks
+       recv_events = queue.Queue()  # Event queue for client_handle() task
+       
+       async def send_recv(self, msg):
+           # Sends request, reads from recv_logs
+           _id = str(uuid.uuid4())
+           self.send(msg)
+           while not (_id in self.recv_logs):  # Checks class-level dict
+               await asyncio.sleep(0.01)
+       
+       async def client_handle(self, client_id):
+           # Receives response, writes to recv_logs
+           async for msg in client_id:
+               _id = msg.get('id')
+               self.recv_logs[_id] = msg['payload']  # Populates class-level dict
+   ```
+   
+   This coupling of instance-based OOP with class-based asyncio shared state is
+   **inelegant and error-prone**. It's a symptom of Python's conflicting design principles.
+
 Now, the actual utilities:
 """
 

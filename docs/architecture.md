@@ -1132,6 +1132,81 @@ The current implementation using polling with explicit `await asyncio.sleep(0.01
 
 **Conclusion**: The current implementation is **not a compromise**—it's the **optimal solution** given the architectural constraints of Jupyter and IPython Comm.
 
+#### Global Scope Buffer Requirement
+
+A critical constraint often missed: asyncio data exchange buffers **must be class variables (global scope)**, not instance variables.
+
+**Current implementation** (ggblab/comm.py):
+```python
+class ggb_comm:
+    # These MUST be at class scope, not instance scope
+    recv_logs = {}          # Response storage by message ID
+    recv_events = queue.Queue()  # Error event queue
+    logs = []               # Diagnostic logs
+```
+
+**Why class scope is required**:
+
+1. **Multiple async tasks access the same buffers**:
+   - `client_handle()` (server connection handler) populates `recv_logs` and `recv_events`
+   - `send_recv()` (command sender) reads from `recv_logs` and `recv_events`
+   - Both run concurrently in the same event loop
+
+2. **Async task isolation prevents instance variable sharing**:
+   - Each `await` point creates a suspension boundary
+   - If buffers were instance variables, different async tasks would be looking at different dictionaries
+   - This breaks message correlation
+
+3. **Event loop singleton**:
+   - There is one event loop per Python kernel process
+   - `ggb_comm` is instantiated once per kernel
+   - Putting buffers at class scope ensures they persist across all `await` points and async task switches
+
+**Example of what FAILS with instance variables**:
+```python
+class ggb_comm_broken:
+    def __init__(self):
+        self.recv_logs = {}  # ❌ Instance variable
+        self.recv_events = queue.Queue()  # ❌ Instance variable
+
+    async def send_recv(self, msg):
+        _id = str(uuid.uuid4())
+        self.send(msg)
+        
+        # This checks a DIFFERENT recv_logs than client_handle() populates!
+        while not (_id in self.recv_logs):  # ❌ Sees empty dict
+            await asyncio.sleep(0.01)
+        
+        # Message ID never arrives because it went to a different dictionary
+```
+
+**Why this fails**:
+- Instance variables are created per object instance
+- `self.recv_logs` refers to the instance's dictionary
+- `client_handle()` may be running in a different async task context
+- No guarantee that `send_recv()`'s `self` refers to the same object as `client_handle()`'s `self`
+- Even if it does, the timing of async task scheduling can cause data races
+
+**Proper design with class variables**:
+```python
+class ggb_comm:
+    # Class variables: shared across all async tasks
+    recv_logs = {}          # All tasks see the same dict
+    recv_events = queue.Queue()  # All tasks see the same queue
+    
+    async def send_recv(self, msg):
+        _id = str(uuid.uuid4())
+        self.send(msg)
+        
+        # This checks THE SAME recv_logs that client_handle() populates
+        while not (_id in self.recv_logs):  # ✅ Sees shared dict
+            await asyncio.sleep(0.01)
+```
+
+**Reference**:
+- [Jupyter Community Forum: Frontend to Kernel Callback](https://discourse.jupyter.org/t/frontent-to-kernel-callback/1666)
+- This constraint is documented in the discussion but often overlooked by developers new to asyncio
+
 #### No Near-Term Refactoring Recommended
 
 Attempts to replace polling with `asyncio.Event`, `asyncio.Condition`, or other primitives have proven unsuccessful because they don't address the root cause (IPython event loop blocking during cell execution). The current implementation should remain stable.

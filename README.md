@@ -22,7 +22,7 @@ The GeoGebra applet displays in a fixed JupyterLab panel while your notebook rem
 - Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
 - Settings schema is wired up (no user options yet) for future configuration
-- Single Comm target name `ggblab-comm`; multiplexing via multiple targets is avoided because IPython Comm cannot receive during cell execution, so reliability comes from the out-of-band socket channel instead.
+- **Single Comm target name `ggblab-comm`** and **singleton instance per kernel session**: Multiplexing via multiple targets is avoided because (1) IPython Comm cannot receive during cell execution, and (2) more fundamentally, **asyncio's concurrency model requires all concurrent `send_recv()` tasks to share a single message buffer at class scope** to safely correlate responses by message ID. See [ggblab/utils.py section 8 — Unexpected Scope Subdivision in asyncio](ggblab/utils.py) for why instance variables fail in asyncio contexts, and [architecture.md § Asyncio Design Challenges](docs/architecture.md#asyncio-design-challenges-in-jupyter) for the full technical rationale.
 
 ### Requirements
 

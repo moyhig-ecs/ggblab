@@ -19,7 +19,7 @@ This design is **mature for its scope**. Further incremental improvements (conne
 
 ### Accepted Limitations
 
-1. **Singleton instance per kernel session**: Complexity vs. benefit trade-off rejected. Multi-instance workflows can be layered at the application level (separate notebooks, kernel isolation).
+1. **Singleton instance per kernel session**: This is not a limitation but a **fundamental requirement** imposed by Python's asyncio concurrency model. In ggblab, multiple concurrent `send_recv()` async tasks must share a single buffer (`recv_logs` dict) to correlate message IDs with responses. This buffer **must be a class variable, not an instance variable**, because asyncio task scheduling doesn't preserve instance variable semantics across concurrent contexts (see [ggblab/utils.py § 8. Asyncio Scope Separation](../ggblab/utils.py) and [architecture.md § Global Scope Buffer Requirement](architecture.md#global-scope-buffer-requirement) for the detailed problem). The singleton pattern is therefore **an architectural necessity, not a design trade-off**. Multi-instance workflows can be supported at the notebook level (separate kernel sessions) rather than at the GeoGebra object level.
 2. **3-second timeout on out-of-band channel**: Sufficient for interactive use; longer operations should be decomposed into steps.
 3. **No persistent connection pooling**: Per-transaction connections are simple, predictable, and naturally clean up resources.
 
