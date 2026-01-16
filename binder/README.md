@@ -4,7 +4,7 @@ This repository includes Binder configuration to let you try the `examples` note
 
 - Launch Binder (build may take a few minutes):
 
-  https://mybinder.org/v2/gh/moyhig-ecs/ggblab/main?filepath=examples/example.ipynb
+  https://mybinder.org/v2/gh/moyhig-ecs/ggblab/main?urlpath=lab/tree/examples/example.ipynb
 
 - The Binder environment will install the repository in editable mode and required Python packages listed in `binder/requirements.txt`.
 

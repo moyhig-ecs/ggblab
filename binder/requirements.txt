@@ -4,6 +4,10 @@ sphinx
 # docs build tooling
 copier
 ipykernel
-# install package in editable mode
--e .
+# example/runtime dependencies (installed separately when ggblab is installed)
+ipylab
+ipywidgets
+networkx
+xmlschema
+polars
 matplotlib

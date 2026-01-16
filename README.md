@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/moyhig-ecs/ggblab/main?filepath=examples/example.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/moyhig-ecs/ggblab/main?urlpath=lab/tree/examples/example.ipynb)
 
 A JupyterLab extension that displays a GeoGebra applet in a side-by-side panel while your notebook code remains editable on the side—enabling **interactive dual coding** where you manipulate geometry visually and control it from Python. Geometric visualization and computational thinking reinforce each other. Learn programming through geometric construction; reason about geometry through Python code. Grounded in cognitive science (Dual Coding Theory, Transfer of Learning), ggblab bridges visual and symbolic domains so knowledge transfers across disciplines.
 
