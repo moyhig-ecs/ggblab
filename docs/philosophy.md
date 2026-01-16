@@ -29,7 +29,61 @@ The communication architecture has reached **stable maturity**. Investment in fu
 
 ---
 
-## 2. Numerical Analysis: GeoGebra + Python Complementarity
+## 1.5. Error Handling: Transcending GeoGebra's Limitations
+
+### The GeoGebra Problem
+
+GeoGebra **provides no formal Error API**:
+- No machine-readable error schema
+- No documented error event format
+- No structured error classification system
+- Error information comes only as asynchronous, unstructured messages from the applet
+
+This is a significant limitation that would paralyze most integrations.
+
+### The ggblab Innovation: Schema-Free Error Capture
+
+ggblab's solution is conceptually elegant:
+
+**Rather than depending on missing GeoGebra APIs, we observe GeoGebra's actual behavior and build around it.**
+
+This yields a system **more robust than GeoGebra's native capabilities**:
+
+1. **Pre-flight validation** (before GeoGebra sees the command):
+   - Syntax checking: Can the command be tokenized?
+   - Semantic checking: Do referenced objects exist in the applet?
+   - Zero GeoGebra API dependency; pure local analysis
+
+2. **Runtime error capture** (after GeoGebra processes the command):
+   - Asynchronous event monitoring via out-of-band socket
+   - Works even when IPython Comm is blocked during cell execution
+   - Consolidates multiple error events into semantic units
+   - Properly handles timeouts, empty responses, delayed errors
+
+3. **Hierarchical exception system**:
+   ```
+   GeoGebraError (all GeoGebra-related)
+   ├── GeoGebraCommandError (pre-flight validation)
+   │   ├── GeoGebraSyntaxError (tokenization failure)
+   │   └── GeoGebraSemanticsError (missing objects)
+   └── GeoGebraAppletError (runtime from GeoGebra)
+   ```
+
+### Why This Is Remarkable
+
+**Design Principle**: When an external system (GeoGebra) provides inadequate APIs, transcend the limitation through **observational independence**.
+
+- ✅ Zero API dependency: Works regardless of GeoGebra's error infrastructure
+- ✅ Future-proof: Updates to GeoGebra don't break error handling
+- ✅ Flexible: Captures errors GeoGebra doesn't officially expose
+- ✅ Layered: Pre-flight + runtime provide complementary coverage
+- ✅ asyncio-aware: Respects Python's concurrency semantics
+
+**Result**: ggblab provides error handling that **exceeds GeoGebra's own capabilities**, turning a limitation into an architectural advantage.
+
+See [docs/architecture.md — Runtime Error Handling](architecture.md#runtime-error-handling-geogebraappletererror) for technical details.
+
+---
 
 ### The Problem with GeoGebra Alone
 

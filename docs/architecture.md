@@ -244,9 +244,59 @@ Send to GeoGebra via out-of-band socket
     ↓
 GeoGebra processes (may still fail internally)
     ↓
-Timeout after 3 seconds? → TimeoutError
+Timeout after 3 seconds? → Check recv_events for error events
     ↓
-Check recv_events for error dialogs
+Errors found? → GeoGebraAppletError
+    ↓
+No errors? → Return value or None
+```
+
+### Runtime Error Handling: GeoGebraAppletError
+
+**Purpose**: Capture errors that occur during GeoGebra execution, not during pre-flight validation
+
+**How it works**:
+1. **Asynchronous error capture**: GeoGebra error events (`{'type': 'Error', 'payload': '...'}`) are queued via the out-of-band socket
+2. **Multiple error consolidation**: Consecutive error events are automatically combined into a single exception
+3. **Timeout-triggered check**: When `send_recv()` times out waiting for a response, it checks `recv_events` for accumulated error messages
+4. **Empty response handling**: If the response arrives but the payload is empty (`None`), a 0.5-second wait allows additional errors to arrive before checking
+
+**Exception hierarchy**:
+```
+GeoGebraError (base)
+├── GeoGebraCommandError (pre-flight validation)
+│   ├── GeoGebraSyntaxError
+│   └── GeoGebraSemanticsError
+└── GeoGebraAppletError (runtime, from applet)
+```
+
+**Usage**:
+```python
+from ggblab.errors import GeoGebraAppletError
+
+try:
+    await ggb.command("Unbalanced(")
+except GeoGebraAppletError as e:
+    print(f"Applet error: {e.error_message}")
+    print(f"Error type: {e.error_type}")
+```
+
+**Example error flow**:
+```
+GeoGebra applet receives: "Unbalanced("
+    ↓
+Applet generates error events:
+    {'type': 'Error', 'payload': 'Unbalanced brackets '}
+    {'type': 'Error', 'payload': 'Unbalanced( '}
+    ↓
+send_recv() waits for response (doesn't arrive)
+    ↓
+Timeout triggers recv_events check
+    ↓
+Errors found and combined:
+    "Unbalanced brackets \nUnbalanced( "
+    ↓
+GeoGebraAppletError raised with combined message
 ```
 
 ## Data Flow Diagrams
@@ -294,6 +344,30 @@ Python Cell (running)            Frontend (Browser)            ggb_comm (backend
      |                                  |                              |
      |  (await completes)               |  6. Close connection         |
      |                                  |<-----------------------------|
+```
+
+### Error Event Capture (Dual Channel)
+
+```
+Python Cell (running)            Frontend (Browser)            ggb_comm (backend)
+     |                                  |                              |
+     |  1. command("Unbalanced(")       |                              |
+     |--------------------------------->|                              |
+     |                                  |                              |
+     |                      2. Execute → Error!
+     |                                  |                              |
+     |                                  |  3. Queue error events       |
+     |                                  |----------------------------->|
+     |                                  |  Error event #1              |
+     |                                  |  Error event #2              |
+     |  (Python blocked waiting)        |                              |
+     |                                  |                              |
+     |  4. Timeout after 3 seconds      |                              |
+     |                                  |                              |
+     |  5. Check recv_events            |                              |
+     |<----|  Retrieve error events     |                              |
+     |     |  Combine messages          |                              |
+     |     |  Raise GeoGebraAppletError |                              |
 ```
 
 ## Implementation Details

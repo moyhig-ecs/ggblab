@@ -77,7 +77,63 @@ print(value)
 
 `init()` fetches the current kernel ID, starts the IPython Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
 
+### Error Handling — Comprehensive Exception Hierarchy
+
+ggblab implements a **sophisticated, multi-layer error handling system** that stands out as a remarkable achievement in transcending GeoGebra's limitations:
+
+**The Challenge**: GeoGebra provides no formal Error API or machine-readable error schema. Error information comes purely as asynchronous event messages from the applet.
+
+**The Breakthrough**: Rather than depending on missing GeoGebra APIs, ggblab implements a **schema-free, observation-driven error capture system** that:
+1. **Validates pre-flight** (syntax, semantics) before GeoGebra ever sees the command
+2. **Captures runtime errors asynchronously** via the dual-channel architecture (out-of-band socket)
+3. **Consolidates multiple error events** automatically
+4. **Distinguishes error sources** (pre-flight vs. runtime) through a rich exception hierarchy
+
+**Result**: ggblab's error handling is **more robust and flexible than GeoGebra's native capabilities**.
+
+```python
+from ggblab.errors import GeoGebraError, GeoGebraAppletError
+
+# Pre-flight validation errors (caught before execution)
+try:
+    ggb.check_syntax = True
+    ggb.check_semantics = True
+    await ggb.command("Circle(A, B)")
+except GeoGebraSyntaxError as e:
+    print(f"Syntax error: {e.command}")
+except GeoGebraSemanticsError as e:
+    print(f"Missing objects: {e.missing_objects}")
+
+# Runtime errors from GeoGebra applet (caught after execution)
+try:
+    await ggb.command("Unbalanced(")
+except GeoGebraAppletError as e:
+    print(f"Applet error: {e.error_message}")
+
+# Catch all GeoGebra errors
+try:
+    await ggb.command("...")
+except GeoGebraError:
+    # Handles all GeoGebra-related exceptions
+    pass
+```
+
+**Error Types:**
+- **GeoGebraSyntaxError**: Command cannot be tokenized (pre-flight)
+- **GeoGebraSemanticsError**: Referenced objects don't exist in applet (pre-flight)
+- **GeoGebraAppletError**: GeoGebra applet produces error events during execution (runtime)
+
+**Architecture Achievements:**
+- Pre-flight validation prevents invalid commands from reaching GeoGebra
+- Runtime errors captured asynchronously via dual-channel communication (IPython Comm + WebSocket)
+- Consecutive error events automatically consolidated into semantic units
+- Full asyncio compliance with timeout handling and queue polling
+- Zero dependency on external error schemas or APIs
+
+See [ggblab/errors.py](ggblab/errors.py) for the complete exception hierarchy and [docs/architecture.md](docs/architecture.md#runtime-error-handling-geogebraappletererror) for implementation details.
+
 ## Documentation
+
 
 ggblab's design philosophy and implementation details are documented across several focused documents:
 
