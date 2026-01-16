@@ -43,6 +43,10 @@ jobs:
               cp "$f" public/
             fi
           done
+          if [ -e "welcome.html" ]; then
+            echo "Copying welcome.html to public/"
+            cp "welcome.html" public/
+          fi
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v3
