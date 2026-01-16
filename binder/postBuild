@@ -1,8 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-
-# Install the package in editable mode (redundant with binder/requirements.txt but ensures local install)
-python -m pip install -e .
-
-# (Optional) print a brief verification
-echo "Installed ggblab and runtime dependencies"
