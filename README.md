@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
-[![Tests](https://github.com/GeoGebraLab/ggblab/actions/workflows/tests.yml/badge.svg)](https://github.com/GeoGebraLab/ggblab/actions/workflows/tests.yml)
+[![Tests](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml/badge.svg)](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml)
 [![License](https://img.shields.io/pypi/l/ggblab.svg)](LICENSE)
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
