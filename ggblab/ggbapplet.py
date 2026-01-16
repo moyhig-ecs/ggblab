@@ -214,8 +214,7 @@ class GeoGebra:
         """
         try:
             objects = await self.function("getAllObjectNames")
-            if objects:
-                self._applet_objects = set(objects)
+            self._applet_objects = set(objects) if objects else set()
         except Exception as e:
             print(f"Warning: Could not refresh object cache: {e}")
     

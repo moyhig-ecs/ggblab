@@ -268,12 +268,14 @@ with connect("${wsUrl}") as ws:
                                 (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach((n) => {
                                  // console.log(n.textContent); 'Error'などのタイトルを検出
                                     ((node as HTMLElement).querySelector('div.dialogContent') as HTMLElement)
-                                        .querySelectorAll(`[class$='Label']`).forEach((n2) => {
-                                            console.log(n2.textContent);
-                                                comm.send(JSON.stringify({
-                                                    "type": n.textContent,
-                                                    "payload": n2.textContent
-                                                }));
+                                        .querySelectorAll(`[class$='Label']`).forEach(async (n2) => {
+                                            // console.log(n2.textContent);
+                                            const msg = JSON.stringify({
+                                                "type": n.textContent,
+                                                "payload": n2.textContent
+                                            });
+                                            // comm.send(msg);
+                                            await callRemoteSocketSend(kernel2, msg, socketPath, wsUrl);
                                         })
                                 })
                             } catch (e) {

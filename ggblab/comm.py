@@ -101,25 +101,19 @@ class ggb_comm:
                 _id = _data.get('id')
               # self.logs.append(f"Received message from client: {_id}")
                 
-                # REFACTOR: Route event-type messages to recv_events queue
-                # Currently recv_events is populated from IPython Comm handle_recv(),
-                # which blocks during cell execution. This prevents real-time error
-                # event processing.
-                #
-                # Fix strategy:
-                # 1. Frontend widget.tsx should mark event messages with a flag or
-                #    use id=null for non-response events (e.g., {'type': 'Error', 'payload': '...', 'id': null})
-                # 2. Route based on id presence:
-                #    - if _id and _id in pending_requests: self.recv_logs[_id] = response
-                #    - if not _id or event: self.recv_events.put(message)
-                # 3. Remove event routing from handle_recv() below
-                #
+                # Route event-type messages to recv_events queue
+                # Messages with 'id' are command responses; messages without 'id' are events.
                 # This enables:
                 # - Real-time error capture during cell execution
                 # - Dynamic scope learning from Applet error events
                 # - Cross-domain error pattern analysis
                 
-                self.recv_logs[_id] = _data['payload']
+                if _id:
+                    # Response message: store in recv_logs for send_recv() to retrieve
+                    self.recv_logs[_id] = _data['payload']
+                else:
+                    # Event message: queue for event processing
+                    self.recv_events.put(_data)
         except Exception as e:
             pass
           # self.logs.append(f"Connection closed: {e}")
@@ -149,35 +143,19 @@ class ggb_comm:
         self.target_comm = None
 
     def handle_recv(self, msg):
+        # Note: All event-type messages are now routed to recv_events via the
+        # out-of-band socket (client_handle). This method is reserved for command
+        # responses (messages with id) sent via IPython Comm.
+        # 
+        # IPython Comm cannot receive messages during cell execution, so real-time
+        # error event processing happens on the out-of-band socket instead.
         if isinstance(msg['content']['data'], str):
             _data = json.loads(msg['content']['data'])
         else:
             _data = msg['content']['data']
-        # _id = _data.get('id')
         
-        # REFACTOR: Move event routing to out-of-band socket (client_handle)
-        # This code currently routes non-response events to recv_events via IPython Comm.
-        # However, IPython Comm cannot receive messages during cell execution, which blocks
-        # real-time error event processing.
-        #
-        # After refactor:
-        # - Events should be sent via out-of-band socket instead
-        # - This method should be reserved for responses (messages with id)
-        # - See client_handle() refactoring notes for implementation strategy
-        #
-        # TODO: Once frontend widget.tsx is updated to send events via out-of-band socket,
-        #       remove this condition and assume all messages here are responses.
-        
-        if 'id' not in _data:
-            self.recv_events.put(_data)
-        # if self.mid and self.mid == _id:
-        #     self.recv_msgs[_id] = [_data]
-        #     self.mid = None
-        # else:
-        #     if _id in self.recv_msgs:
-        #         # self.recv_msgs[_id].append(_data)
-        #     else:
-        #         self.recv_msgs[_id] = [_data]
+        # All messages here are assumed to be responses with 'id'
+        # (event messages are handled via client_handle in the out-of-band socket)
 
     def send(self, msg):
         return self.target_comm.send(msg)
