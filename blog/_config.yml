@@ -1,7 +1,8 @@
+
 title: ggblab Blog
 theme: minima
-baseurl: "" # set if serving under a subpath, e.g. /repo-name
-# url: "https://<your-username>.github.io"  # optional for local previews
+baseurl: "/ggblab" # site is served under /ggblab on GitHub Pages
+url: "https://moyhig-ecs.github.io"  # site URL (without baseurl)
 
 # Keep collections simple; use default posts folder
 markdown: kramdown
