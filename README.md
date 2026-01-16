@@ -3,7 +3,7 @@
 🚀 Quick links:
 
 - **Binder (Demo)**: Hosted demo and instructions to launch the examples in JupyterLab — see [binder/README.md](binder/README.md).
-- **Blog**: Project news and writeups live in the blog folder; preview locally or publish via GitHub Pages — see [blog/README.md](blog/README.md).
+- **Blog**: Project news and writeups — published site: https://moyhig-ecs.github.io/ggblab/ (source / local preview: [blog/README.md](blog/README.md)).
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
