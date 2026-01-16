@@ -65,6 +65,20 @@ For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-d
 
 This is an upstream JupyterLab/Lumino + WebKit browser engine limitation, not a ggblab-specific problem. See [JupyterLab documentation](https://jupyterlab.readthedocs.io/) and [GitHub Issues](https://github.com/moyhig-ecs/ggblab/issues) for current status.
 
+#### ⚠️ Known Display Issue: GeoGebra Applet Size Scaling on Window Resize
+
+**Technical Notice**: ggblab applies Applet dimensions via CSS and widget configuration. However, when the JupyterLab window is resized after the Applet is initialized, device resolution scaling can become confused, causing the displayed GeoGebra applet to appear smaller than expected.
+
+- **Issue**: Window resize triggers recalculation of CSS dimensions, but internal DPI/device pixel ratio tracking in GeoGebra may not sync properly with the updated layout
+- **Symptom**: GeoGebra applet appears compressed or smaller after resizing the browser window
+- **Affected configurations**: More common on high-DPI displays (2x+ device pixel ratio), including Retina displays on macOS and high-resolution external monitors
+- **Note**: This scaling issue **cannot be reset via GeoGebra API commands** (e.g., `SetCoords()`) once triggered; it is purely a rendering/layout issue
+- **Workaround**: 
+  - Refresh the browser page after resizing the JupyterLab window to reinitialize display scaling
+  - Avoid frequent window resizing during interactive sessions when possible
+
+This is a display/rendering interaction between JupyterLab's layout manager and GeoGebra's canvas scaling, not a communication or functionality issue. The Applet operates correctly; only the visual presentation is affected.
+
 Uninstall:
 
 ```bash
