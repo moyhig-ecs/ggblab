@@ -4,5 +4,31 @@ theme: minima
 baseurl: "/ggblab" # site is served under /ggblab on GitHub Pages
 url: "https://moyhig-ecs.github.io"  # site URL (without baseurl)
 
+description: "ggblab — interactive GeoGebra + JupyterLab teaching materials and updates"
+lang: en
+author:
+	name: "ggblab"
+	email: ""
+
+# Plugins for SEO and feeds
+plugins:
+	- jekyll-seo-tag
+	- jekyll-feed
+
 # Keep collections simple; use default posts folder
 markdown: kramdown
+
+# Site defaults and exclusions
+exclude:
+	- node_modules
+	- vendor
+	- .bundle
+
+defaults:
+	- scope:
+			path: ""
+			type: "posts"
+		values:
+			layout: "post"
+			author: "ggblab"
+
