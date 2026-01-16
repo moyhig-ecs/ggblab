@@ -11,7 +11,9 @@ node_modules/
 ggblab/labextension
 # Version file is handled by hatchling
 ggblab/_version.py
-examples/.ggblab_command_cache*
+.ggblab_command_cache*
+xsd/common.xsd
+.vscode/settings.json
 
 # Integration tests
 ui-tests/test-results/
