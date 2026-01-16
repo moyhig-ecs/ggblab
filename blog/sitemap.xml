@@ -1,0 +1,31 @@
+---
+layout: nil
+permalink: /sitemap.xml
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  {%- assign host = site.url | append: site.baseurl -%}
+
+  {%- comment -%}
+  Include pages (exclude 404) and posts. Pages can opt-out by setting `sitemap: false` in front matter.
+  {%- endcomment -%}
+
+  {%- for p in site.pages -%}
+    {%- if p.sitemap != false and p.url != "/404.html" and p.url != "/404/" -%}
+  <url>
+    <loc>{{ host }}{{ p.url }}</loc>
+    {%- if p.last_modified_at or p.date -%}
+    <lastmod>{{ (p.last_modified_at | default: p.date) | date_to_xmlschema }}</lastmod>
+    {%- endif -%}
+  </url>
+    {%- endif -%}
+  {%- endfor -%}
+
+  {%- for post in site.posts -%}
+  <url>
+    <loc>{{ host }}{{ post.url }}</loc>
+    <lastmod>{{ post.date | date_to_xmlschema }}</lastmod>
+  </url>
+  {%- endfor -%}
+
+</urlset>
