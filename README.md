@@ -1,4 +1,4 @@
-# ggblab
+# ggblab — A JupyterLab extension that embeds GeoGebra for dual-coded geometry and Python programming
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
 [![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
@@ -8,12 +8,16 @@
 [![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
 
-ggblab is a JupyterLab extension that opens a GeoGebra applet inside JupyterLab and lets you drive it from a Python kernel. The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
+A JupyterLab extension that embeds a GeoGebra applet in your notebook and lets you drive it from Python—enabling **dual coding** where geometric visualization and computational thinking reinforce each other. Learn programming through geometric construction; reason about geometry through Python code.
+
+The panel can be launched from the Command Palette or Launcher for default settings, but to enable kernel↔widget communication reliably ggblab launches the widget programmatically from a notebook (via ipylab) so communication settings are passed before initialization. You then call GeoGebra commands/functions asynchronously from Python via IPython Comm plus an optional Unix-socket/TCP WebSocket bridge.
 
 ### Features
 
+- **Dual Coding System**: Geometric visualization + Python code in a unified workspace—students learn through both visual and symbolic representations
 - Programmatic launch via `GeoGebra().init()` (recommended), which uses ipylab to pass communication settings before widget initialization (Command ID: `ggblab:create`, label: "React Widget"). Command Palette/Launcher work only with fixed arguments and are suitable for default settings.
 - Call GeoGebra commands (`command`) and API functions (`function`) from Python through the `GeoGebra` helper
+- **Domain Bridge**: Construction dependencies in GeoGebra map isomorphically to variable scoping in Python—teach computational thinking through geometric structure
 - Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
 - Settings schema is wired up (no user options yet) for future configuration

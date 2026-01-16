@@ -1,7 +1,7 @@
 {
     "name": "ggblab",
     "version": "0.9.1",
-    "description": "A JupyterLab extension that opens a GeoGebra applet inside JupyterLab.",
+    "description": "A JupyterLab extension that embeds GeoGebra for dual-coded geometry and Python programming.",
     "keywords": [
         "jupyter",
         "jupyterlab",
