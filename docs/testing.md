@@ -5,12 +5,14 @@ This document describes the structure of ggblab's unit and integration tests, ho
 ## Test Structure
 
 - Directory structure (excerpt)
-  - `tests/` (unit tests)
-    - `test_construction.py`: Loading/saving by format (.ggb Base64, ZIP, JSON, XML), round-trip, edge cases
-    - `test_parser.py`: Dependency graph construction, root/leaf identification, topological sort, generation analysis
+  - `tests/` (core unit tests)
+    - `test_file.py`: Loading/saving by format (.ggb Base64, ZIP, JSON, XML), round-trip, edge cases
+    - `test_ggbapplet.py`: GeoGebra lifecycle, validation, and cache management
     - `__init__.py`, `conftest.py`: Pytest configuration and shared fixtures
+  - `ggblab-extra/tests/` (advanced analysis)
+    - `test_parser.py`: Dependency graph construction, root/leaf identification, topological sort, generation analysis
   - Root
-    - `pytest.ini`: Coverage/marker/output configuration
+    - `pytest.ini`: Coverage/marker/output configuration (covers both ggblab and ggblab-extra)
     - `.github/workflows/tests.yml`: Automated testing on GitHub Actions
 
 ## Local Execution
@@ -28,8 +30,9 @@ pytest
 pytest -v --cov=ggblab --cov-report=term-missing
 
 # Specific file only
-pytest tests/test_construction.py -v
-pytest tests/test_parser.py -v
+pytest tests/test_file.py -v
+pytest tests/test_ggbapplet.py -v
+pytest ggblab-extra/tests/test_parser.py -v
 
 # Re-run failed tests only
 pytest --lf
@@ -64,13 +67,15 @@ Generated artifacts:
 
 ## Representative Test Content (Overview)
 
-- `test_construction.py`
+- `tests/test_file.py`
   - Loading Base64 .ggb / ZIP .ggb / JSON / XML
   - XML stripping to `<construction>` and normalization of scientific notation (`e-1 → E-1`)
   - Save behavior with/without Base64 (ZIP/plain XML)
   - Automatic filename generation (`name_1.ggb`, `name_2.ggb`)
   - Round-trip consistency validation
-- `test_parser.py`
+- `tests/test_ggbapplet.py`
+  - Singleton lifecycle, syntax/semantic validation, cache refresh, literal detection
+- `ggblab-extra/tests/test_parser.py`
   - Node/edge generation (dependencies)
   - Root/leaf identification
   - Topological sort/generation analysis (scope levels)

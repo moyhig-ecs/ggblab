@@ -203,7 +203,7 @@ class TestFileLoad:
         with open(xml_path, 'w', encoding='utf-8') as f:
             f.write(xml_with_sci)
         
-        c = ggb_construction()
+        c = ggb_file()
         
         # Should load without error, even with lowercase 'e' in scientific notation
         c.load(str(xml_path))
@@ -308,7 +308,7 @@ class TestFileSave:
     
     def test_save_returns_self(self, ggb_file_xml, temp_dir):
         """Test that save() returns self for method chaining."""
-        c = ggb_construction()
+        c = ggb_file()
         c.load(str(ggb_file_xml))
         
         result = c.save(file=str(temp_dir / "output.xml"))
@@ -397,4 +397,4 @@ class TestFileEdgeCases:
         assert '<construction>' in json_content
 
 
-# Run tests with: pytest tests/test_construction.py -v
+# Run tests with: pytest tests/test_file.py -v

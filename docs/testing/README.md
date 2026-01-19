@@ -14,11 +14,10 @@ Complete documentation of testing infrastructure, fixes, and best practices for 
 ### Test Suite Structure
 
 **Backend Tests** (`tests/`):
-- `test_parser.py` (18 test classes, 70+ methods)
-  - Dependency graph construction and analysis
-  - Topological sorting, generations, reachability
-  - Edge cases and large constructions
-  - All tests follow `ggb_parser(cache_enabled=False)` pattern for isolation
+- `test_file.py`
+  - Loading/saving by format (.ggb Base64, ZIP, JSON, XML), round-trip, edge cases
+  - XML stripping and normalization (scientific notation)
+  - Save behavior with/without Base64; auto filename generation
 
 - `test_ggbapplet.py` (6 test classes, 16 methods)
   - Singleton initialization and state management
@@ -26,10 +25,12 @@ Complete documentation of testing infrastructure, fixes, and best practices for 
   - Object cache management
   - Exception handling
 
-- `test_construction.py` (5 test classes, 20+ methods)
-  - File loading: `.ggb`, JSON, XML formats
-  - File saving and round-trip integrity
-  - Format preservation and edge cases
+**Advanced Tests** (`ggblab-extra/tests/`):
+- `test_parser.py` (18 test classes, 70+ methods)
+  - Dependency graph construction and analysis
+  - Topological sorting, generations, reachability
+  - Edge cases and large constructions
+  - All tests follow `ggb_parser(cache_enabled=False)` pattern for isolation
 
 ### CI/CD Pipeline
 
@@ -51,7 +52,7 @@ pip install pytest pytest-cov
 pytest tests/ -v --cov=ggblab --cov-report=html
 
 # Run specific test module
-pytest tests/test_parser.py -v
+pytest ggblab-extra/tests/test_parser.py -v
 
 # Run with XML output (for CI integration)
 pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
@@ -59,7 +60,7 @@ pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
 
 ## Recent Fixes (v0.7.3)
 
-### Parser Test Refactoring
+### Parser Test Refactoring (now in ggblab-extra)
 
 All 70+ test methods in `test_parser.py` were refactored to match the actual parser implementation API:
 

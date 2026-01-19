@@ -25,11 +25,13 @@ A JupyterLab extension for interactive geometric scene construction with Python 
    scoping_system.md
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Advanced Topics
+   :maxdepth: 1
+   :caption: Advanced Tools (ggblab-extra)
 
-   sympy_integration.md
-   scoping_implementation.md
+   ../ggblab-extra/docs/SCENE_DEVELOPMENT_QUICK_START.md
+   ../ggblab-extra/docs/geometric_scene_development_guide.md
+   ../ggblab-extra/docs/scoping_implementation.md
+   ../ggblab-extra/docs/sympy_integration.md
 
 .. toctree::
    :maxdepth: 2

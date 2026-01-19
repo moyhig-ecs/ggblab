@@ -72,6 +72,28 @@ except ImportError:
     # ggblab_extra not installed - no backward compatibility
     pass
 
+# Deprecated import shim for PersistentCounter
+try:
+    from ggblab_extra.persistent_counter import PersistentCounter as _PersistentCounter
+    import warnings
+
+    class PersistentCounter(_PersistentCounter):
+        """Deprecated shim; use ggblab_extra.PersistentCounter instead."""
+
+        def __init__(self, *args, **kwargs):
+            warnings.warn(
+                "Importing 'PersistentCounter' from 'ggblab' is deprecated. "
+                "Use 'from ggblab_extra import PersistentCounter' instead. "
+                "This compatibility layer will be removed in ggblab 1.0.0.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            super().__init__(*args, **kwargs)
+
+except ImportError:
+    # ggblab_extra not installed - no backward compatibility
+    pass
+
 def _jupyter_labextension_paths():
     """Return the JupyterLab extension paths.
     

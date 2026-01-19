@@ -45,40 +45,17 @@ ggblab consists of two packages:
 ### **ggblab** (Core) — JupyterLab Extension
 Interactive GeoGebra widgets with bidirectional Python ↔ GeoGebra communication.
 
-**Features:**
-- JupyterLab extension with embedded GeoGebra applets
+**Core features (this repo):**
+- Embedded GeoGebra applet in JupyterLab
 - Bidirectional communication (IPython Comm + WebSocket)
-- Async Python API for GeoGebra commands and functions
-- .ggb file I/O (ggb_file class)
-- Real-time geometric construction from Jupyter notebooks
+- Async Python API for GeoGebra commands/functions
+- .ggb file I/O (`ggb_file`, alias `ggb_construction`)
 
 ### **ggblab-extra** — Analysis & Educational Tools
-Extended functionality for construction analysis, parsing, and verification.
-
-```bash
-pip install ggblab-extra
-```
-
-**Features:**
-- Construction protocol parser with dependency graph analysis (NetworkX)
-- Scene verification infrastructure for automated testing
-- Layer-based construction playback for educational curricula
-
-**Note:** `ggblab` includes `ggb_file` (alias: `ggb_construction`) for .ggb file I/O. `ggblab-extra` provides advanced analysis tools.
-
-**Migration Note:** Previously, `ggblab` included `ggb_parser` and `scene_verification`. These are now in `ggblab-extra`. Backward compatibility is maintained through deprecation warnings. Update imports:
-
-```python
-# Old (deprecated)
-from ggblab import ggb_parser
-
-# New (recommended)
-from ggblab_extra import ggb_parser
-
-# File I/O (still in core)
-from ggblab import ggb_file  # New name
-from ggblab import ggb_construction  # Backward compatibility alias
-```
+Advanced parsing, verification, and curriculum tooling now live in the separate
+[ggblab-extra](./ggblab-extra/README.md) package. Install it for construction
+parsing, scene verification, and layer-based playback. Migration guidance and
+usage examples are maintained in that repository.
 
 ### Installation
 
@@ -259,24 +236,18 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
   - Recommended actions and prioritization guidance
   - Critical questions for project sustainability
 
-### Advanced Integration
+### Advanced Integration (ggblab-extra)
 
-- **[sympy_integration.md](docs/sympy_integration.md)** - Symbolic computation and code generation
-  - Bidirectional conversion: GeoGebra constructions ↔ SymPy Geometry objects
-  - Symbolic verification of geometric properties (collinearity, concyclicity, perpendicularity)
-  - Automatic Python code generation from constructions (reproducibility + version control)
-  - Advanced solvers: locus equations, envelope curves, constraint satisfaction
-  - Manim export pipeline: SymPy geometry → manim animation code
-  - Implementation roadmap (v1.1 - v1.5) with educational success criteria
+- **[sympy_integration.md](./ggblab-extra/docs/sympy_integration.md)** - Symbolic computation and code generation (maintained in ggblab-extra)
 
 ### API Reference
 
 - **[API Documentation](https://ggblab.readthedocs.io/en/latest/api.html)** - Python API reference auto-generated from docstrings
-  - `GeoGebra` class: Main interface for controlling applets
-  - `ggb_comm`: Dual-channel communication layer
-  - `ggb_construction`: File loader and saver
-  - `ggb_parser`: Dependency graph analysis
-  - `ggb_schema`: XML schema loader
+   - `GeoGebra` class: Main interface for controlling applets
+   - `ggb_comm`: Dual-channel communication layer
+   - `ggb_file` (`ggb_construction` alias): File loader and saver
+   - `ggb_schema`: XML schema loader
+   - For dependency parsing and verification, see [ggblab-extra/README.md](./ggblab-extra/README.md)
 
 ### Textbook Integration & Geometric Scene Development
 
@@ -305,8 +276,8 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 | **[ggblab-extra: geometric_scene_development_guide.md](./ggblab-extra/docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
 | **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
 | **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
-| **[docs/sympy_integration.md](docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
-| **[docs/architecture.md](docs/architecture.md)** | Developers | Dual-channel communication; parser needs v1.0 redesign |
+| **[ggblab-extra/docs/sympy_integration.md](./ggblab-extra/docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
+| **[docs/architecture.md](docs/architecture.md)** | Developers | Dual-channel communication (core) |
 | **[TODO.md](TODO.md)** | Contributors | Concrete next steps prioritized by learning value |
 | **[API Reference](https://ggblab.readthedocs.io/en/latest/api.html)** | Developers | Complete Python API documentation |
 
@@ -420,79 +391,16 @@ c.save()              # next available filename based on source_file
 # c.save(overwrite=True)  # to overwrite the original
 ```
 
-### Object Dependency Analysis (Parser)
+### Object Dependency Analysis (ggblab-extra)
 
-ggblab includes a **dependency parser** (`ggblab.parser.ggb_parser`) that analyzes object relationships in GeoGebra constructions using **NetworkX graphs**. This enables:
-
-- **Dependency tracking**: Build a directed graph of which objects depend on which others
-- **Root/leaf identification**: Find independent starting objects and final dependent objects
-- **Subgraph analysis**: Identify minimal construction sequences needed to derive specific objects
-
-#### Basic Usage
-
-```python
-from ggblab import GeoGebra, ggb_file  # or ggb_construction for backward compatibility
-from ggblab_extra import ggb_parser
-import networkx as nx
-
-ggb = GeoGebra()
-await ggb.init()
-
-# Fetch construction protocol from applet
-construction = {}
-for obj_name in await ggb.function("getAllObjectNames"):
-    obj_info = await ggb.function(
-        ["getObjectType", "getCommandString", "getValueString", "getCaption", "getLayer"],
-        [obj_name]
-    )
-    construction[obj_name] = obj_info
-
-# Parse into Polars DataFrame
-parser = ggb_parser()
-parser.initialize_dataframe(df=pl.DataFrame(construction, strict=False))
-parser.parse()  # Build dependency graph
-
-# Access the NetworkX DiGraph
-G = parser.G
-print(f"Root objects: {parser.roots}")      # Objects with no dependencies
-print(f"Leaf objects: {parser.leaves}")      # Objects that nothing depends on
-
-# Traverse dependencies
-for obj in parser.roots:
-    descendants = nx.descendants(G, obj)  # All objects that depend on this one
-    print(f"{obj} -> {descendants}")
-```
-
-#### Advanced: Subgraph Extraction
-
-Extract minimal construction sequences needed for specific output objects:
-
-```python
-# Analyze subgraph for focused construction steps
-parser.parse_subgraph()  # Builds G2 with simplified dependencies
-G2 = parser.G2
-
-# Reconstruct only necessary steps
-nx.write_network_text(G2)  # View simplified dependency tree
-```
-
-#### Parser Components
-
-- **`df`**: Polars DataFrame with columns `Type`, `Command`, `Value`, `Caption`, `Layer` (transposed from construction protocol)
-- **`G` (NetworkX DiGraph)**: Full dependency graph; edges point from dependencies to dependents
-- **`G2` (NetworkX DiGraph)**: Simplified subgraph with redundant dependencies removed
-- **`ft` (dict)**: Tokenized command strings; maps object name → list of tokens (parsed by `tokenize_with_commas()`)
-- **`roots` (list)**: Objects with `in_degree == 0` (no incoming dependencies)
-- **`leaves` (list)**: Objects with `out_degree == 0` (nothing depends on them)
-
-#### Example Notebook
-
-See [examples/eg4_parse.ipynb](examples/eg4_parse.ipynb) for a complete example of loading a `.ggb`, building dependency graphs, and analyzing construction structure.
+Advanced parsing, dependency graphs, and subgraph extraction now live in
+**ggblab-extra**. See [ggblab-extra/README.md](./ggblab-extra/README.md) and the
+scene development docs in `ggblab-extra/docs/` for full usage and examples.
 
 ### Architecture
 
 - **Frontend** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx)): Registers the plugin `ggblab:plugin` and command `ggblab:create`. Creates a `GeoGebraWidget` ReactWidget that loads GeoGebra from the CDN, opens an IPython Comm target (default `test3`), executes commands/functions, and mirrors add/remove/rename/clear events plus dialog notices back to the kernel. Results can also be forwarded over the external socket when provided.
-- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/construction.py](ggblab/construction.py), [ggblab/parser.py](ggblab/parser.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_construction` loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects. `ggb_parser` analyzes object dependencies using NetworkX directed graphs.
+- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/file.py](ggblab/file.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_file` (alias `ggb_construction`) loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects. Advanced parsing and verification live in `ggblab-extra`.
 - **Styles** ([style/index.css](style/index.css), [style/base.css](style/base.css)): Ensure the embedded applet fills the available area.
 
 #### Communication Architecture
