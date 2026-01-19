@@ -236,10 +236,29 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
   - `ggb_parser`: Dependency graph analysis
   - `ggb_schema`: XML schema loader
 
+### Textbook Integration & Geometric Scene Development
+
+- **[SCENE_DEVELOPMENT_QUICK_START.md](docs/SCENE_DEVELOPMENT_QUICK_START.md)** - Quick implementation guide ⭐ **START HERE**
+  - Overview of ggblab's fully functional dual-coding environment
+  - What you can do NOW (load, verify, analyze constructions)
+  - Next phases (inventory, standardization, enrichment)
+  - Testing the setup with Chapter 01
+
+- **[geometric_scene_development_guide.md](docs/geometric_scene_development_guide.md)** - Comprehensive pedagogical framework
+  - Complete analysis of textbook-2025 chapters 01–15
+  - 5-level scene decomposition pattern (sketch → free objects → derived geometry → relationships → verification)
+  - Dependency graph analysis best practices
+  - Layer-by-layer playback patterns for teaching
+  - Chapter-specific implementation strategies for all 15 chapters
+  - Why dual coding maximizes learning (cognitive theory alignment)
+  - Implementation roadmap and quick reference
+
 ### Quick Reference
 
 | Document | Primary Audience | Key Insight |
 |----------|-----------------|-------------|
+| **[docs/SCENE_DEVELOPMENT_QUICK_START.md](docs/SCENE_DEVELOPMENT_QUICK_START.md)** | **Educators, textbook authors** | **How to use ggblab with textbook-2025** |
+| **[docs/geometric_scene_development_guide.md](docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
 | **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
 | **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
 | **[docs/sympy_integration.md](docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
