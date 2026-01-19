@@ -6,6 +6,7 @@ from IPython.core.getipython import get_ipython
 from ipylab import JupyterFrontEnd
 
 from .comm import ggb_comm
+from .file import ggb_file
 from .errors import (
     GeoGebraError,
     GeoGebraCommandError,
@@ -13,8 +14,6 @@ from .errors import (
     GeoGebraSemanticsError,
     GeoGebraAppletError
 )
-from .construction import ggb_construction
-from .parser import ggb_parser
 from .utils import flatten
 
 
@@ -36,14 +35,19 @@ class GeoGebra:
     - Future: Type checking, scope/visibility validation
     
     Attributes:
-        construction (ggb_construction): File loader/saver for .ggb files
-        parser (ggb_parser): Dependency graph parser with command learning
+        file (ggb_file): GeoGebra file (.ggb) loader and saver
+        construction: Backward compatibility alias for file attribute
+        parser: Dependency graph parser with command learning (lazy-loaded from ggblab_extra)
         comm (ggb_comm): Communication layer (initialized after init())
         kernel_id (str): Current Jupyter kernel ID
         app (JupyterFrontEnd): ipylab frontend interface
         check_syntax (bool): Enable syntax validation (default: False)
         check_semantics (bool): Enable semantic validation (default: False)
         _applet_objects (set): Cached object names from applet (updated by command/function)
+    
+    Note:
+        The parser attribute is deprecated and will be removed in ggblab 1.0.0.
+        Use 'from ggblab_extra import ggb_parser' instead.
     
     Example:
         >>> ggb = GeoGebra()
@@ -65,8 +69,9 @@ class GeoGebra:
 
     def __init__(self):
         self.initialized = False
-        self.construction = ggb_construction()
-        self.parser = ggb_parser()
+        self.file = ggb_file()  # .ggb file I/O
+        self.construction = self.file  # Backward compatibility alias
+        self.parser = None  # Lazy import from ggblab_extra
         self.check_syntax = False
         self.check_semantics = False
         self._applet_objects = set()  # Cache of known objects
@@ -237,32 +242,47 @@ class GeoGebra:
         
         # Semantics check: validate referenced objects exist in applet
         if self.check_semantics:
-            try:
-                # Refresh object cache before checking
-                await self.refresh_object_cache()
-                
-                # Extract object tokens: tokens in the flattened structure that are
-                # not commands (not in command_cache), not commas, and not literals
-                t = self.parser.tokenize_with_commas(c)
-                object_tokens = [o for o in flatten(t) 
-                                if o not in self.parser.command_cache 
-                                and o != ","
-                                and not self._is_literal(o)]
-                
-                # Check if referenced objects exist
-                missing_objects = [obj for obj in object_tokens 
-                                  if obj not in self._applet_objects]
-                
-                if missing_objects:
-                    raise GeoGebraSemanticsError(
-                        c, 
-                        f"Referenced object(s) do not exist in applet: {missing_objects}",
-                        missing_objects
+            # Lazy import from ggblab_extra
+            if self.parser is None:
+                try:
+                    from ggblab_extra import ggb_parser
+                    self.parser = ggb_parser()
+                except ImportError:
+                    import warnings
+                    warnings.warn(
+                        "ggblab_extra not installed. Semantics checking disabled. "
+                        "Install with: pip install ggblab-extra",
+                        RuntimeWarning
                     )
-            except GeoGebraSemanticsError:
-                raise
-            except Exception as e:
-                raise GeoGebraSemanticsError(c, f"Validation error: {e}")
+                    self.check_semantics = False
+                    
+            if self.parser:
+                try:
+                    # Refresh object cache before checking
+                    await self.refresh_object_cache()
+                    
+                    # Extract object tokens: tokens in the flattened structure that are
+                    # not commands (not in command_cache), not commas, and not literals
+                    t = self.parser.tokenize_with_commas(c)
+                    object_tokens = [o for o in flatten(t) 
+                                    if o not in self.parser.command_cache 
+                                    and o != ","
+                                    and not self._is_literal(o)]
+                    
+                    # Check if referenced objects exist
+                    missing_objects = [obj for obj in object_tokens 
+                                      if obj not in self._applet_objects]
+                    
+                    if missing_objects:
+                        raise GeoGebraSemanticsError(
+                            c, 
+                            f"Referenced object(s) do not exist in applet: {missing_objects}",
+                            missing_objects
+                        )
+                except GeoGebraSemanticsError:
+                    raise
+                except Exception as e:
+                    raise GeoGebraSemanticsError(c, f"Validation error: {e}")
         
         result = await self.comm.send_recv({
             "type": "command",

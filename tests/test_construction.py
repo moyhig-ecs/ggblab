@@ -13,9 +13,9 @@ import os
 import base64
 import zipfile
 import json
-from pathlib import Path
 
-from ggblab.construction import ggb_construction
+from ggblab.file import ggb_file
+from pathlib import Path
 
 
 # Test fixtures

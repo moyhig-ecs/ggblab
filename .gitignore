@@ -1,4 +1,8 @@
-textbook-2025
+textbook-2025/
+textbook-2026/
+ggblab-extra/
+
+.github/chatmodes/
 
 *.bundle.*
 lib/

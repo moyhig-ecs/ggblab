@@ -27,10 +27,50 @@ except ImportError:
     warnings.warn("Importing 'ggblab' outside a proper installation.")
     __version__ = "dev"
 
-from .parser import ggb_parser
-from .construction import ggb_construction
 from .comm import ggb_comm
+from .file import ggb_file
 from .ggbapplet import GeoGebra, GeoGebraSyntaxError, GeoGebraSemanticsError
+
+# Backward compatibility alias
+ggb_construction = ggb_file
+
+# Deprecated imports - maintained for backward compatibility
+# These will be removed in ggblab 1.0.0
+# Use 'from ggblab_extra import ggb_parser' instead
+try:
+    from ggblab_extra.parser import ggb_parser
+    import warnings
+    
+    def _deprecated_import(name):
+        warnings.warn(
+            f"Importing '{name}' from 'ggblab' is deprecated. "
+            f"Use 'from ggblab_extra import {name}' instead. "
+            f"This compatibility layer will be removed in ggblab 1.0.0.",
+            DeprecationWarning,
+            stacklevel=3
+        )
+    
+    class _DeprecatedModule:
+        def __init__(self, name, module):
+            self._name = name
+            self._module = module
+        
+        def __getattr__(self, attr):
+            _deprecated_import(self._name)
+            return getattr(self._module, attr)
+    
+    # Wrap deprecated imports
+    _parser_module = ggb_parser
+    ggb_parser = type('ggb_parser', (), {
+        '__call__': lambda self, *args, **kwargs: (
+            _deprecated_import('ggb_parser'),
+            _parser_module(*args, **kwargs)
+        )[1]
+    })()
+    
+except ImportError:
+    # ggblab_extra not installed - no backward compatibility
+    pass
 
 def _jupyter_labextension_paths():
     """Return the JupyterLab extension paths.

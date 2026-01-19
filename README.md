@@ -38,6 +38,48 @@ The GeoGebra applet displays in a fixed JupyterLab panel while your notebook rem
 - Browser access to https://cdn.geogebra.org/apps/deployggb.js
 - For development: Node.js and `jlpm`
 
+## 📦 Package Ecosystem
+
+ggblab consists of two packages:
+
+### **ggblab** (Core) — JupyterLab Extension
+Interactive GeoGebra widgets with bidirectional Python ↔ GeoGebra communication.
+
+**Features:**
+- JupyterLab extension with embedded GeoGebra applets
+- Bidirectional communication (IPython Comm + WebSocket)
+- Async Python API for GeoGebra commands and functions
+- .ggb file I/O (ggb_file class)
+- Real-time geometric construction from Jupyter notebooks
+
+### **ggblab-extra** — Analysis & Educational Tools
+Extended functionality for construction analysis, parsing, and verification.
+
+```bash
+pip install ggblab-extra
+```
+
+**Features:**
+- Construction protocol parser with dependency graph analysis (NetworkX)
+- Scene verification infrastructure for automated testing
+- Layer-based construction playback for educational curricula
+
+**Note:** `ggblab` includes `ggb_file` (alias: `ggb_construction`) for .ggb file I/O. `ggblab-extra` provides advanced analysis tools.
+
+**Migration Note:** Previously, `ggblab` included `ggb_parser` and `scene_verification`. These are now in `ggblab-extra`. Backward compatibility is maintained through deprecation warnings. Update imports:
+
+```python
+# Old (deprecated)
+from ggblab import ggb_parser
+
+# New (recommended)
+from ggblab_extra import ggb_parser
+
+# File I/O (still in core)
+from ggblab import ggb_file  # New name
+from ggblab import ggb_construction  # Backward compatibility alias
+```
+
 ### Installation
 
 ```bash
@@ -238,13 +280,15 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 
 ### Textbook Integration & Geometric Scene Development
 
-- **[SCENE_DEVELOPMENT_QUICK_START.md](docs/SCENE_DEVELOPMENT_QUICK_START.md)** - Quick implementation guide ⭐ **START HERE**
+> **Note:** Scene development documentation has moved to [ggblab-extra](./ggblab-extra). See the links below for the latest guides.
+
+- **[SCENE_DEVELOPMENT_QUICK_START.md](./ggblab-extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** - Quick implementation guide ⭐ **START HERE**
   - Overview of ggblab's fully functional dual-coding environment
   - What you can do NOW (load, verify, analyze constructions)
   - Next phases (inventory, standardization, enrichment)
   - Testing the setup with Chapter 01
 
-- **[geometric_scene_development_guide.md](docs/geometric_scene_development_guide.md)** - Comprehensive pedagogical framework
+- **[geometric_scene_development_guide.md](./ggblab-extra/docs/geometric_scene_development_guide.md)** - Comprehensive pedagogical framework
   - Complete analysis of textbook-2025 chapters 01–15
   - 5-level scene decomposition pattern (sketch → free objects → derived geometry → relationships → verification)
   - Dependency graph analysis best practices
@@ -257,8 +301,8 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 
 | Document | Primary Audience | Key Insight |
 |----------|-----------------|-------------|
-| **[docs/SCENE_DEVELOPMENT_QUICK_START.md](docs/SCENE_DEVELOPMENT_QUICK_START.md)** | **Educators, textbook authors** | **How to use ggblab with textbook-2025** |
-| **[docs/geometric_scene_development_guide.md](docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
+| **[ggblab-extra: SCENE_DEVELOPMENT_QUICK_START.md](./ggblab-extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** | **Educators, textbook authors** | **How to use ggblab with textbook-2025** |
+| **[ggblab-extra: geometric_scene_development_guide.md](./ggblab-extra/docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
 | **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
 | **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
 | **[docs/sympy_integration.md](docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
@@ -387,8 +431,8 @@ ggblab includes a **dependency parser** (`ggblab.parser.ggb_parser`) that analyz
 #### Basic Usage
 
 ```python
-from ggblab import GeoGebra
-from ggblab.parser import ggb_parser
+from ggblab import GeoGebra, ggb_file  # or ggb_construction for backward compatibility
+from ggblab_extra import ggb_parser
 import networkx as nx
 
 ggb = GeoGebra()

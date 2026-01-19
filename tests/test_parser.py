@@ -7,7 +7,7 @@ import pytest
 import polars as pl
 import networkx as nx
 
-from ggblab.parser import ggb_parser
+from ggblab_extra.parser import ggb_parser
 
 
 # Test fixtures

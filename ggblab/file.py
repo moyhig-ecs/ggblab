@@ -7,8 +7,8 @@ import os
 
 from .schema import ggb_schema
 
-class ggb_construction:
-    """GeoGebra construction file (.ggb) loader and saver.
+class ggb_file:
+    """GeoGebra file (.ggb) loader and saver.
     
     Handles multiple file formats:
     - .ggb files (base64-encoded ZIP archives)
@@ -27,9 +27,9 @@ class ggb_construction:
         geogebra_xml (str): Extracted construction XML
     
     Example:
-        >>> construction = ggb_construction()
-        >>> construction.load('myfile.ggb')
-        >>> construction.save('output.ggb')
+        >>> file = ggb_file()
+        >>> file.load('myfile.ggb')
+        >>> file.save('output.ggb')
     """
     def __init__(self):
         self.ggb_schema = ggb_schema().schema
@@ -51,15 +51,15 @@ class ggb_construction:
             file (str): Path to the .ggb, .zip, .json, or .xml file.
         
         Returns:
-            ggb_construction: Self reference for method chaining.
+            ggb_file: Self reference for method chaining.
             
         Raises:
             FileNotFoundError: If the file does not exist.
             RuntimeError: If file loading fails.
             
         Example:
-            >>> c = ggb_construction().load('circle.ggb')
-            >>> print(c.geogebra_xml[:100])
+            >>> f = ggb_file().load('circle.ggb')
+            >>> print(f.geogebra_xml[:100])
         """
         self.source_file = file
 
