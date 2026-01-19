@@ -3,6 +3,7 @@ textbook-2026/
 ggblab-extra/
 
 .github/chatmodes/
+RELEASE_MEMO.md
 
 *.bundle.*
 lib/

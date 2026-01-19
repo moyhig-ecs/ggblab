@@ -52,10 +52,13 @@ Interactive GeoGebra widgets with bidirectional Python ↔ GeoGebra communicatio
 - .ggb file I/O (`ggb_file`, alias `ggb_construction`)
 
 ### **ggblab-extra** — Analysis & Educational Tools
-Advanced parsing, verification, and curriculum tooling now live in the separate
-[ggblab-extra](./ggblab-extra/README.md) package. Install it for construction
-parsing, scene verification, and layer-based playback. Migration guidance and
-usage examples are maintained in that repository.
+
+> **Note**: ggblab-extra is currently undergoing restructuring and will be republished soon as a standalone package.
+
+Advanced parsing, verification, and curriculum tooling will live in the separate
+`ggblab-extra` package. It will provide construction parsing, scene verification,
+and layer-based playback. The package is currently not published to PyPI but will
+be available in the near future.
 
 ### Installation
 
