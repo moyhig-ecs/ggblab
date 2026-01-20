@@ -31,6 +31,16 @@ from .comm import ggb_comm
 from .file import ggb_file
 from .ggbapplet import GeoGebra, GeoGebraSyntaxError, GeoGebraSemanticsError
 
+# Construction I/O was moved from `ggblab_extra` into the core package.
+# Expose `DataFrameIO` / `ConstructionIO` at package level so installs
+# that import these symbols (or the build) will include the module.
+try:
+    from .construction_io import DataFrameIO, ConstructionIO  # noqa: F401
+except Exception:
+    # Optional dependencies used by `construction_io` may be missing during
+    # some build steps; don't make the entire package import fail.
+    pass
+
 # Backward compatibility alias
 ggb_construction = ggb_file
 

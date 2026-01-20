@@ -1,6 +1,8 @@
 textbook-2025/
 textbook-2026/
 ggblab-extra/
+examples/*.json
+examples/*.xml
 
 .github/chatmodes/
 RELEASE_MEMO.md

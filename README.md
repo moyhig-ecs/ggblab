@@ -250,6 +250,9 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
    - `ggb_comm`: Dual-channel communication layer
    - `ggb_file` (`ggb_construction` alias): File loader and saver
    - `ggb_schema`: XML schema loader
+      - `ConstructionIO`: Construction I/O helpers (preferred public API). Use `ConstructionIO` to
+         build Polars DataFrames from `.ggb`/XML or from a running applet; `DataFrameIO` remains
+         a backwards-compatible alias.
    - For dependency parsing and verification, see [ggblab-extra/README.md](./ggblab-extra/README.md)
 
 ### Textbook Integration & Geometric Scene Development
@@ -305,6 +308,26 @@ ggb = await GeoGebra().init()  # open GeoGebra widget on the left
 c = ggb.construction.load('/path/to/your.ggb')  # supports .ggb, zip, JSON, XML
 o = c.ggb_schema.decode(io.StringIO(c.geogebra_xml))  # geogebra_xml is auto-stripped to construction
 o
+```
+
+### Construction I/O (example)
+
+Use `ConstructionIO` (preferred) to build a normalized Polars DataFrame from a `.ggb`
+file or directly from a running applet. `DataFrameIO` is kept as a compatibility alias.
+
+```python
+from ggblab.construction_io import ConstructionIO
+
+# From a .ggb file (requires a GeoGebra runner instance)
+df_from_file = await ConstructionIO.initialize_dataframe(
+   ggb, file='path/to/example.ggb',
+   _columns=ConstructionIO.COLUMNS + ["ShowObject", "ShowLabel", "Auxiliary"]
+)
+
+# Or build from the running applet state
+df_from_applet = await ConstructionIO.initialize_dataframe(ggb, use_applet=True)
+
+print(df_from_file.head())
 ```
 
 Note: Supports `.ggb` (base64-encoded zip), plain zip, JSON, and XML formats. The `geogebra_xml` is automatically narrowed to the `construction` element and scientific notation is normalized. Schema/decoding APIs may evolve.
