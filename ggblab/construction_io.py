@@ -49,8 +49,8 @@ class ConstructionIO:
     staticmethods to initialize/write DataFrames from multiple sources.
     """
 
-    COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
-    # COLUMNS = ["Type", "Command", "Value", "Caption", "Layer", "ShowObject", "ShowLabel", "Auxiliary"]
+    # COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
+    COLUMNS = ["Type", "Command", "Value", "Caption", "Layer", "ShowObject", "ShowLabel", "Auxiliary"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
 
     # mapping-to-DataFrame helper inlined at call sites (kept removed for clarity)
@@ -70,8 +70,24 @@ class ConstructionIO:
         objs = await ggb.function("getAllObjectNames")
         for o in objs:
             r = await ggb.function(["getObjectType", "getCommandString", "getValueString", "getCaption", "getLayer"], [o])
-            # print(r)
-            construction[o] = r
+            r2 = await ggb.function("getXML", [o])
+            # expression returns no root followed by element
+            try:
+                import xml.etree.ElementTree as ET
+                from itertools import chain
+
+                try:
+                    o2 = ggb.file.ggb_schema.decode(r2)
+                except ET.ParseError:
+                    vr = ET.fromstringlist(chain(['<construction>'], r, ['</construction>']))
+                    o3 = ggb.file.ggb_schema.decode(ET.tostring(vr).decode('utf-8'))
+                    o2 = o3.get('element', [{}])[0]
+            except Exception:
+                o2 = {}                
+            
+            construction[o] = r + [o2.get('show', [{}])[0].get('@object'),
+                                   o2.get('show', [{}])[0].get('@label'),
+                                   o2.get('auxiliary', [{}])[0].get('@val')]
 
         return construction
 
