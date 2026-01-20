@@ -23,7 +23,8 @@ def main(argv=None):
         return 2
 
     try:
-        out_path = DataFrameIO.save_temp_ir_from_file(args.input, schema_path=args.schema, out_dir=args.out_dir)
+        import asyncio
+        out_path = asyncio.run(DataFrameIO.save_temp_ir_from_file(args.input, schema_path=args.schema, out_dir=args.out_dir))
         print(out_path)
         return 0
     except Exception as e:

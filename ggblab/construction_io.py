@@ -13,8 +13,8 @@ This module provides `ConstructionIO` (preferred) and a backward-compatible
 
         # Load from a .ggb file (requires a GeoGebra runner instance)
         df_from_file = await ConstructionIO.initialize_dataframe(
-                ggb, file='example.ggb',
-                _columns=ConstructionIO.COLUMNS + ["ShowObject", "ShowLabel", "Auxiliary"]
+            ggb, file='example.ggb',
+            _columns=ConstructionIO.COLUMNS + ["ShowObject", "ShowLabel", "Auxiliary"]
         )
 
         # Or build from a running applet
@@ -82,7 +82,7 @@ class ConstructionIO:
         if not ggb_path:
             raise ValueError("ggb_path must be provided when using ggb runner")
 
-        c = ggb.construction.load(ggb_path)
+        c = ggb.file.load(ggb_path)
         o = c.ggb_schema.decode(c.geogebra_xml)
 
         construction: Dict[str, Any] = {}
@@ -200,11 +200,10 @@ class ConstructionIO:
         # build construction_map only from .ggb files (applet or file); we no longer accept
         # an external `construction` argument — callers should call the builders themselves.
         construction_map: Optional[Mapping[str, Sequence]] = None
-        
+
         if ggb is not None:
             if use_applet:
                 construction_map = await ConstructionIO._build_df_from_applet(ggb, columns=_columns)
-                # construction_map = asyncio.run(ConstructionIO._build_df_from_applet(ggb, columns=_columns))
             if file is not None and str(file).lower().endswith('.ggb'):
                 construction_map = ConstructionIO._build_df_from_ggb_file(ggb, str(file), columns=_columns)
 
@@ -251,8 +250,11 @@ class ConstructionIO:
             df.write_parquet(file)
 
     @staticmethod
-    def save_temp_ir_from_file(file_path: str, schema_path: str = 'docs/ir_schema.json', out_dir: Optional[str] = None) -> str:
+    async def save_temp_ir_from_file(file_path: str, schema_path: str = 'docs/ir_schema.json', out_dir: Optional[str] = None) -> str:
         """Generate an IR JSON from `file_path`, validate against `schema_path`, and save to a temp file.
+
+        This is async so callers running inside an event loop (e.g., Jupyter)
+        can `await` it; command-line scripts may call it via `asyncio.run()`.
 
         Returns the path to the written IR JSON file. Raises RuntimeError on validation failure.
         """
@@ -262,8 +264,8 @@ class ConstructionIO:
             ir = ConstructionIO._ir_from_xml_file(file_path)
         else:
             try:
-                # build dataframe (synchronously)
-                df = asyncio.run(ConstructionIO.initialize_dataframe(None, file=file_path))
+                # build dataframe asynchronously using the static initialize API
+                df = await ConstructionIO.initialize_dataframe(None, file=file_path)
             except Exception:
                 raise
 
