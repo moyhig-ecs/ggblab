@@ -43,9 +43,9 @@ jobs:
               cp "$f" public/
             fi
           done
-          if [ -e "welcome.html" ]; then
-            echo "Copying welcome.html to public/"
-            cp "welcome.html" public/
+          if [ -e "links.html" ]; then
+            echo "Copying links.html to public/"
+            cp "links.html" public/
           fi
 
       - name: Deploy to gh-pages branch

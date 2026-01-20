@@ -10,5 +10,5 @@ Welcome to the ggblab blog — updates, tutorials, and notes about the project.
 
 ## Project Links
 
-- Official links for crawlers and quick access: [Welcome Page]({{ site.baseurl }}/welcome.html)
+- Official links for crawlers and quick access: [Links Page]({{ site.baseurl }}/links.html)
 
