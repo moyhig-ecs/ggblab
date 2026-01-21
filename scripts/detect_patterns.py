@@ -79,14 +79,15 @@ def detect_thales(ir):
 
 
 def detect_projection_and_gamma(ir):
-    exprs, _, _ = ConstructionIO._parse_construction_xml(sys.argv[1]) if len(sys.argv)>1 else ({},[],[])
+    # Build expressions map from IR elements' `value` field (applet-extracted DF → IR JSON)
+    exprs = {e['name']: e.get('value') for e in ir.get('elements', []) if e.get('value')}
     found_proj = {k: v for k, v in exprs.items() if k.startswith('proj_')}
     found_gamma = {k: v for k, v in exprs.items() if 'Γ' in k or 'Gamma' in k}
     return found_proj, found_gamma
 
 
 def detect_geometric_mean(ir):
-    exprs, _, _ = ConstructionIO._parse_construction_xml(sys.argv[1]) if len(sys.argv)>1 else ({},[],[])
+    exprs = {e['name']: e.get('value') for e in ir.get('elements', []) if e.get('value')}
     keys = set(exprs.keys())
     gm_keys = {k: exprs.get(k) for k in ('g_1','g_2','g_3') if k in keys}
     # also detect Area[...] usage in expressions
@@ -96,7 +97,7 @@ def detect_geometric_mean(ir):
 
 def detect_pythagoras_and_cosine(ir):
     # Heuristic: look for Angle + Distance commands or expressions containing cos and squared norms
-    exprs, _, _ = ConstructionIO._parse_construction_xml(sys.argv[1]) if len(sys.argv)>1 else ({},[],[])
+    exprs = {e['name']: e.get('value') for e in ir.get('elements', []) if e.get('value')}
     cos_related = {k:v for k,v in exprs.items() if v and ('cos(' in v or 'cos ' in v)}
     square_related = {k:v for k,v in exprs.items() if v and ('^2' in v or '**2' in v or '(^' in v)}
     # distance commands
@@ -109,9 +110,10 @@ def main():
         print('Usage: detect_patterns.py <xml_or_ir_path>')
         sys.exit(2)
     path = sys.argv[1]
-    # accept xml or directly build ir
+    # accept IR JSON or parquet/parquet-like DataFrame export; XML input not supported
     if path.lower().endswith('.xml'):
-        ir = ConstructionIO._ir_from_xml_file(path)
+        print('XML input is not supported. Produce IR JSON via applet-extracted DataFrame (use ConstructionIO.initialize_dataframe)')
+        sys.exit(2)
     else:
         import json
         ir = json.load(open(path,'r',encoding='utf-8'))

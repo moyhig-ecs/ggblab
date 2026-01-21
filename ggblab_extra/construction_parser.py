@@ -314,9 +314,20 @@ class ConstructionTreeParser:
         raise ValueError("Either df or file must be provided.")
 
     def write_parquet(self, file=None):
-        if file is not None:
-            self.df.write_parquet(file)
-        return self
+        import warnings
+        import asyncio
+        import ggblab.construction_io as _cio
+
+        warnings.warn(
+            "ConstructionTreeParser.write_parquet is deprecated; use ggblab.construction_io.ConstructionIO.save_dataframe",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        # Delegate to canonical implementation
+        Impl, _ = _cio._import_impl()
+        # call sync wrapper if needed
+        return Impl.save_dataframe(self.df, ggb=None, fmt='parquet', out_dir=None, overwrite=False)
 
     def vertex_on_regular_polygon(self, v):
         try:
