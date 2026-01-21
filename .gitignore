@@ -4,6 +4,8 @@ ggblab_extra/
 examples/*.json
 examples/*.xml
 
+scripts/
+
 .github/chatmodes/
 RELEASE_MEMO.md
 GGBLAB_EXTRA_SPLIT_PLAN.md
