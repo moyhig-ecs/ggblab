@@ -141,6 +141,8 @@ print(value)
 
 `init()` fetches the current kernel ID, starts the IPython Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
 
+⚠️ Important: run `await ggb.init()` in its own notebook cell. If you call `ggb.init()` and also perform `send_recv`/`command`/`function` calls in the same cell, the Comm/socket may not be fully established and `send_recv` can fail or timeout. Execute the init cell first, wait for it to complete, then run subsequent cells that send commands to the applet.
+
 ### Error Handling — Comprehensive Exception Hierarchy
 
 ggblab implements a **sophisticated, multi-layer error handling system** that stands out as a remarkable achievement in transcending GeoGebra's limitations:
