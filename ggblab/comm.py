@@ -114,7 +114,7 @@ class ggb_comm:
         Routes command responses into `recv_logs` and event messages into `recv_events`.
         """
         self.clients.add(client_id)
-        self.logs.append(f"Client {client_id} registered.")
+        # self.logs.append(f"Client {client_id} registered.")
 
         try:
             async for msg in client_id:
@@ -229,34 +229,34 @@ class ggb_comm:
             # Wait for response with an adaptive timeout.
             # Start with a 3s deadline but if the applet appears to be taking
             # longer, extend the deadline in small increments up to a cap.
-            loop = asyncio.get_running_loop()
-            start = loop.time()
-            deadline = start + 3.0
-            max_deadline = start + 60.0
-            extension = 5.0
+            # loop = asyncio.get_running_loop()
+            # start = loop.time()
+            # deadline = start + 3.0
+            # max_deadline = start + 60.0
+            # extension = 5.0
 
-            while not (_id in self.recv_logs):
-                await asyncio.sleep(0.01)
-                now = loop.time()
-                if now > deadline:
-                    if now >= max_deadline:
-                        # reached maximum allowed wait time
-                        raise asyncio.TimeoutError()
-                    # extend the deadline to give the applet more time
-                    deadline = min(deadline + extension, max_deadline)
-                    try:
-                        self.logs.append(f"Extending send_recv timeout to {deadline - start:.1f}s for id {_id}")
-                    except Exception:
-                        # logs are best-effort; do not fail the wait loop on logging errors
-                        pass
+            # while not (_id in self.recv_logs):
+            #     await asyncio.sleep(0.01)
+            #     now = loop.time()
+            #     if now > deadline:
+            #         if now >= max_deadline:
+            #             # reached maximum allowed wait time
+            #             raise asyncio.TimeoutError()
+            #         # extend the deadline to give the applet more time
+            #         deadline = min(deadline + extension, max_deadline)
+            #         try:
+            #             self.logs.append(f"Extending send_recv timeout to {deadline - start:.1f}s for id {_id}")
+            #         except Exception:
+            #             # logs are best-effort; do not fail the wait loop on logging errors
+            #             pass
 
             # Original implementation (kept commented for reference):
             # # Wait for response with 3-second timeout
-            # async def wait_for_response():
-            #     while not (_id in self.recv_logs):
-            #         await asyncio.sleep(0.01)
-            #
-            # await asyncio.wait_for(wait_for_response(), timeout=3.0)
+            async def wait_for_response():
+                while not (_id in self.recv_logs):
+                    await asyncio.sleep(0.01)
+            
+            await asyncio.wait_for(wait_for_response(), timeout=3.0)
             
             value = self.recv_logs.pop(_id, None)
             
