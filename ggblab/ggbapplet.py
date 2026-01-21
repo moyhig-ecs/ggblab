@@ -15,7 +15,7 @@ from .errors import (
     GeoGebraSemanticsError,
     GeoGebraAppletError
 )
-from .utils import flatten
+from ggblab.utils import flatten
 
 
 # Exception hierarchy is defined in errors.py and imported above

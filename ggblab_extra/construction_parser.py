@@ -3,7 +3,7 @@ import polars as pl
 import networkx as nx
 from itertools import combinations, chain
 from ggblab.persistent_counter import PersistentCounter
-from .utils import flatten
+from ggblab.utils import flatten
 
 
 def _tokenize_with_commas(cmd_string, extract_commands=False):
