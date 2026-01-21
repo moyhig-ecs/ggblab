@@ -71,10 +71,7 @@ build_dir = "ggblab/labextension"
 
 
 [tool.hatch.build]
-packages = [
-    { include = "ggblab" },
-    { include = "ggblab_extra" },
-]
+packages = ["ggblab", "ggblab_extra"]
 
 [tool.jupyter-releaser.options]
 version_cmd = "hatch version"
