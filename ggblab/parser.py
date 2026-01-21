@@ -1,5 +1,5 @@
 import re
-from .persistent_counter import PersistentCounter
+from ggblab.persistent_counter import PersistentCounter
 
 
 class ggb_parser:

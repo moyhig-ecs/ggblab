@@ -232,7 +232,7 @@ class ConstructionTreeParser:
     # def parse_subgraph_improved(self):
     #     """
     #     Identify minimal construction sequences by analyzing the dependency graph.
-    #     Uses a topological sort + reachability pruning approach instead of exhaustive path enumeration.
+    #     Uses a topological sort + pruning approach instead of exhaustive path enumeration.
     #     """
     #     self.G2 = nx.DiGraph()
         
