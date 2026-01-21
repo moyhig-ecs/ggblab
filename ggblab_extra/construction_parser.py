@@ -4,23 +4,18 @@ import networkx as nx
 from itertools import combinations, chain
 from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
+from ggblab.parser import ggb_parser
+
+# Create a module-level parser instance for tokenization compatibility
+_ggb_parser = ggb_parser()
 
 
-def _tokenize_with_commas(cmd_string, extract_commands=False):
-    """Delegate tokenizer to external `ggblab` package.
+def tokenize_with_commas(cmd_string, extract_commands=False):
+    return _ggb_parser.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
 
-    Attempts to import `tokenize_with_commas` from the `ggblab` package and
-    call it. If the function is not available, raises ImportError with a
-    clear message so callers can fall back or the developer can restore the
-    function where appropriate.
-    """
-    try:
-        from ggblab import tokenize_with_commas as _ext_tokenizer
-    except Exception as e:
-        raise ImportError(
-            "tokenize_with_commas was removed from ggblab_extra and must be provided by the 'ggblab' package."
-        ) from e
-    return _ext_tokenizer(cmd_string, extract_commands=extract_commands)
+
+# Tokenization is provided by the core package `ggblab.parser`.
+# We import `tokenize_with_commas` directly above and use it in-place.
 
 
 class ConstructionTreeParser:
@@ -67,15 +62,19 @@ class ConstructionTreeParser:
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
 
-    def __init__(self, cache_path=None, cache_enabled=True):
-        """Initialize the parser with optional command caching.
-        
+    def __init__(self, df=None, cache_path=None, cache_enabled=True):
+        """Initialize the parser with optional construction dataframe and command caching.
+
         Args:
+            df (polars.DataFrame, optional): Construction protocol dataframe to parse.
             cache_path (str, optional): Path to shelve database for command persistence.
                                        Defaults to '.ggblab_command_cache' in current directory.
             cache_enabled (bool): Enable automatic persistence of discovered commands.
                                  Default: True
         """
+        # store dataframe if provided; callers can also call `initialize_dataframe` later
+        self.df = df
+
         cache_path = cache_path or '.ggblab_command_cache'
         self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
 
@@ -106,13 +105,13 @@ class ConstructionTreeParser:
         self.rd = {v: k for k, v in enumerate(self.df["Name"])}
 
         # tokenized function, flattened (delegate to external tokenizer)
-        self.ft = {n: list([e for e in flatten(_tokenize_with_commas(c)) if e != ','])
-               for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
+        self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
+             for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
 
         # Extract and cache command names from all commands in the dataframe
         for command_str in self.df["Command"]:
             if command_str:
-                result = _tokenize_with_commas(command_str, extract_commands=True)
+                result = tokenize_with_commas(command_str, extract_commands=True)
                 if 'commands' in result:
                     self.command_cache.increment(result['commands'])
 
@@ -136,6 +135,7 @@ class ConstructionTreeParser:
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
+        return self.G
     
     def parse_subgraph(self):
         """
@@ -229,10 +229,12 @@ class ConstructionTreeParser:
             _nodes0 |= _nodes1
             _nodes1 = _nodes3 - _nodes2 - _nodes1
 
+        return self.G2
+
     # def parse_subgraph_improved(self):
     #     """
     #     Identify minimal construction sequences by analyzing the dependency graph.
-    #     Uses a topological sort + reachability pruning approach instead of exhaustive path enumeration.
+    #     Uses a topological sort + pruning approach instead of exhaustive path enumeration.
     #     """
     #     self.G2 = nx.DiGraph()
         
@@ -286,16 +288,30 @@ class ConstructionTreeParser:
             return {e for e in self.ft[k] if e in self.ft}
 
     def initialize_dataframe(self, df=None, file=None):
+        import warnings
+        import asyncio
+        import ggblab.construction_io as _cio
+
+        warnings.warn(
+            "ConstructionTreeParser.initialize_dataframe is deprecated; use ggblab.construction_io.ConstructionIO.initialize_dataframe",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+        # If a DataFrame is already provided, keep previous behavior (no async call).
         if df is not None:
             self.df = df
-        elif file is not None:
-            self.df = pl.read_parquet(file)
-        else:
-            raise ValueError("Either df or file must be provided.")
-        self.df = (self.df
-            .transpose(include_header=True, header_name="Name", column_names=self.COLUMNS)
-            .with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0)))
-        return self
+            return self
+
+        # Delegate to the canonical ConstructionIO initializer for file/parquet paths.
+        if file is not None:
+            # Import real implementation class from ggblab.construction_io and call its async initializer
+            Impl, _ = _cio._import_impl()
+            norm_df = asyncio.run(Impl.initialize_dataframe(None, parquet_file=file, file=file))
+            self.df = norm_df
+            return self
+
+        raise ValueError("Either df or file must be provided.")
 
     def write_parquet(self, file=None):
         if file is not None:
@@ -318,15 +334,10 @@ class ConstructionTreeParser:
 
 
 # Module-level wrapper for convenience: allow direct import
-def tokenize_with_commas_str(cmd_string, extract_commands=False, cache_enabled=False):
-    """Convenience wrapper that delegates to the external tokenizer.
-
-    Kept for backward compatibility: calls the delegated `_tokenize_with_commas`.
-    """
-    return _tokenize_with_commas(cmd_string, extract_commands=extract_commands)
+# `tokenize_with_commas_str` wrapper removed — use `ggblab.parser.tokenize_with_commas` directly.
 
 
 # Backwards-compatible name used by imports in `ggblab`
 ggb_parser = ConstructionTreeParser
 
-__all__ = ["ConstructionTreeParser", "ggb_parser", "tokenize_with_commas_str"]
+__all__ = ["ConstructionTreeParser", "ggb_parser"]

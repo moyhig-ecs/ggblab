@@ -4,23 +4,11 @@ import networkx as nx
 from itertools import combinations, chain
 from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
+from ggblab.parser import tokenize_with_commas
 
 
-def _tokenize_with_commas(cmd_string, extract_commands=False):
-    """Delegate tokenizer to external `ggblab` package.
-
-    Attempts to import `tokenize_with_commas` from the `ggblab` package and
-    call it. If the function is not available, raises ImportError with a
-    clear message so callers can fall back or the developer can restore the
-    function where appropriate.
-    """
-    try:
-        from ggblab import tokenize_with_commas as _ext_tokenizer
-    except Exception as e:
-        raise ImportError(
-            "tokenize_with_commas was removed from ggblab_extra and must be provided by the 'ggblab' package."
-        ) from e
-    return _ext_tokenizer(cmd_string, extract_commands=extract_commands)
+# Tokenization is provided by the core package `ggblab.parser`.
+# We import `tokenize_with_commas` directly above and use it in-place.
 
 
 class ConstructionTreeParser:
@@ -67,15 +55,19 @@ class ConstructionTreeParser:
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
 
-    def __init__(self, cache_path=None, cache_enabled=True):
-        """Initialize the parser with optional command caching.
-        
+    def __init__(self, df=None, cache_path=None, cache_enabled=True):
+        """Initialize the parser with optional construction dataframe and command caching.
+
         Args:
+            df (polars.DataFrame, optional): Construction protocol dataframe to parse.
             cache_path (str, optional): Path to shelve database for command persistence.
                                        Defaults to '.ggblab_command_cache' in current directory.
             cache_enabled (bool): Enable automatic persistence of discovered commands.
                                  Default: True
         """
+        # store dataframe if provided; callers can also call `initialize_dataframe` later
+        self.df = df
+
         cache_path = cache_path or '.ggblab_command_cache'
         self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
 
@@ -106,13 +98,13 @@ class ConstructionTreeParser:
         self.rd = {v: k for k, v in enumerate(self.df["Name"])}
 
         # tokenized function, flattened (delegate to external tokenizer)
-        self.ft = {n: list([e for e in flatten(_tokenize_with_commas(c)) if e != ','])
-               for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
+        self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
+             for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
 
         # Extract and cache command names from all commands in the dataframe
         for command_str in self.df["Command"]:
             if command_str:
-                result = _tokenize_with_commas(command_str, extract_commands=True)
+                result = tokenize_with_commas(command_str, extract_commands=True)
                 if 'commands' in result:
                     self.command_cache.increment(result['commands'])
 
@@ -318,15 +310,10 @@ class ConstructionTreeParser:
 
 
 # Module-level wrapper for convenience: allow direct import
-def tokenize_with_commas_str(cmd_string, extract_commands=False, cache_enabled=False):
-    """Convenience wrapper that delegates to the external tokenizer.
-
-    Kept for backward compatibility: calls the delegated `_tokenize_with_commas`.
-    """
-    return _tokenize_with_commas(cmd_string, extract_commands=extract_commands)
+# `tokenize_with_commas_str` wrapper removed — use `ggblab.parser.tokenize_with_commas` directly.
 
 
 # Backwards-compatible name used by imports in `ggblab`
 ggb_parser = ConstructionTreeParser
 
-__all__ = ["ConstructionTreeParser", "ggb_parser", "tokenize_with_commas_str"]
+__all__ = ["ConstructionTreeParser", "ggb_parser"]

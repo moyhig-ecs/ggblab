@@ -24,6 +24,7 @@ ggblab/_version.py
 .ggblab_command_cache*
 xsd/common.xsd
 .vscode/settings.json
+*.parquet
 
 # Integration tests
 ui-tests/test-results/
