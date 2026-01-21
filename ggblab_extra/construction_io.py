@@ -234,8 +234,8 @@ class ConstructionIO:
 		if fmt not in ('parquet', 'json'):
 			raise ValueError("fmt must be 'parquet' or 'json'")
 
-		if ggb is not None and hasattr(ggb, 'source_file') and ggb.source_file:
-			base = Path(ggb.source_file).stem
+		if ggb is not None and hasattr(ggb.file, 'source_file') and ggb.file.source_file:
+			base = Path(ggb.file.source_file).stem
 		else:
 			base = 'construction'
 
