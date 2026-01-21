@@ -1,14 +1,28 @@
+"""Lightweight tokenizer utilities used by `ggblab`.
+
+This module provides a compact `ggb_parser` class exposing only the
+tokenization and token-reconstruction helpers required by the core package.
+For richer parser features and DataFrame-based construction helpers, install
+the optional `ggblab_extra` package and import the full implementations from
+`ggblab_extra.parser` or `ggblab_extra.construction_parser`.
+"""
+
 import re
 from ggblab.persistent_counter import PersistentCounter
 
 
 class ggb_parser:
-    """Minimal parser exposing only tokenize_with_commas and reconstruct_from_tokens.
+    """Minimal parser exposing only `tokenize_with_commas` and `reconstruct_from_tokens`.
 
     This lightweight class preserves the original implementations of the two
-    methods while removing other parser functionality.
+    methods while removing other parser functionality. For richer parser
+    features or DataFrame-based construction helpers, install ``ggblab_extra``.
+    The core implementation intentionally keeps a compact surface area so
+    that importing ``ggblab`` remains lightweight.
     """
+    
     def __init__(self, cache_path=None, cache_enabled=True):
+        """Initialize the lightweight parser and optional command cache."""
         cache_path = cache_path or '.ggblab_command_cache'
         try:
             self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)

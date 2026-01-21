@@ -15,6 +15,19 @@ Example:
     >>> ggb = await GeoGebra().init()
     >>> await ggb.command("A=(0,0)")
     >>> value = await ggb.function("getValue", ["A"])
+    
+    Note:
+        Heavy I/O and parsing implementations have been moved to the optional
+        package `ggblab_extra`. If you need DataFrame-based construction I/O
+        or the full parser implementation, install and import `ggblab_extra`.
+        This package keeps lightweight shims for backward compatibility which
+        will be deprecated and removed in a future major release.
+
+The public API has been split between a compact core (this package) and an
+optional collection of helpers in ``ggblab_extra``. Callers that rely on
+the extras should install that package; otherwise consumers should prefer
+the minimal APIs provided here. Deprecated shims exist to ease migration and
+will emit DeprecationWarning when used.
 """
 
 try:
@@ -91,6 +104,7 @@ try:
         """Deprecated shim; use ggblab_extra.PersistentCounter instead."""
 
         def __init__(self, *args, **kwargs):
+            """Warn about deprecated import and initialize the underlying counter."""
             warnings.warn(
                 "Importing 'PersistentCounter' from 'ggblab' is deprecated. "
                 "Use 'from ggblab_extra import PersistentCounter' instead. "

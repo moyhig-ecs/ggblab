@@ -4,6 +4,13 @@ This module intentionally avoids importing `ggblab_extra` at import time
 so that projects that only build `ggblab` do not fail when
 `ggblab_extra` isn't installed. The real implementations are imported
 on-demand when the wrapper classes are instantiated.
+
+Note:
+    Full DataFrame-based construction I/O and heavy parsing utilities live in
+    `ggblab_extra.construction_io`. Install `ggblab_extra` to access the
+    complete implementations (recommended for workflows that use Polars or
+    require the `save_dataframe` helper). This shim emits DeprecationWarning
+    when used and will be removed in a future major release.
 """
 import warnings
 
@@ -32,10 +39,12 @@ class ConstructionIO:
     """
 
     def __init__(self, *args, **kwargs):
+        """Import and instantiate the real `ConstructionIO` implementation."""
         Impl, _ = _import_impl()
         self._impl = Impl(*args, **kwargs)
 
     def __getattr__(self, name):
+        """Delegate attribute access to the underlying implementation."""
         return getattr(self._impl, name)
 
 
@@ -43,10 +52,12 @@ class DataFrameIO:
     """Lazy wrapper for the real `DataFrameIO` implementation."""
 
     def __init__(self, *args, **kwargs):
+        """Import and instantiate the real `DataFrameIO` implementation."""
         _, Impl = _import_impl()
         self._impl = Impl(*args, **kwargs)
 
     def __getattr__(self, name):
+        """Delegate attribute access to the underlying implementation."""
         return getattr(self._impl, name)
 
 

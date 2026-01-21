@@ -1,3 +1,12 @@
+"""File loader and saver for GeoGebra constructions.
+
+This module implements `ggb_file`, a lightweight loader/saver that detects
+and extracts the construction XML from `.ggb` archives, ZIP files, JSON,
+or plain XML. For DataFrame-based construction I/O and convenience helpers
+(for example `ConstructionIO.save_dataframe`), see the optional
+`ggblab_extra` package.
+"""
+
 import base64
 import zipfile
 import json
@@ -30,8 +39,17 @@ class ggb_file:
         >>> file = ggb_file()
         >>> file.load('myfile.ggb')
         >>> file.save('output.ggb')
+    
+    Note:
+        The heavy DataFrame-based I/O helpers and convenience persistence
+        functions (for example, ``ConstructionIO.save_dataframe``) live in
+        the optional ``ggblab_extra`` package. The core ``ggblab`` package
+        provides a lightweight file loader/saver here; install
+        ``ggblab_extra`` for richer high-level workflows.
     """
+    
     def __init__(self):
+        """Initialize the `ggb_file` helper and load the XML schema."""
         self.ggb_schema = ggb_schema().schema
     
     def load(self, file):
@@ -148,10 +166,7 @@ class ggb_file:
         """
 
         def get_next_revised_filename(filename):
-            """
-            Generates the next available non-existing filename by appending 
-            '_1', '_2', etc. before the file extension.
-            """
+            """Generate the next available non-existing filename by appending '_1', '_2', etc. before the file extension."""
             if not os.path.exists(filename):
                 return filename
 

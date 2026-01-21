@@ -1,4 +1,4 @@
-"""ggblab_extra.construction_io
+"""ggblab_extra.construction_io.
 
 Moved implementation of ConstructionIO into a separate optional package.
 
@@ -7,6 +7,9 @@ imports adjusted for absolute package layout so it can live outside the
 `ggblab` package tree.
 """
 
+from __future__ import annotations
+
+import json
 import polars as pl
 import polars.selectors as cs
 from typing import Optional, Mapping, Sequence, Dict, Any, Union, TYPE_CHECKING
@@ -15,6 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import tempfile
 import uuid
+
 if TYPE_CHECKING:
 	from ggblab.ggbapplet import GeoGebra
 
@@ -22,15 +26,19 @@ if TYPE_CHECKING:
 class ConstructionIO:
 	"""Helper class for building and persisting GeoGebra construction DataFrames.
 
-	Provides canonical `COLUMNS` and `SHAPES` used across the project and
-	staticmethods to initialize/write DataFrames from multiple sources.
+	This module provides helpers for building a Polars DataFrame from a
+	GeoGebra applet, saving the resulting DataFrame to disk and other
+	convenience functions. Historically this module included a complex XML
+	parser helper called ``_parse_construction_xml``; that helper has been
+	removed because the preferred IR representation is now the JSON-like IR
+	stored in DataFrame ``Value`` fields. The rest of the helpers remain.
 	"""
 
 	COLUMNS = ["Type", "Command", "Value", "Caption", "Layer", "ShowObject", "ShowLabel", "Auxiliary"]
 	SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
 
 	@staticmethod
-	async def _build_df_from_applet(ggb: 'GeoGebra', columns: Optional[Sequence[str]] = None) -> Mapping[str, Sequence]:
+	async def _build_df_from_applet(ggb: "GeoGebra", columns: Optional[Sequence[str]] = None) -> Mapping[str, Sequence]:
 		if columns is None:
 			columns = ConstructionIO.COLUMNS
 
@@ -43,26 +51,27 @@ class ConstructionIO:
 			r = await ggb.function(["getObjectType", "getCommandString", "getValueString", "getCaption", "getLayer"], [o])
 			r2 = await ggb.function("getXML", [o])
 			try:
-				import xml.etree.ElementTree as ET
-				from itertools import chain
-
+				o2 = ggb.file.ggb_schema.decode(r2)
+			except Exception:
 				try:
-					o2 = ggb.file.ggb_schema.decode(r2)
-				except ET.ParseError:
+					from itertools import chain
+
 					vr = ET.fromstringlist(chain(['<construction>'], r, ['</construction>']))
 					o3 = ggb.file.ggb_schema.decode(ET.tostring(vr).decode('utf-8'))
 					o2 = o3.get('element', [{}])[0]
-			except Exception:
-				o2 = {}
-            
-			construction[o] = r + [o2.get('show', [{}])[0].get('@object'),
-								   o2.get('show', [{}])[0].get('@label'),
-								   o2.get('auxiliary', [{}])[0].get('@val')]
+				except Exception:
+					o2 = {}
+
+			construction[o] = r + [
+				o2.get('show', [{}])[0].get('@object'),
+				o2.get('show', [{}])[0].get('@label'),
+				o2.get('auxiliary', [{}])[0].get('@val'),
+			]
 
 		return construction
 
 	@staticmethod
-	def _build_df_from_ggb_file(ggb: 'GeoGebra', ggb_path: str, columns=None) -> Mapping[str, Sequence]:
+	def _build_df_from_ggb_file(ggb: "GeoGebra", ggb_path: str, columns: Optional[Sequence[str]] = None) -> Mapping[str, Sequence]:
 		if ggb is None:
 			raise ValueError("ggb runner is required for .ggb loading; ggb must not be None")
 		if not ggb_path:
@@ -123,22 +132,27 @@ class ConstructionIO:
 								cmd = res
 								break
 
-					cmd = (f"{_c.get('@name')}({', '.join(_ci)})"
-						   .replace('OrthogonalLine', 'PerpendicularLine')
-						   .translate(str.maketrans('[]', '()')))
+					cmd = (
+						f"{_c.get('@name')}({', '.join(_ci)})"
+						.replace('OrthogonalLine', 'PerpendicularLine')
+						.translate(str.maketrans('[]', '()'))
+					)
 					break
 
 			for _e in o.get('expression', []):
 				if _n == _e.get('@label'):
 					exp = _e.get('@exp')
 
-			construction[_n] = [e.get('@type'), cmd or exp, exp or None, 
-								e.get('caption', [{}])[0].get('@val'),
-								e.get('layer', [{}])[0].get('@val'),
-								e.get('show', [{}])[0].get('@object'),
-								e.get('show', [{}])[0].get('@label'),
-								e.get('auxiliary', [{}])[0].get('@val'),
-						]
+			construction[_n] = [
+				e.get('@type'),
+				cmd or exp,
+				exp or None,
+				e.get('caption', [{}])[0].get('@val'),
+				e.get('layer', [{}])[0].get('@val'),
+				e.get('show', [{}])[0].get('@object'),
+				e.get('show', [{}])[0].get('@label'),
+				e.get('auxiliary', [{}])[0].get('@val'),
+			]
 
 		return construction
 
@@ -146,32 +160,14 @@ class ConstructionIO:
 	def _build_df_from_xml_file(xml_path: str, columns: Optional[Sequence[str]] = None) -> Mapping[str, Sequence]:
 		if columns is None:
 			columns = ConstructionIO.COLUMNS
-		expressions, commands, elements = ConstructionIO._parse_construction_xml(xml_path)
-
-		construction: Dict[str, Any] = {}
-		out_map = {}
-		for c in commands:
-			for o in c.get('outputs', []):
-				out_map.setdefault(o, []).append(c)
-
-		for e in elements:
-			name = e.get('name')
-			typ = e.get('type')
-			layer = e.get('layer')
-			caption = e.get('caption')
-			val = expressions.get(name)
-			cmd = None
-			cs = out_map.get(name)
-			if cs:
-				c0 = cs[0]
-				cmd = f"{c0.get('name')}({', '.join(c0.get('inputs', []))})"
-
-			construction[name] = [typ, cmd or val, val or None, caption, layer]
-
-		return construction
+		raise NotImplementedError("_build_df_from_xml_file requires an XML parser which was removed")
 
 	@staticmethod
-	async def initialize_dataframe(ggb: 'GeoGebra', parquet_file: Optional[Union[str, pl.DataFrame]] = None, file: Optional[str] = None, *, _columns=None, use_applet: bool = False) -> pl.DataFrame:
+	async def initialize_dataframe(ggb: Optional["GeoGebra"], parquet_file: Optional[Union[str, pl.DataFrame]] = None, file: Optional[str] = None, *, _columns=None, use_applet: bool = False) -> pl.DataFrame:
+		"""Initialize and normalize a Polars DataFrame from applet/parquet/file.
+
+		Returns a normalized `pl.DataFrame` ready for downstream parsing.
+		"""
 		if _columns is None:
 			_columns = ConstructionIO.COLUMNS
 		construction_map: Optional[Mapping[str, Sequence]] = None
@@ -187,9 +183,10 @@ class ConstructionIO:
 
 		if construction_map is not None:
 			_df = pl.from_dict(construction_map, strict=False)
-			norm_df = (_df
-				.transpose(include_header=True, header_name="Name", column_names=_columns)
-				.with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0)))
+			norm_df = (
+				_df.transpose(include_header=True, header_name="Name", column_names=_columns)
+				.with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0))
+			)
 		elif parquet_file is not None:
 			if isinstance(parquet_file, pl.DataFrame):
 				norm_df = parquet_file
@@ -199,6 +196,7 @@ class ConstructionIO:
 			norm_df = pl.read_parquet(file).with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0))
 		else:
 			raise ValueError("Either parquet_file or file must be provided.")
+
 		if not isinstance(norm_df, pl.DataFrame):
 			raise TypeError("Normalized DataFrame expected at this point")
 
@@ -215,6 +213,7 @@ class ConstructionIO:
 
 	@staticmethod
 	def write_parquet(df: pl.DataFrame, file: Optional[str] = None) -> None:
+		"""Write the provided DataFrame to a Parquet file if `file` is given."""
 		if file is not None:
 			df.write_parquet(file)
 
@@ -232,10 +231,6 @@ class ConstructionIO:
 		Returns:
 			str: path to written file.
 		"""
-		from pathlib import Path
-		import json
-		import os
-
 		if fmt not in ('parquet', 'json'):
 			raise ValueError("fmt must be 'parquet' or 'json'")
 
@@ -278,108 +273,17 @@ class ConstructionIO:
 
 		return str(target)
 
-	@staticmethod
-	async def save_temp_ir_from_file(file_path: str, schema_path: str = 'docs/ir_schema.json', out_dir: Optional[str] = None) -> str:
-		import json as _json
-		if str(file_path).lower().endswith('.xml'):
-			ir = ConstructionIO._ir_from_xml_file(file_path)
-		else:
-			try:
-				df = await ConstructionIO.initialize_dataframe(None, file=file_path)
-			except Exception:
-				raise
-
-			rows = df.to_dicts()
-
-			elements = []
-			for i, r in enumerate(rows):
-				elem = {
-					'id': i,
-					'name': r.get('Name'),
-					'type': r.get('Type'),
-					'coords': None,
-					'command': None,
-					'command_raw': r.get('Command'),
-					'value': r.get('Value'),
-					'caption': r.get('Caption'),
-					'layer': int(r.get('Layer')) if r.get('Layer') is not None else None,
-					'show_object': r.get('ShowObject') if 'ShowObject' in r else None,
-					'show_label': r.get('ShowLabel') if 'ShowLabel' in r else None,
-					'auxiliary': r.get('Auxiliary') if 'Auxiliary' in r else None,
-					'metadata': {}
-				}
-				elements.append(elem)
-
-			ir = {'schema_version': 1, 'elements': elements, 'commands': []}
-
-		td = out_dir or tempfile.gettempdir()
-		fname = f'ggb_ir_{uuid.uuid4().hex}.json'
-		out_path = Path(td) / fname
-		out_path.write_text(_json.dumps(ir, ensure_ascii=False, indent=2), encoding='utf-8')
-
-		try:
-			from jsonschema import Draft7Validator
-		except Exception as e:
-			raise RuntimeError('jsonschema is required for validation') from e
-
-		schema = _json.load(open(schema_path, 'r', encoding='utf-8'))
-		validator = Draft7Validator(schema)
-		errors = list(validator.iter_errors(ir))
-		if errors:
-			msgs = []
-			for e in errors[:50]:
-				path = '/'.join([str(p) for p in e.path]) or '(root)'
-				msgs.append(f'{path}: {e.message}')
-			raise RuntimeError('IR validation failed:\n' + '\n'.join(msgs))
-
-		return str(out_path)
+	# The `save_temp_ir_from_file` helper was removed: prefer producing
+	# JSON IR via `initialize_dataframe` or use `save_dataframe` to persist
+	# DataFrame results. XML->IR conversion is intentionally not included.
 
 	@staticmethod
 	def _ir_from_xml_file(xml_path: str) -> Dict[str, Any]:
-		expressions, commands, elements_raw = ConstructionIO._parse_construction_xml(xml_path)
-
-		out_map = {}
-		for c in commands:
-			for o in c.get('outputs', []):
-				out_map.setdefault(o, []).append(c)
-
-		elements = []
-		for i, e in enumerate(elements_raw):
-			name = e.get('name')
-			typ = e.get('type')
-			cmd_obj = None
-			cmd_raw = None
-			cs = out_map.get(name)
-			if cs:
-				c0 = cs[0]
-				cmd_obj = {'name': c0.get('name'), 'inputs': c0.get('inputs', []), 'outputs': c0.get('outputs', []), 'raw': c0.get('raw')}
-				cmd_raw = c0.get('raw')
-
-			elem = {
-				'id': i,
-				'name': name,
-				'type': typ,
-				'coords': e.get('coords'),
-				'command': cmd_obj,
-				'command_raw': cmd_raw,
-				'value': expressions.get(name),
-				'caption': e.get('caption'),
-				'layer': e.get('layer'),
-				'show_object': True if e.get('show_object') in (None, 'true', 'True') else False if e.get('show_object') in ('false', 'False') else None,
-				'show_label': True if e.get('show_label') in (None, 'true', 'True') else False if e.get('show_label') in ('false', 'False') else None,
-				'auxiliary': True if e.get('auxiliary') in (None, 'true', 'True') else False if e.get('auxiliary') in ('false', 'False') else None,
-				'metadata': {}
-			}
-			elements.append(elem)
-
-		ir = {'schema_version': 1, 'elements': elements, 'commands': commands}
-		return ir
-
-	# Note: The complex XML parsing helper `_parse_construction_xml` was intentionally removed.
-	# It previously attempted to coerce many XML formats to a normalized dict structure.
-	# Consumers should instead produce IR JSON via `ConstructionIO.initialize_dataframe` from
-	# an applet-extracted DataFrame or use `ConstructionIO._build_df_from_xml_file` via file-parsing
-	# workflows. The implementation was removed to reduce duplication and maintenance burden.
+		# If a legacy XML parser is required, implement here. The previous
+		# comprehensive XML helper was intentionally removed to reduce
+		# duplication; this method remains as a placeholder for projects
+		# that wish to provide a focused XML->IR converter.
+		raise NotImplementedError("XML->IR conversion was removed; provide JSON IR or reintroduce a parser")
 
 
 # Backward/forward compatibility: prefer `ConstructionIO` as the canonical name

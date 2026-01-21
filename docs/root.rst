@@ -26,12 +26,9 @@ A JupyterLab extension for interactive geometric scene construction with Python 
 
 .. toctree::
    :maxdepth: 1
-   :caption: Advanced Tools (ggblab-extra)
+   :caption: Advanced Tools (ggblab_extra)
 
-   ../ggblab-extra/docs/SCENE_DEVELOPMENT_QUICK_START.md
-   ../ggblab-extra/docs/geometric_scene_development_guide.md
-   ../ggblab-extra/docs/scoping_implementation.md
-   ../ggblab-extra/docs/sympy_integration.md
+   ggblab_extra_index.md
 
 .. toctree::
    :maxdepth: 2

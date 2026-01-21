@@ -1,3 +1,11 @@
+"""Persistent counter utility using shelve-backed storage.
+
+This module provides `PersistentCounter`, a small convenience wrapper
+over Python's `shelve` module to persist simple key-count mappings
+across Python sessions. It's intended as a lightweight helper; for
+high-throughput use cases prefer an external key-value store.
+"""
+
 import shelve
 
 
@@ -22,6 +30,7 @@ class PersistentCounter:
         >>> for key in counter:
         ...     print(f"{key}: {counter[key]}")
     """
+    
     def __init__(self, cache_path='persistent_counter.db', enabled=True):
         """Initialize the persistent counter.
         
@@ -34,6 +43,9 @@ class PersistentCounter:
         self._db = None
         if self.enabled:
             self._open()
+            # Note: For large-scale or cross-process counters consider using an
+            # external key-value store in your deployment. This utility is a
+            # lightweight shelve-backed convenience included in the core package.
     
     def _open(self):
         """Open the shelve database."""
@@ -42,6 +54,8 @@ class PersistentCounter:
         except Exception as e:
             print(f"Warning: Could not open database at {self.cache_path}: {e}")
             self._db = None
+            # Note: If the shelve backend is incompatible on your platform you may
+            # see warnings; consider removing or recreating the cache file.
     
     def increment(self, keys):
         """Increment counts for given keys.
@@ -60,6 +74,9 @@ class PersistentCounter:
                     self._db.sync()
                 except Exception as e:
                     print(f"Warning: Could not increment key '{key}': {e}")
+                # Note: This operation writes to a local shelve DB and may be
+                # comparatively slow; for high-throughput scenarios use a dedicated
+                # external service.
     
     def get_all(self):
         """Retrieve all stored key-value pairs.
@@ -75,6 +92,7 @@ class PersistentCounter:
         except Exception as e:
             print(f"Warning: Could not retrieve stored data: {e}")
             return {}
+            # Note: Return value is a snapshot of the shelve contents.
     
     def clear(self):
         """Clear all stored data."""
@@ -86,6 +104,7 @@ class PersistentCounter:
             self._db.sync()
         except Exception as e:
             print(f"Warning: Could not clear data: {e}")
+            # Note: Clearing is irreversible for the current cache file.
     
     def close(self):
         """Close the database."""
@@ -95,6 +114,7 @@ class PersistentCounter:
                 self._db = None
             except Exception as e:
                 print(f"Warning: Could not close database: {e}")
+            # Note: Always call `close()` before process exit to ensure data is flushed.
     
     def __contains__(self, key):
         """Check if a key exists in the counter.

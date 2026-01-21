@@ -1,12 +1,15 @@
+"""Communication primitives for GeoGebra frontend↔kernel messaging.
+
+This module implements a dual-channel communication layer combining
+IPython Comm with an out-of-band socket (Unix domain socket or WebSocket)
+to ensure reliable message delivery while notebook cells execute.
+"""
+
 import uuid
 import json
-# import ast
 import queue
-
-# import time
 import asyncio
 import threading
-
 import tempfile
 from websockets.asyncio.server import unix_serve, serve
 import os
@@ -47,7 +50,14 @@ class ggb_comm:
     
     See:
         docs/architecture.md for detailed communication architecture.
+        
+    Note:
+        This module focuses on communication primitives. Higher-level
+        construction I/O and analysis helpers are provided in the optional
+        ``ggblab_extra`` package; the core keeps communication and minimal
+        shims only.
     """
+
     # [Frontent to kernel callback - JupyterLab - Jupyter Community Forum]
     # (https://discourse.jupyter.org/t/frontent-to-kernel-callback/1666)
     recv_msgs = {}
@@ -58,6 +68,7 @@ class ggb_comm:
     mid = None
 
     def __init__(self):
+        """Initialize communication state and defaults."""
         self.target_comm = None
         self.target_name = 'ggblab-comm'
         self.server_handle = None
@@ -81,6 +92,10 @@ class ggb_comm:
         self.server_handle.close()
 
     async def server(self):
+        """Run the out-of-band socket server.
+
+        Uses a Unix domain socket on POSIX systems and a TCP WebSocket otherwise.
+        """
         if os.name in [ 'posix' ]:
             _fd, self.socketPath = tempfile.mkstemp(prefix="/tmp/ggb_")
             os.close(_fd)
@@ -94,6 +109,10 @@ class ggb_comm:
                await asyncio.Future() 
 
     async def client_handle(self, client_id):
+        """Handle messages from a connected websocket client.
+
+        Routes command responses into `recv_logs` and event messages into `recv_events`.
+        """
         self.clients.add(client_id)
         self.logs.append(f"Client {client_id} registered.")
 
@@ -127,11 +146,13 @@ class ggb_comm:
 
     # comm
     def register_target(self):
+        """Register the IPython Comm target for frontend messages."""
         get_ipython().kernel.comm_manager.register_target(
             self.target_name,
             self.register_target_cb)
 
     def register_target_cb(self, comm, msg):
+        """Register the IPython Comm connection callback and install message handlers."""
         self.target_comm = comm
 
         @comm.on_msg
@@ -143,16 +164,16 @@ class ggb_comm:
             self.target_comm = None
 
     def unregister_target_cb(self, comm, msg):
+        """Unregister and close the IPython Comm connection."""
         self.target_comm.close()
         self.target_comm = None
 
     def handle_recv(self, msg):
-        # Note: All event-type messages are now routed to recv_events via the
-        # out-of-band socket (client_handle). This method is reserved for command
-        # responses (messages with id) sent via IPython Comm.
-        # 
-        # IPython Comm cannot receive messages during cell execution, so real-time
-        # error event processing happens on the out-of-band socket instead.
+        """Handle a message received via IPython Comm (command response).
+
+        Event-type messages are routed via the out-of-band socket; this method
+        processes response messages delivered over IPython Comm.
+        """
         if isinstance(msg['content']['data'], str):
             _data = json.loads(msg['content']['data'])
         else:
@@ -162,6 +183,7 @@ class ggb_comm:
         # (event messages are handled via client_handle in the out-of-band socket)
 
     def send(self, msg):
+        """Send a message via the IPython Comm channel."""
         return self.target_comm.send(msg)
 
     async def send_recv(self, msg):

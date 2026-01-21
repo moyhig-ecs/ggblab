@@ -38,6 +38,11 @@ Usage Examples:
     # Catch applet runtime errors
     except GeoGebraAppletError as e:
         print(f"Applet error: {e.error_message}")
+
+Note:
+    This module defines lightweight exception types used by the core
+    ``ggblab`` package. Higher-level validation or IR-driven error
+    enrichment may be provided by the optional ``ggblab_extra`` package.
 """
 
 
@@ -47,6 +52,7 @@ class GeoGebraError(Exception):
     This is the root exception for all ggblab exceptions, allowing users to catch
     any GeoGebra-related error with a single except clause.
     """
+    
     pass
 
 
@@ -57,6 +63,7 @@ class GeoGebraCommandError(GeoGebraError):
     This intermediate class groups command-related errors together, allowing users
     to catch validation failures separately from applet errors.
     """
+    
     pass
 
 
@@ -70,7 +77,9 @@ class GeoGebraSyntaxError(GeoGebraCommandError):
         command (str): The command that caused the error
         message (str): Explanation of the error
     """
+    
     def __init__(self, command, message):
+        """Initialize a syntax error with the failing command and message."""
         self.command = command
         self.message = message
         super().__init__(f"Syntax error in command '{command}': {message}")
@@ -105,7 +114,9 @@ class GeoGebraSemanticsError(GeoGebraCommandError):
         message (str): Explanation of the error
         missing_objects (list, optional): List of referenced but non-existent objects
     """
+    
     def __init__(self, command, message, missing_objects=None):
+        """Initialize a semantics error with optional missing object list."""
         self.command = command
         self.message = message
         self.missing_objects = missing_objects or []
@@ -130,7 +141,9 @@ class GeoGebraAppletError(GeoGebraError):
         ...     error_type="AppletError"
         ... )
     """
+    
     def __init__(self, error_message, command=None, error_type=None):
+        """Initialize an applet error with optional command and type metadata."""
         self.error_message = error_message
         self.command = command
         self.error_type = error_type

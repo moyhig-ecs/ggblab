@@ -1,4 +1,4 @@
-"""Common utility functions for ggblab.
+r"""Common utility functions for ggblab.
 
 Python's Design: Strengths and Grievances
 ==========================================
@@ -307,6 +307,9 @@ def flatten(items):
         >>> list(flatten(['hello', 'world']))
         ['hello', 'world']  # Not ['h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd']
     """
+    # Note: For large-scale data transformations and DataFrame-based
+    # processing prefer the utilities in ``ggblab_extra`` which operate on
+    # Polars DataFrames and avoid Python-level recursion where possible.
     for item in items:
         # The infamous "str is iterable" check we all have to write
         if isinstance(item, Iterable) and not isinstance(item, (str, bytes)):

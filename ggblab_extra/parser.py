@@ -1,3 +1,18 @@
+"""Auxiliary parser utilities (optional).
+
+This module lives in the optional ``ggblab_extra`` package. The canonical
+tokenizer and parser implementations are provided by the core package
+``ggblab``; this module contains compatibility helpers and convenience
+features kept for users that prefer the legacy imports.
+
+Notes:
+        - Tokenization is delegated to :mod:`ggblab.parser` (imported here as
+            ``tokenize_with_commas``). Prefer the core implementation where
+            possible; this module exists for compatibility only.
+        - Heavy I/O helpers (DataFrame construction / persistence) live in
+            :mod:`ggblab_extra.construction_io` (see ``ConstructionIO.save_dataframe``).
+"""
+
 import re
 import polars as pl
 import networkx as nx
@@ -7,8 +22,9 @@ from ggblab.utils import flatten
 from ggblab.parser import tokenize_with_commas
 
 
-# Tokenization is provided by the core package `ggblab.parser`.
-# We import `tokenize_with_commas` directly above and use it in-place.
+# Tokenization is provided by the core package `ggblab.parser` and is
+# imported above; this module delegates to that implementation for
+# compatibility rather than maintaining a separate tokenizer.
 
 
 class ConstructionTreeParser:
@@ -51,6 +67,7 @@ class ConstructionTreeParser:
     See:
         docs/architecture.md § Dependency Parser Architecture
     """
+    
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
@@ -251,6 +268,7 @@ class ConstructionTreeParser:
     #             self.G2.add_edge(parent, node)
 
     def ffd(self, k, recursive=True):
+        """Return forward-facing dependencies for node `k`."""
         if recursive:
             def _ffd(k):
                 if k in self.ft:
@@ -266,6 +284,7 @@ class ConstructionTreeParser:
             return {e for e in self.ft if k in self.ft[e]}
 
     def fbd(self, k, recursive=True):
+        """Return backward-facing dependencies for node `k`."""
         if recursive:
             def _fbd(k):
                 if k in self.ft:
@@ -278,6 +297,7 @@ class ConstructionTreeParser:
             return {e for e in self.ft[k] if e in self.ft}
 
     def initialize_dataframe(self, df=None, file=None):
+        """Initialize parser with a normalized Polars DataFrame or load from file."""
         if df is not None:
             self.df = df
         elif file is not None:
@@ -290,11 +310,13 @@ class ConstructionTreeParser:
         return self
 
     def write_parquet(self, file=None):
+        """Write the parser's DataFrame to a Parquet file if `file` provided."""
         if file is not None:
             self.df.write_parquet(file)
         return self
 
     def vertex_on_regular_polygon(self, v):
+        """Return vertex name on a regular polygon if applicable, else empty list."""
         try:
             if self.ft[v][0] == "Polygon" and int(self.ft[v][3]):
                 return [self.df.filter((pl.col("Command") == self.df[self.rd[v]]["Command"]) & (pl.col("Type") == "polygon"))["Name"].item()]

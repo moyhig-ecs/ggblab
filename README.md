@@ -51,14 +51,18 @@ Interactive GeoGebra widgets with bidirectional Python ↔ GeoGebra communicatio
 - Async Python API for GeoGebra commands/functions
 - .ggb file I/O (`ggb_file`, alias `ggb_construction`)
 
-### **ggblab-extra** — Analysis & Educational Tools
+### **ggblab_extra** — Analysis & Educational Tools
 
-> **Note**: ggblab-extra is currently undergoing restructuring and will be republished soon as a standalone package.
+> **Note**: The optional `ggblab_extra` package (import name `ggblab_extra`) is
+> currently undergoing restructuring and will be republished soon as a standalone
+> package or distribution. The core `ggblab` package remains lightweight; import
+> the optional helpers with `import ggblab_extra` when you need advanced parsing
+> and analysis features.
 
-Advanced parsing, verification, and curriculum tooling will live in the separate
-`ggblab-extra` package. It will provide construction parsing, scene verification,
-and layer-based playback. The package is currently not published to PyPI but will
-be available in the near future.
+Advanced parsing, verification, and curriculum tooling live in the optional
+`ggblab_extra` package. It provides construction parsing, scene verification,
+and layer-based playback. The package is not required to install the core
+`ggblab` extension and may be published separately on PyPI in the future.
 
 ### Installation
 
@@ -239,9 +243,9 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
   - Recommended actions and prioritization guidance
   - Critical questions for project sustainability
 
-### Advanced Integration (ggblab-extra)
+### Advanced Integration (ggblab_extra)
 
-- **[sympy_integration.md](./ggblab-extra/docs/sympy_integration.md)** - Symbolic computation and code generation (maintained in ggblab-extra)
+- **[sympy_integration.md](./ggblab_extra/docs/sympy_integration.md)** - Symbolic computation and code generation (maintained in the optional `ggblab_extra` package)
 
 ### API Reference
 
@@ -253,19 +257,19 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
       - `ConstructionIO`: Construction I/O helpers (preferred public API). Use `ConstructionIO` to
          build Polars DataFrames from `.ggb`/XML or from a running applet; `DataFrameIO` remains
          a backwards-compatible alias.
-   - For dependency parsing and verification, see [ggblab-extra/README.md](./ggblab-extra/README.md)
+   - For dependency parsing and verification, see [ggblab_extra/README.md](./ggblab_extra/README.md)
 
 ### Textbook Integration & Geometric Scene Development
 
-> **Note:** Scene development documentation has moved to [ggblab-extra](./ggblab-extra). See the links below for the latest guides.
+> **Note:** Scene development documentation has moved to [ggblab_extra](./ggblab_extra). See the links below for the latest guides.
 
-- **[SCENE_DEVELOPMENT_QUICK_START.md](./ggblab-extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** - Quick implementation guide ⭐ **START HERE**
+- **[SCENE_DEVELOPMENT_QUICK_START.md](./ggblab_extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** - Quick implementation guide ⭐ **START HERE**
   - Overview of ggblab's fully functional dual-coding environment
   - What you can do NOW (load, verify, analyze constructions)
   - Next phases (inventory, standardization, enrichment)
   - Testing the setup with Chapter 01
 
-- **[geometric_scene_development_guide.md](./ggblab-extra/docs/geometric_scene_development_guide.md)** - Comprehensive pedagogical framework
+- **[geometric_scene_development_guide.md](./ggblab_extra/docs/geometric_scene_development_guide.md)** - Comprehensive pedagogical framework
   - Complete analysis of textbook-2025 chapters 01–15
   - 5-level scene decomposition pattern (sketch → free objects → derived geometry → relationships → verification)
   - Dependency graph analysis best practices
@@ -278,11 +282,11 @@ Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.m
 
 | Document | Primary Audience | Key Insight |
 |----------|-----------------|-------------|
-| **[ggblab-extra: SCENE_DEVELOPMENT_QUICK_START.md](./ggblab-extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** | **Educators, textbook authors** | **How to use ggblab with textbook-2025** |
-| **[ggblab-extra: geometric_scene_development_guide.md](./ggblab-extra/docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
+| **[ggblab_extra: SCENE_DEVELOPMENT_QUICK_START.md](./ggblab_extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** | **Educators, textbook authors** | **How to use ggblab with textbook-2025** |
+| **[ggblab_extra: geometric_scene_development_guide.md](./ggblab_extra/docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
 | **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
 | **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
-| **[ggblab-extra/docs/sympy_integration.md](./ggblab-extra/docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
+| **[ggblab_extra/docs/sympy_integration.md](./ggblab_extra/docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
 | **[docs/architecture.md](docs/architecture.md)** | Developers | Dual-channel communication (core) |
 | **[TODO.md](TODO.md)** | Contributors | Concrete next steps prioritized by learning value |
 | **[API Reference](https://ggblab.readthedocs.io/en/latest/api.html)** | Developers | Complete Python API documentation |
@@ -417,16 +421,17 @@ c.save()              # next available filename based on source_file
 # c.save(overwrite=True)  # to overwrite the original
 ```
 
-### Object Dependency Analysis (ggblab-extra)
+### Object Dependency Analysis (ggblab_extra)
 
 Advanced parsing, dependency graphs, and subgraph extraction now live in
-**ggblab-extra**. See [ggblab-extra/README.md](./ggblab-extra/README.md) and the
-scene development docs in `ggblab-extra/docs/` for full usage and examples.
+**ggblab_extra**. See [ggblab_extra/README.md](./ggblab_extra/README.md) and the
+
+scene development docs in `ggblab_extra/docs/` for full usage and examples.
 
 ### Architecture
 
 - **Frontend** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx)): Registers the plugin `ggblab:plugin` and command `ggblab:create`. Creates a `GeoGebraWidget` ReactWidget that loads GeoGebra from the CDN, opens an IPython Comm target (default `test3`), executes commands/functions, and mirrors add/remove/rename/clear events plus dialog notices back to the kernel. Results can also be forwarded over the external socket when provided.
-- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/file.py](ggblab/file.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_file` (alias `ggb_construction`) loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects. Advanced parsing and verification live in `ggblab-extra`.
+- **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/file.py](ggblab/file.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_file` (alias `ggb_construction`) loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects. Advanced parsing and verification live in `ggblab_extra`.
 - **Styles** ([style/index.css](style/index.css), [style/base.css](style/base.css)): Ensure the embedded applet fills the available area.
 
 #### Communication Architecture

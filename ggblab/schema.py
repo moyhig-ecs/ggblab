@@ -1,3 +1,10 @@
+"""Schema loader utilities for GeoGebra XML validation.
+
+This module downloads and caches the GeoGebra XSD (common.xsd) and
+provides a small helper class, `ggb_schema`, which loads and exposes a
+compiled `xmlschema.XMLSchema` object for validating GeoGebra construction XML.
+"""
+
 import requests
 import os
 import xmlschema
@@ -30,7 +37,13 @@ class ggb_schema:
     Note:
         The schema is downloaded once and cached in xsd/common.xsd.
         Delete the cache to force re-download on next instantiation.
+    
+    Note:
+        Heavy DataFrame-based validation or IR-driven workflows are provided
+        by the optional ``ggblab_extra`` package. The core schema loader is
+        intended for low-level XML validation and parsing only.
     """
+    
     url = 'http://www.geogebra.org/apps/xsd/common.xsd'
     local_path = 'xsd/common.xsd'
 

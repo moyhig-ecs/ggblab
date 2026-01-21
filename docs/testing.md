@@ -9,10 +9,10 @@ This document describes the structure of ggblab's unit and integration tests, ho
     - `test_file.py`: Loading/saving by format (.ggb Base64, ZIP, JSON, XML), round-trip, edge cases
     - `test_ggbapplet.py`: GeoGebra lifecycle, validation, and cache management
     - `__init__.py`, `conftest.py`: Pytest configuration and shared fixtures
-  - `ggblab-extra/tests/` (advanced analysis)
+  - `ggblab_extra/tests/` (advanced analysis)
     - `test_parser.py`: Dependency graph construction, root/leaf identification, topological sort, generation analysis
   - Root
-    - `pytest.ini`: Coverage/marker/output configuration (covers both ggblab and ggblab-extra)
+    - `pytest.ini`: Coverage/marker/output configuration (covers both ggblab and ggblab_extra)
     - `.github/workflows/tests.yml`: Automated testing on GitHub Actions
 
 ## Local Execution
@@ -32,7 +32,7 @@ pytest -v --cov=ggblab --cov-report=term-missing
 # Specific file only
 pytest tests/test_file.py -v
 pytest tests/test_ggbapplet.py -v
-pytest ggblab-extra/tests/test_parser.py -v
+pytest ggblab_extra/tests/test_parser.py -v
 
 # Re-run failed tests only
 pytest --lf
@@ -75,7 +75,7 @@ Generated artifacts:
   - Round-trip consistency validation
 - `tests/test_ggbapplet.py`
   - Singleton lifecycle, syntax/semantic validation, cache refresh, literal detection
-- `ggblab-extra/tests/test_parser.py`
+- `ggblab_extra/tests/test_parser.py`
   - Node/edge generation (dependencies)
   - Root/leaf identification
   - Topological sort/generation analysis (scope levels)

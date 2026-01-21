@@ -1,8 +1,16 @@
-"""ggblab_extra: auxiliary modules split out of the core package.
+"""ggblab_extra: optional helpers split out from the core package.
 
-This package contains optional or deprecated helpers that were
-previously part of `ggblab` proper.
+`ggblab_extra` contains non-essential helpers, heavy I/O utilities and
+backward-compatible shims that were previously part of `ggblab`.
+
+Install this package when you need Polars-based construction I/O,
+convenience utilities (e.g. ``ConstructionIO.save_dataframe``), or the
+legacy parser compatibility layers. Consumers that only require the
+lightweight runtime should depend on the core ``ggblab`` package; the
+core package avoids importing these extras at import time to keep
+startup lightweight.
 """
+
 from .construction_io import ConstructionIO, DataFrameIO  # re-export for convenience
 from .construction_parser import ConstructionTreeParser, ggb_parser  # re-export parser
 

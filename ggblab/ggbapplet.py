@@ -1,3 +1,11 @@
+"""High-level GeoGebra applet controller used by notebooks and the JupyterLab plugin.
+
+`GeoGebra` is the public-facing class that manages communication channels
+(IPython Comm + out-of-band socket) and provides async methods for sending
+commands and calling GeoGebra API functions. Heavy I/O helpers and
+analysis tools live in the optional `ggblab_extra` package.
+"""
+
 import asyncio
 import re
 import ipykernel.connect
@@ -13,7 +21,7 @@ from .errors import (
     GeoGebraCommandError,
     GeoGebraSyntaxError,
     GeoGebraSemanticsError,
-    GeoGebraAppletError
+    GeoGebraAppletError,
 )
 from ggblab.utils import flatten
 
@@ -49,6 +57,14 @@ class GeoGebra:
     Note:
         The parser attribute lives in this package and provides tokenization
         and command-cache features used for syntax/semantics checks.
+
+        Note:
+            Heavy I/O and convenience helpers (DataFrame construction,
+            persistence helpers such as ``ConstructionIO.save_dataframe``,
+            and richer parser implementations) have been moved to the
+            optional ``ggblab_extra`` package. Install ``ggblab_extra`` to
+            access those features; the core package keeps lightweight shims
+            and will emit DeprecationWarning when using deprecated helpers.
     
     Example:
         >>> ggb = GeoGebra()
@@ -61,14 +77,17 @@ class GeoGebra:
         >>> ggb.check_semantics = True
         >>> await ggb.command("Circle(A, B)")
     """
+
     _instance = None
 
     def __new__(cls):
+        """Create or return the singleton GeoGebra instance for this kernel."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
+        """Initialize default attributes for the GeoGebra controller."""
         self.initialized = False
         self.file = ggb_file()  # .ggb file I/O
         self.construction = self.file  # Backward compatibility alias

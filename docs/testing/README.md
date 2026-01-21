@@ -25,7 +25,7 @@ Complete documentation of testing infrastructure, fixes, and best practices for 
   - Object cache management
   - Exception handling
 
-**Advanced Tests** (`ggblab-extra/tests/`):
+**Advanced Tests** (`ggblab_extra/tests/`):
 - `test_parser.py` (18 test classes, 70+ methods)
   - Dependency graph construction and analysis
   - Topological sorting, generations, reachability
@@ -52,7 +52,7 @@ pip install pytest pytest-cov
 pytest tests/ -v --cov=ggblab --cov-report=html
 
 # Run specific test module
-pytest ggblab-extra/tests/test_parser.py -v
+pytest ggblab_extra/tests/test_parser.py -v
 
 # Run with XML output (for CI integration)
 pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
@@ -60,7 +60,7 @@ pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
 
 ## Recent Fixes (v0.7.3)
 
-### Parser Test Refactoring (now in ggblab-extra)
+### Parser Test Refactoring (now in ggblab_extra)
 
 All 70+ test methods in `test_parser.py` were refactored to match the actual parser implementation API:
 

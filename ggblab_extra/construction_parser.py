@@ -1,3 +1,21 @@
+"""Construction parser compatibility implementation.
+
+This module provides a backward-compatible construction parser implementation
+kept in ``ggblab_extra`` for callers that have not migrated to the canonical
+parser in :mod:`ggblab.parser`.
+
+Notes:
+        - Tokenization: the canonical tokenizer lives in :mod:`ggblab.parser` and
+            may be exposed either as a top-level function ``tokenize_with_commas``
+            or as a method of the lightweight ``ggb_parser`` wrapper. To support
+            both shapes this module constructs a local ``_ggb_parser`` and exposes
+            a module-level ``tokenize_with_commas`` that delegates to the
+            available implementation.
+        - Deprecations: ``ConstructionTreeParser.initialize_dataframe`` and
+            ``ConstructionTreeParser.write_parquet`` are deprecated and delegate
+            to ``ConstructionIO`` in ``ggblab_extra`` when available.
+"""
+
 import re
 import polars as pl
 import networkx as nx
@@ -58,6 +76,7 @@ class ConstructionTreeParser:
     See:
         docs/architecture.md § Dependency Parser Architecture
     """
+    
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
@@ -261,6 +280,7 @@ class ConstructionTreeParser:
     #             self.G2.add_edge(parent, node)
 
     def ffd(self, k, recursive=True):
+        """Return forward-facing dependencies for node `k`."""
         if recursive:
             def _ffd(k):
                 if k in self.ft:
@@ -276,6 +296,7 @@ class ConstructionTreeParser:
             return {e for e in self.ft if k in self.ft[e]}
 
     def fbd(self, k, recursive=True):
+        """Return backward-facing dependencies for node `k`."""
         if recursive:
             def _fbd(k):
                 if k in self.ft:
@@ -288,6 +309,7 @@ class ConstructionTreeParser:
             return {e for e in self.ft[k] if e in self.ft}
 
     def initialize_dataframe(self, df=None, file=None):
+        """Initialize the parser from `df` or delegate to ConstructionIO when given a file."""
         import warnings
         import asyncio
         import ggblab.construction_io as _cio
@@ -314,6 +336,7 @@ class ConstructionTreeParser:
         raise ValueError("Either df or file must be provided.")
 
     def write_parquet(self, file=None):
+        """Write the parser's DataFrame by delegating to ConstructionIO.save_dataframe."""
         import warnings
         import asyncio
         import ggblab.construction_io as _cio
@@ -330,6 +353,7 @@ class ConstructionTreeParser:
         return Impl.save_dataframe(self.df, ggb=None, fmt='parquet', out_dir=None, overwrite=False)
 
     def vertex_on_regular_polygon(self, v):
+        """Return vertex name on a regular polygon if applicable, else empty list."""
         try:
             if self.ft[v][0] == "Polygon" and int(self.ft[v][3]):
                 return [self.df.filter((pl.col("Command") == self.df[self.rd[v]]["Command"]) & (pl.col("Type") == "polygon"))["Name"].item()]
