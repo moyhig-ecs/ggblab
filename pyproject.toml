@@ -69,6 +69,13 @@ npm = ["jlpm"]
 source_dir = "src"
 build_dir = "ggblab/labextension"
 
+
+[tool.hatch.build]
+packages = [
+    { include = "ggblab" },
+    { include = "ggblab_extra" },
+]
+
 [tool.jupyter-releaser.options]
 version_cmd = "hatch version"
 
