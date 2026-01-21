@@ -48,7 +48,7 @@ ggb_construction = ggb_file
 # These will be removed in ggblab 1.0.0
 # Use 'from ggblab_extra import ggb_parser' instead
 try:
-    from ggblab_extra.parser import ggb_parser
+    from ggblab_extra.construction_parser import ggb_parser
     import warnings
     
     def _deprecated_import(name):
