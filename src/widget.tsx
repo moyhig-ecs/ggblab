@@ -109,6 +109,13 @@ with connect("${wsUrl}") as ws:
 
             async function ggbOnLoad(api: any) {
                 console.log("GeoGebra applet loaded:", api);
+                (async function () {
+                    var msg = {
+                        "type": "start",
+                        "payload": {}
+                    }
+                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+                })();
 
                 var resize = function() {
                     const wrapperDiv = document.getElementById('ggb-element');
@@ -260,6 +267,18 @@ with connect("${wsUrl}") as ws:
                     await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
                 }
                 api.registerClearListener(clearListener);
+
+                // // nothing triggered?
+                // var clientListener = async function(data: any) {
+                // // console.log("Add listener triggered for:", data);
+                //     var msg = {
+                //         "type": "client",
+                //         "payload": data
+                //     }
+                //     console.log("Client detected:", JSON.stringify(msg));
+                //     await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+                // }
+                // api.registerClearListener(clientListener);
 
                 const observer = new MutationObserver((mutations) => {
                     mutations.forEach((mutation) => {

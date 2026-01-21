@@ -65,7 +65,9 @@ class ggb_comm:
     recv_events = queue.Queue()
     logs = []
     thread = None
+    thread_lock = threading.Lock()
     mid = None
+    # target_comm = None
 
     def __init__(self):
         """Initialize communication state and defaults."""
@@ -76,6 +78,9 @@ class ggb_comm:
         self.clients = set()
         self.socketPath = None
         self.wsPort = 0
+        # Flag set once the frontend/applet signals it has finished loading
+        # by sending an event like: { "type": "start", ... }
+        self.applet_started = False
 
     # oob websocket (unix_domain socket in posix)
     def start(self):
@@ -136,7 +141,11 @@ class ggb_comm:
                 else:
                     # Event message: queue for event processing
                     # Error handling is deferred to send_recv() for proper exception propagation
-                    self.recv_events.put(_data)
+                    if (_data.get('type') == 'start'):
+                        self.logs.append('Received applet start event')
+                        self.applet_started = True
+                    else:
+                        self.recv_events.put(_data)
         except Exception as e:
             pass
           # self.logs.append(f"Connection closed: {e}")
@@ -153,6 +162,10 @@ class ggb_comm:
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
+        # with self.thread_lock:
+            # self.target_comm = comm
+            # self.logs.append(f"register_target_cb: {self.target_comm}")
+        # IPython Comm is not thread-aware
         self.target_comm = comm
 
         @comm.on_msg
@@ -184,7 +197,10 @@ class ggb_comm:
 
     def send(self, msg):
         """Send a message via the IPython Comm channel."""
-        return self.target_comm.send(msg)
+        if self.target_comm:
+            return self.target_comm.send(msg)
+        else:
+            raise RuntimeError("GeoGebra().init() must be called in a notebook cell before sending commands.")
 
     async def send_recv(self, msg):
         """Send a message via IPython Comm and wait for response via out-of-band socket.
@@ -221,37 +237,23 @@ class ggb_comm:
             else:
                 _data = msg
 
+            # # Ensure the applet has signaled it started before sending commands.
+            # # Spin-wait while consuming `recv_events` until a {type: 'start'}
+            # # event arrives or a 3-second timeout is reached.
+            # async def wait_for_applet_start():
+            #     while not self.applet_started or not self.target_comm:
+            #         with self.thread_lock:
+            #             self.logs.append(f"{self.target_comm}")
+            #         await asyncio.sleep(0.1)
+            
+            # await asyncio.wait_for(wait_for_applet_start(), timeout=3.0)
+
             _id = str(uuid.uuid4())
             self.mid = _id
             msg['id'] = _id
             self.send(json.dumps(_data))
             
-            # Wait for response with an adaptive timeout.
-            # Start with a 3s deadline but if the applet appears to be taking
-            # longer, extend the deadline in small increments up to a cap.
-            # loop = asyncio.get_running_loop()
-            # start = loop.time()
-            # deadline = start + 3.0
-            # max_deadline = start + 60.0
-            # extension = 5.0
-
-            # while not (_id in self.recv_logs):
-            #     await asyncio.sleep(0.01)
-            #     now = loop.time()
-            #     if now > deadline:
-            #         if now >= max_deadline:
-            #             # reached maximum allowed wait time
-            #             raise asyncio.TimeoutError()
-            #         # extend the deadline to give the applet more time
-            #         deadline = min(deadline + extension, max_deadline)
-            #         try:
-            #             self.logs.append(f"Extending send_recv timeout to {deadline - start:.1f}s for id {_id}")
-            #         except Exception:
-            #             # logs are best-effort; do not fail the wait loop on logging errors
-            #             pass
-
-            # Original implementation (kept commented for reference):
-            # # Wait for response with 3-second timeout
+            # Wait for response with 3-second timeout
             async def wait_for_response():
                 while not (_id in self.recv_logs):
                     await asyncio.sleep(0.01)
