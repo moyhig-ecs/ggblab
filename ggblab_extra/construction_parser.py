@@ -287,6 +287,13 @@ class ConstructionTreeParser:
         self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
              for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
 
+        for o in list(self.rd.keys()):
+            for n in ['xAxis', 'yAxis', 'zAxis']:
+                if n in self.ft.get(o, []):
+                    # print(f"found {n} dependency in {o}")
+                    self.rd[n] = None
+                    self.ft[n] = []
+
         # Extract and cache command names from all commands in the dataframe
         for command_str in self.df["Command"]:
             if command_str:
@@ -304,12 +311,11 @@ class ConstructionTreeParser:
         for n in self.ft:
             for o in self.ft[n]:
                 if o in self.rd:
-                    # print(n, o)
+                    # print(f"Adding edge from {o} to {n}")
                     self.G.add_edge(o, n)
             for o in self.fbd(n):
-                # print(o, ggb.ft[o])
-                if n in self.ft[o]:
-                    # print(o, n)
+                if n in self.ft.get(o, []):
+                    # print(f"Adding edge from {n} to {o}")
                     self.G.add_edge(n, o)
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
