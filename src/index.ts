@@ -15,6 +15,8 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
+// Import package.json to reflect the package version in the UI log.
+import pkg from '../package.json';
 
 namespace CommandIDs {
   export const create = 'ggblab:create';
@@ -32,7 +34,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   requires: [ICommandPalette],
   optional: [ISettingRegistry, ILayoutRestorer, ILauncher],
   activate: (app: JupyterFrontEnd, /* labshell: ILabShell, */ palette: ICommandPalette, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null, launcher: ILauncher | null) => {
-    console.log('JupyterLab extension ggblab-0.0.1 is activated!');
+    console.log(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
     if (settingRegistry) {
       settingRegistry
