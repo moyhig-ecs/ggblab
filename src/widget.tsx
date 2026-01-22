@@ -324,6 +324,7 @@ with connect("${wsUrl}") as ws:
                     showAlgebraInput: false, // 入力フィールドを表示
                     showMenuBar: true, // メニューバーを表示
                     autoHeight: true,
+                    scaleContainerClass: "lm-DockPanel-widget",
                  // autoWidth: false,
                  // scale: 2,
                     allowUpscale: false,

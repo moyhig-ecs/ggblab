@@ -109,7 +109,15 @@ This is an upstream JupyterLab/Lumino + WebKit browser engine limitation, not a 
 - **Note**: This scaling issue **cannot be reset via GeoGebra API commands** (e.g., `SetCoords()`) once triggered; it is purely a rendering/layout issue
 - **Workaround**: 
   - Refresh the browser page after resizing the JupyterLab window to reinitialize display scaling
-  - Avoid frequent window resizing during interactive sessions when possible
+   - Prefer setting the GeoGebra applet `scaleContainerClass` parameter at initialization. This instructs the applet to use a dedicated container CSS class for scaling and prevents the post-init shrinkage issue on window resize. Example (conceptual):
+
+```python
+# pass an applet parameter dict when initializing the applet
+ggb = GeoGebra()
+await ggb.init(applet_params={"scaleContainerClass": "ggblab-scale"})
+```
+
+   - Avoid frequent window resizing during interactive sessions when possible
 
 This is a display/rendering interaction between JupyterLab's layout manager and GeoGebra's canvas scaling, not a communication or functionality issue. The Applet operates correctly; only the visual presentation is affected.
 
