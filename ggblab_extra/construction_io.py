@@ -185,7 +185,7 @@ class ConstructionIO:
 			_df = pl.from_dict(construction_map, strict=False)
 			norm_df = (
 				_df.transpose(include_header=True, header_name="Name", column_names=_columns)
-				.with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0))
+				.with_columns(pl.col("Layer").cast(pl.UInt32).fill_null(0))
 			)
 		elif parquet_file is not None:
 			if isinstance(parquet_file, pl.DataFrame):
@@ -193,12 +193,17 @@ class ConstructionIO:
 			else:
 				norm_df = pl.read_parquet(str(parquet_file))
 		elif file is not None:
-			norm_df = pl.read_parquet(file).with_columns(pl.col("Layer").cast(pl.Int64).fill_null(0))
+			norm_df = pl.read_parquet(file).with_columns(pl.col("Layer").cast(pl.UInt32).fill_null(0))
 		else:
 			raise ValueError("Either parquet_file or file must be provided.")
 
 		if not isinstance(norm_df, pl.DataFrame):
 			raise TypeError("Normalized DataFrame expected at this point")
+
+		# add a stable construction sequence index (0-based) to preserve
+		# the original construction protocol ordering for downstream tools
+		if "Sequence" not in norm_df.columns:
+			norm_df = norm_df.with_row_index("Sequence", offset=0)
 
 		for _bcol in ("ShowObject", "ShowLabel", "Auxiliary"):
 			if _bcol in norm_df.columns:

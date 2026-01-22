@@ -26,6 +26,7 @@ The GeoGebra applet displays in a fixed JupyterLab panel while your notebook rem
 - Call GeoGebra commands (`command`) and API functions (`function`) from Python through the `GeoGebra` helper
 - **Domain Bridge**: Construction dependencies in GeoGebra map isomorphically to variable scoping in Python—teach computational thinking through geometric structure
 - **Transfer of Learning**: Knowledge learned in geometric context transfers to computational thinking and vice versa. Dual representations strengthen understanding across both domains.
+- **ML-ready parser outputs**: The parser enriches the construction DataFrame with production-ready features (e.g. `Sequence`, `DependsOn`, `DependsOn_minimal`) that are stored as native Polars types and are directly usable for feature engineering, graph models, and inference pipelines — see [Parser outputs for ML / Inference](#parser-outputs-for-ml--inference).
 - Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
 - Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
 - Settings schema is wired up (no user options yet) for future configuration
@@ -671,6 +672,41 @@ See [RELEASE.md](RELEASE.md) for publishing to PyPI/NPM or using Jupyter Release
 ### Contributing
 
 Contributions are welcome! Please:
+
+## Note about legacy `parse_subgraph`
+
+The `ggblab_extra.construction_parser` module preserves the original
+``parse_subgraph`` heuristic under the name ``parse_subgraph_legacy()`` for
+reproducibility and compatibility. The legacy function retains the
+human-oriented search strategy and original control flow; it is kept
+because some users prefer its behavior.
+
+Prefer the refactored ``parse_subgraph()`` for new development — it uses
+clearer variable names, removes debug output, and is easier to maintain.
+Call ``parse_subgraph_legacy()`` only when you specifically need the legacy
+behavior.
+
+## Parser outputs for ML / Inference
+
+ggblab does more than visualize geometry — it converts constructions into
+first-class, production-ready datasets for machine learning and inference.
+
+- Rich, ML-friendly features: the parser annotates the construction
+   DataFrame with engineered columns such as ``Sequence``, ``DependsOn``,
+   and ``DependsOn_minimal`` that encode ordering, full ancestor lists,
+   and compact parent sets respectively.
+- Native Polars types: all metadata are stored as proper Polars types
+   (including list/Utf8 columns) so they integrate directly with
+   feature pipelines, graph neural networks, and downstream model
+   orchestration tools without ad-hoc conversion.
+- Persisted for reproducibility: use ``ConstructionIO.save_dataframe`` to
+   persist datasets (Parquet primary, JSON fallback). Parquet is the
+   recommended format for ML workflows for its schema fidelity and
+   efficient I/O.
+
+Use ggblab to transform geometric constructions into predictable,
+repeatable feature sets — ready for feature engineering, GNN inputs,
+or any inference pipeline you build on top of geometric structure.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/xyz`)

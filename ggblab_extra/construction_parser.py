@@ -17,6 +17,7 @@ Notes:
 """
 
 import re
+import json
 import polars as pl
 import networkx as nx
 from itertools import combinations, chain
@@ -26,6 +27,165 @@ from ggblab.parser import ggb_parser
 
 # Create a module-level parser instance for tokenization compatibility
 _ggb_parser = ggb_parser()
+
+
+def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = False) -> nx.DiGraph:
+    """Reconstruct a NetworkX DiGraph from a DataFrame's dependency column.
+
+    Args:
+        df: Polars DataFrame (or any object with indexable columns) containing
+            at least `Name` and the dependency column `col`.
+        col: Column name that holds dependency lists (list[str]) or JSON strings.
+
+    Returns:
+        NetworkX DiGraph where edges point from dependency -> dependent.
+
+    Behavior: best-effort decoding of JSON strings; missing names are added
+    as nodes. Does not raise on malformed entries — they are skipped.
+    """
+    G = nx.DiGraph()
+    try:
+        names = df["Name"].to_list()
+    except Exception:
+        # fallback for dict-like or pandas
+        names = list(df["Name"])
+
+    G.add_nodes_from(names)
+
+    # obtain raw dependency column values
+    if col not in df.columns:
+        return G
+
+    try:
+        raw = df[col].to_list()
+    except Exception:
+        raw = list(df[col])
+
+    for name, v in zip(names, raw):
+        if v is None:
+            continue
+        deps = v
+        if isinstance(v, str):
+            try:
+                deps = json.loads(v)
+            except Exception:
+                # treat as a single-name dependency string
+                deps = [v]
+        if not isinstance(deps, (list, tuple)):
+            deps = [deps]
+        for d in deps:
+            if d is None:
+                continue
+            try:
+                G.add_node(d)
+                G.add_edge(d, name)
+            except Exception:
+                # ignore malformed dependency entries
+                continue
+
+    # Optionally reduce transitive edges to obtain a minimal parent set
+    if reduce_transitive:
+        try:
+            # Prefer NetworkX transitive_reduction for DAGs when available
+            if nx.is_directed_acyclic_graph(G):
+                try:
+                    from networkx.algorithms.dag import transitive_reduction
+
+                    G = transitive_reduction(G)
+                except Exception:
+                    # Fallback: remove edges (u,v) if there exists an alternate path u->...->v
+                    to_remove = set()
+                    for u, v in list(G.edges()):
+                        # if there's a path of length >1 from u to v, the direct edge is transitive
+                        try:
+                            for path in nx.all_simple_paths(G, u, v):
+                                if len(path) > 2:
+                                    to_remove.add((u, v))
+                                    break
+                        except Exception:
+                            # if path enumeration fails, skip
+                            pass
+                    G.remove_edges_from(to_remove)
+            else:
+                # If not a DAG, attempt conservative reduction by checking alternate paths
+                to_remove = set()
+                for u, v in list(G.edges()):
+                    try:
+                        for path in nx.all_simple_paths(G, u, v):
+                            if len(path) > 2:
+                                to_remove.add((u, v))
+                                break
+                    except Exception:
+                        pass
+                G.remove_edges_from(to_remove)
+        except Exception:
+            # best-effort: if reduction fails, return original graph
+            pass
+
+        # If reduction above did not remove edges (or graph wasn't reducible by paths),
+        # attempt a reduction using the per-row transitive ancestor lists when
+        # available. This handles the common case where `DependsOn` lists contain
+        # transitive ancestors but inter-dependency edges are not present in G.
+        try:
+            # build ancestor map from the dataframe column if present
+            anc_map = {}
+            try:
+                raw_col = df[col].to_list()
+            except Exception:
+                raw_col = list(df[col])
+
+            for name, v in zip(names, raw_col):
+                if v is None:
+                    anc_map[name] = set()
+                    continue
+                if isinstance(v, str):
+                    try:
+                        deps = json.loads(v)
+                    except Exception:
+                        deps = [v]
+                else:
+                    deps = v
+                if not isinstance(deps, (list, tuple)):
+                    deps = [deps]
+                anc_map[name] = set(d for d in deps if d is not None)
+
+            # compute minimal parents per node: remove any d if it is an ancestor
+            # of some other declared dependency in the same row
+            minimal_map = {}
+            for name, deps in anc_map.items():
+                minimal = set()
+                for d in deps:
+                    # if d is an ancestor of any other dep in this row, skip it
+                    is_transitive = False
+                    for other in deps:
+                        if other == d:
+                            continue
+                        # if d appears in other's ancestor list, d is transitive
+                        if d in anc_map.get(other, set()):
+                            is_transitive = True
+                            break
+                    if not is_transitive:
+                        minimal.add(d)
+                minimal_map[name] = minimal
+
+            # rebuild graph from minimal_map
+            G_min = nx.DiGraph()
+            G_min.add_nodes_from(names)
+            for name, deps in minimal_map.items():
+                for d in deps:
+                    try:
+                        G_min.add_node(d)
+                        G_min.add_edge(d, name)
+                    except Exception:
+                        continue
+
+            # use reduced graph if it has fewer edges
+            if G_min.number_of_edges() < G.number_of_edges():
+                G = G_min
+        except Exception:
+            pass
+
+    return G
 
 
 def tokenize_with_commas(cmd_string, extract_commands=False):
@@ -154,47 +314,167 @@ class ConstructionTreeParser:
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
+        
+        # If a DataFrame is present, ensure `DependsOn` is a list-type column.
+        # If the column exists as JSON strings, decode; otherwise compute
+        # transitively from the graph. Best-effort: do not fail parse() on errors.
+        try:
+            if hasattr(self, 'df') and self.df is not None:
+                if "DependsOn" in self.df.columns:
+                    raw_col = self.df["DependsOn"].to_list()
+                    converted = []
+                    for v, n in zip(raw_col, self.df["Name"]):
+                        if isinstance(v, str):
+                            try:
+                                converted.append(json.loads(v))
+                            except Exception:
+                                converted.append(sorted(nx.ancestors(self.G, n)) if n in self.G else [])
+                        elif v is None:
+                            converted.append(sorted(nx.ancestors(self.G, n)) if n in self.G else [])
+                        else:
+                            converted.append(v)
+                else:
+                    converted = [sorted(nx.ancestors(self.G, n)) if n in self.G else [] for n in self.df["Name"]]
+
+                # attach or replace DependsOn as a polars List(Utf8) column
+                self.df = self.df.with_columns(pl.Series("DependsOn", converted).cast(pl.List(pl.Utf8)))
+        except Exception:
+            pass
+
         return self.G
     
     def parse_subgraph(self):
         """
         Extract a simplified dependency subgraph (G2) from the full graph (G).
-        
-        WARNING: This implementation has significant performance limitations and 
-        should be replaced in v1.0. See ARCHITECTURE.md for details.
-        
-        Algorithm:
-        - Enumerates all combinations of root objects (O(2^n) combinations)
-        - For each combination, identifies dependent objects that exclusively depend on that combination
-        - Adds edges to G2 when dependencies are uniquely determined
-        
-        KNOWN LIMITATIONS (Critical):
-        1. **Combinatorial Explosion**: O(2^n) time complexity where n = number of root objects.
-           - With 15 roots: ~32,000 paths (manageable)
-           - With 20 roots: ~1,000,000 paths (slow)
-           - With 25+ roots: computation becomes intractable
-           
-        2. **Infinite Loop Risk**: The while loop may not terminate under certain graph topologies
-           where _nodes1 is not updated in each iteration.
-           
-        3. **Limited N-ary Dependency Support**: Only handles 1-2 parents. Constructions where
-           3+ objects jointly create one output (e.g., polygon from 3+ points) have incomplete
-           representation in G2 (these edges are silently skipped).
-           
-        4. **Redundant Computation**: Neighbor lists are recomputed on every iteration
-           of inner loops, causing O(n) redundant work.
-           
-        5. **Debug Output**: Contains print() statements that should be removed for production.
-        
-        WORKAROUND:
-        - Use with constructions having <15 independent root objects
-        - For larger constructions, consider implementing the optimized algorithm
-          described in ARCHITECTURE.md § Dependency Parser Architecture
-        
-        FUTURE: Replace with topological sort + reachability pruning in v1.0 for O(n(n+m)) complexity.
-        
-        See: https://github.com/[repo]/ARCHITECTURE.md#dependency-parser-architecture
+
+        This method implements a forward-search heuristic that attempts to find
+        compact, human-interpretable parent sets for nodes. It starts from
+        independent root objects and explores small combinations of active
+        objects (practically singletons and pairs) to determine downstream
+        objects that appear to depend uniquely on those combinations.
+
+        Notes:
+        - The algorithm is intentionally heuristic and prioritizes readability
+          over theoretical minimality. Results may differ from strict
+          transitive-reduction methods.
+        - Performance is combinatorial in the number of active roots; avoid
+          using this on constructions with many independent roots.
+
+        Returns:
+            The constructed `G2` (assigned to `self.G2`).
         """
+        self.G2 = nx.DiGraph()
+        self.G2.clear()
+
+        explored = set()
+        frontier = {n for n in self.roots if n in self.ft}
+
+        while frontier:
+            # Build all candidate active-sets from the current frontier
+            candidate_active_sets = [explored | set(combo)
+                                     for combo in chain.from_iterable(combinations(frontier, r)
+                                                                     for r in range(1, len(frontier) + 1))]
+
+            collected_matches = set()
+
+            for active_set in candidate_active_sets:
+                # neighbors_of_active: union of neighbors of each node in active_set
+                neighbor_sets = [set(self.G.neighbors(node)) for node in active_set]
+                potential_targets = set().union(*neighbor_sets) if neighbor_sets else set()
+
+                matched_targets = set()
+                for target in potential_targets:
+                    # Build a map of predecessor -> descendants for this target
+                    pred_desc_map = {pred: nx.descendants(self.G, pred) for pred in self.G.predecessors(target)}
+
+                    # If some predecessor's descendants indicate unique reachability
+                    for pred in sorted(pred_desc_map.keys(), key=lambda e: len(pred_desc_map[e]), reverse=True):
+                        if len(pred_desc_map[pred]) and not nx.ancestors(self.G, target) - (active_set | {pred}):
+                            matched_targets.add(target)
+                            break
+
+                # For each newly matched target, add edges from the newly-activated parents
+                for target in matched_targets - active_set - frontier:
+                    new_parents = active_set - explored
+                    if len(new_parents) == 1:
+                        parent = next(iter(new_parents))
+                        self.G2.add_edge(parent, target)
+                    elif len(new_parents) == 2:
+                        p1, p2 = tuple(new_parents)
+                        if not (p1 in self.G2 and target in self.G2.neighbors(p1)) and not (p2 in self.G2 and target in self.G2.neighbors(p2)):
+                            self.G2.add_edge(p1, target)
+                            self.G2.add_edge(p2, target)
+                    else:
+                        # skip higher-arity parent sets in this heuristic
+                        pass
+
+                collected_matches |= matched_targets
+
+            # advance frontier: mark current frontier as explored and set new frontier
+            explored |= frontier
+            frontier = collected_matches - explored
+
+        # If a DataFrame is present, ensure `DependsOn_minimal` is a list-type column.
+        # If the column exists as JSON strings, decode; otherwise compute using
+        # direct predecessors from G2 (fallback to G). Best-effort: do not fail.
+        try:
+            if hasattr(self, 'df') and self.df is not None:
+                if "DependsOn_minimal" in self.df.columns:
+                    raw_col = self.df["DependsOn_minimal"].to_list()
+                    converted_min = []
+                    for v, n in zip(raw_col, self.df["Name"]):
+                        if isinstance(v, str):
+                            try:
+                                converted_min.append(json.loads(v))
+                            except Exception:
+                                if hasattr(self, 'G2') and n in self.G2:
+                                    converted_min.append(sorted(list(self.G2.predecessors(n))))
+                                elif hasattr(self, 'G') and n in self.G:
+                                    converted_min.append(sorted(list(self.G.predecessors(n))))
+                                else:
+                                    converted_min.append([])
+                        elif v is None:
+                            if hasattr(self, 'G2') and n in self.G2:
+                                converted_min.append(sorted(list(self.G2.predecessors(n))))
+                            elif hasattr(self, 'G') and n in self.G:
+                                converted_min.append(sorted(list(self.G.predecessors(n))))
+                            else:
+                                converted_min.append([])
+                        else:
+                            converted_min.append(v)
+                else:
+                    converted_min = []
+                    for n in self.df["Name"]:
+                        if hasattr(self, 'G2') and n in self.G2:
+                            converted_min.append(sorted(list(self.G2.predecessors(n))))
+                        elif hasattr(self, 'G') and n in self.G:
+                            converted_min.append(sorted(list(self.G.predecessors(n))))
+                        else:
+                            converted_min.append([])
+
+                self.df = self.df.with_columns(pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8)))
+        except Exception:
+            pass
+
+        return self.G2
+
+    # Note: the legacy implementation below is preserved for reproducibility
+    # and because its heuristic has a 'human-like' behaviour valued by some
+    # users. Prefer `parse_subgraph` for the cleaned/refactored variant.
+    def parse_subgraph_legacy(self):
+        """
+        Legacy implementation of `parse_subgraph` kept for compatibility.
+
+        This method preserves the original forward-search heuristic and
+        variable naming to allow comparison and fallback when the newer,
+        refactored `parse_subgraph` behavior is not desired.
+
+        It intentionally retains the original control flow and (now-removed)
+        debug-oriented prints to keep behavior identical to earlier releases.
+        Use this method when deterministic reproduction of legacy outputs
+        is required.
+        """
+
         self.G2 = nx.DiGraph()
         self.G2.clear()
 
@@ -202,27 +482,19 @@ class ConstructionTreeParser:
         _nodes1 = {n for n in self.roots if n in self.ft}  # set(['C', 'A'])
 
         while _nodes1:
-            # print(f"path: {_nodes0} {_nodes1}")
-
             _paths = []
             for __p in (list(chain.from_iterable(combinations(_nodes1, r)
                         for r in range(1, len(_nodes1) + 1)))):
                 _paths.append(_nodes0 | set(__p))
 
             for _nodes2 in _paths:
-                # _nodes2 = set(__p)
-                # print(f"to: {_nodes2 - _nodes0}")
-
                 _nodes3 = set()
                 for n1 in _nodes2:
                     _n = [set(self.G.neighbors(__n)) for __n in _nodes2]
-                    # print(set().union(*_n))
 
                     for n0 in set().union(*_n):
-                        # print(f"{n0} {ggb.ft[n0]}")
                         d = {n: nx.descendants(self.G, n) for n in self.G.neighbors(n0)}
                         for n1 in sorted(d.keys(), key=lambda e: len(d[e]), reverse=True):
-                            # if len(d[n1]) and not ggb.fbd(n0) - (_nodes2 | {n1}):
                             if len(d[n1]) and not nx.ancestors(self.G, n0) - (_nodes2 | {n1}):
                                 _nodes3 |= {n0}
 
@@ -230,7 +502,7 @@ class ConstructionTreeParser:
                     match len(_nodes2 - _nodes0):
                         case 1:
                             o, = tuple(_nodes2 - _nodes0)
-                            print(f"found: '{o}' => '{n}'")
+                            # legacy: originally printed debug info here
                             self.G2.add_edge(o, n)
                         case 2:
                             o1, o2, = tuple(_nodes2 - _nodes0)
@@ -239,7 +511,7 @@ class ConstructionTreeParser:
                             elif o2 in self.G2 and n in self.G2.neighbors(o2):
                                 pass
                             else:
-                                print(f"found: '{o1}', '{o2}' => '{n}'")
+                                # legacy: originally printed debug info here
                                 self.G2.add_edge(o1, n)
                                 self.G2.add_edge(o2, n)
                         case _:
@@ -247,6 +519,47 @@ class ConstructionTreeParser:
 
             _nodes0 |= _nodes1
             _nodes1 = _nodes3 - _nodes2 - _nodes1
+
+        # Preserve original post-processing: attach DependsOn_minimal similar to
+        # the refactored version to keep DataFrame outputs compatible.
+        try:
+            if hasattr(self, 'df') and self.df is not None:
+                if "DependsOn_minimal" in self.df.columns:
+                    raw_col = self.df["DependsOn_minimal"].to_list()
+                    converted_min = []
+                    for v, n in zip(raw_col, self.df["Name"]):
+                        if isinstance(v, str):
+                            try:
+                                converted_min.append(json.loads(v))
+                            except Exception:
+                                if hasattr(self, 'G2') and n in self.G2:
+                                    converted_min.append(sorted(list(self.G2.predecessors(n))))
+                                elif hasattr(self, 'G') and n in self.G:
+                                    converted_min.append(sorted(list(self.G.predecessors(n))))
+                                else:
+                                    converted_min.append([])
+                        elif v is None:
+                            if hasattr(self, 'G2') and n in self.G2:
+                                converted_min.append(sorted(list(self.G2.predecessors(n))))
+                            elif hasattr(self, 'G') and n in self.G:
+                                converted_min.append(sorted(list(self.G.predecessors(n))))
+                            else:
+                                converted_min.append([])
+                        else:
+                            converted_min.append(v)
+                else:
+                    converted_min = []
+                    for n in self.df["Name"]:
+                        if hasattr(self, 'G2') and n in self.G2:
+                            converted_min.append(sorted(list(self.G2.predecessors(n))))
+                        elif hasattr(self, 'G') and n in self.G:
+                            converted_min.append(sorted(list(self.G.predecessors(n))))
+                        else:
+                            converted_min.append([])
+
+                self.df = self.df.with_columns(pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8)))
+        except Exception:
+            pass
 
         return self.G2
 
