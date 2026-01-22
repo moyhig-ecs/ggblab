@@ -29,8 +29,11 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 //     });
 //   }, []);
 
-    console.log("component: ", props.kernelId, props.commTarget, props.socketPath, props.wsPort);
-    window.dispatchEvent(new Event('resize'));
+    console.log("Component props: ", props.kernelId, props.commTarget, props.socketPath, props.wsPort);
+    // window.dispatchEvent(new Event('resize'));
+
+    const elementId = "ggb-element-" + (props?.kernelId || '').substring(0, 8);
+    console.log("Element ID:", elementId);
 
     var applet: any = null;
 
@@ -84,6 +87,8 @@ with connect("${wsUrl}") as ws:
          // setKernels(kernels);
             console.log("Running kernels:", kernels);
 
+            
+
             const baseUrl = PageConfig.getBaseUrl();
             const token   = PageConfig.getToken();
             console.log(`Base URL: ${baseUrl}`);
@@ -119,7 +124,7 @@ with connect("${wsUrl}") as ws:
                 })();
 
                 var resize = function() {
-                    const wrapperDiv = document.getElementById('ggb-element');
+                    const wrapperDiv = document.getElementById(elementId);
                     const parentDiv = wrapperDiv?.parentElement
                     const width  = parseInt(parentDiv?.style.width || "800");
                     const height = parseInt(parentDiv?.style.height || "600");
@@ -328,7 +333,7 @@ with connect("${wsUrl}") as ws:
             scriptTag.async = true;
             scriptTag.onload = () => {
                 const params = {
-                    id: "ggbApplet", // アプレットのID
+                    id: "ggbApplet" + (props?.kernelId || '').substring(0, 8), // アプレットのID
                     appName: "suite", // GeoGebra Classicスマートアプレットを指定
                     width: 800, // アプレットの横幅
                     height: 600, // アプレットの高さ
@@ -343,7 +348,7 @@ with connect("${wsUrl}") as ws:
                     appletOnLoad: ggbOnLoad
                 }
                 applet = new (window as any).GGBApplet(params, true);
-                applet.inject("ggb-element");
+                applet.inject(elementId);
             }
             document.body.appendChild(scriptTag);
         });
@@ -362,7 +367,7 @@ with connect("${wsUrl}") as ws:
     }, []);
 
     return (
-        <div id="ggb-element" ref={widgetRef} style={{width: "100%", height: "100%"}}></div>
+        <div id={elementId} ref={widgetRef} style={{width: "100%", height: "100%"}}></div>
     );
 };
 

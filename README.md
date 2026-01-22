@@ -99,27 +99,16 @@ For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-d
 
 This is an upstream JupyterLab/Lumino + WebKit browser engine limitation, not a ggblab-specific problem. See [JupyterLab documentation](https://jupyterlab.readthedocs.io/) and [GitHub Issues](https://github.com/moyhig-ecs/ggblab/issues) for current status.
 
-#### ⚠️ Known Display Issue: GeoGebra Applet Size Scaling on Window Resize
+#### ✅ Resolved: Applet resizing and multi-panel support
 
-**Technical Notice**: ggblab applies Applet dimensions via CSS and widget configuration. However, when the JupyterLab window is resized after the Applet is initialized, device resolution scaling can become confused, causing the displayed GeoGebra applet to appear smaller than expected.
+The display scaling issue previously observed after window or panel resize has been addressed.
 
-- **Issue**: Window resize triggers recalculation of CSS dimensions, but internal DPI/device pixel ratio tracking in GeoGebra may not sync properly with the updated layout
-- **Symptom**: GeoGebra applet appears compressed or smaller after resizing the browser window
-- **Affected configurations**: More common on high-DPI displays (2x+ device pixel ratio), including Retina displays on macOS and high-resolution external monitors
-- **Note**: This scaling issue **cannot be reset via GeoGebra API commands** (e.g., `SetCoords()`) once triggered; it is purely a rendering/layout issue
-- **Workaround**: 
-  - Refresh the browser page after resizing the JupyterLab window to reinitialize display scaling
-   - Prefer setting the GeoGebra applet `scaleContainerClass` parameter at initialization. This instructs the applet to use a dedicated container CSS class for scaling and prevents the post-init shrinkage issue on window resize. Example (conceptual):
+- Auto-resize support: the GeoGebra applet now follows JupyterLab window and panel resizes reliably. The widget uses a dedicated scaling container and listens to layout events so the canvas keeps correct DPI and dimensions after resizes.
+- Recommended parameter: the applet accepts an initialization parameter ``scaleContainerClass`` which assigns a dedicated container class used for scaling. When present (or when using the default ggblab container), the applet avoids the prior post-init shrinkage.
 
-```python
-# pass an applet parameter dict when initializing the applet
-ggb = GeoGebra()
-await ggb.init(applet_params={"scaleContainerClass": "ggblab-scale"})
-```
+- Multiple GeoGebra panels: ggblab now supports multiple GeoGebra widgets in the same JupyterLab session. Each widget maintains an independent scaling container and communication context so you can open several panels side-by-side or in separate tabs.
 
-   - Avoid frequent window resizing during interactive sessions when possible
-
-This is a display/rendering interaction between JupyterLab's layout manager and GeoGebra's canvas scaling, not a communication or functionality issue. The Applet operates correctly; only the visual presentation is affected.
+These fixes make the applet robust to layout changes and enable multi-panel workflows for teaching and exploratory use.
 
 Uninstall:
 
@@ -133,6 +122,22 @@ pip uninstall ggblab
 2. Run "React Widget" from the Command Palette (category "Tutorial") or click the Launcher tile under "example"
 3. A GeoGebra panel opens in the main area; layout restoration and launcher integration are enabled
 
+### Matching notebook panels to GeoGebra applets
+
+Each GeoGebra applet panel includes the corresponding kernel identifier (first 8 characters) in its tab title. To confirm which notebook kernel an applet belongs to, run the following in the notebook whose kernel you want to identify:
+
+```python
+import ipykernel
+import re
+# Get the kernel connection file path
+connection_file = ipykernel.connect.get_connection_file()
+# Extract the kernel UUID from the filename
+kernel_id = re.search('kernel-(.*).json', connection_file).group(1)
+print(kernel_id)
+```
+
+Match the first eight characters of the printed `kernel_id` with the characters shown in the GeoGebra panel tab to reliably pair notebook panels with their applet panels.
+
 Design note: ggblab is optimized for a side-by-side workflow—GeoGebra stays pinned in the main area while the notebook scrolls independently. Embedding the applet inside a notebook cell is possible but not recommended because it scrolls out of view during code edits.
 
 ### Quick Start (Notebook/Python)
@@ -142,7 +147,9 @@ from ggblab.ggbapplet import GeoGebra
 
 ggb = GeoGebra()
 await ggb.init()                 # init IPython Comm/socket and open the GeoGebra panel
+```
 
+```
 await ggb.command("A=(0,0)")    # create a point
 value = await ggb.function("getValue", ["A"])  # call GeoGebra API
 print(value)
