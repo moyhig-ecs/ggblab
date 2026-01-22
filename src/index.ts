@@ -1,8 +1,9 @@
 import {
   ILayoutRestorer,
   JupyterFrontEnd,
-  JupyterFrontEndPlugin
+  JupyterFrontEndPlugin,
 } from '@jupyterlab/application';
+// import { ILabShell } from '@jupyterlab/application';
 import { 
   ICommandPalette,
   MainAreaWidget,
@@ -30,7 +31,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   autoStart: true,
   requires: [ICommandPalette],
   optional: [ISettingRegistry, ILayoutRestorer, ILauncher],
-  activate: (app: JupyterFrontEnd, palette: ICommandPalette, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null, launcher: ILauncher | null) => {
+  activate: (app: JupyterFrontEnd, /* labshell: ILabShell, */ palette: ICommandPalette, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null, launcher: ILauncher | null) => {
     console.log('JupyterLab extension ggblab-0.0.1 is activated!');
 
     if (settingRegistry) {
@@ -67,6 +68,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
         app.shell.add(widget, 'main', {
           mode: args['insertMode'] || 'insert-right',
         });
+        // labshell.layoutModified.connect(() => {
+        //   console.log("Shell layout modified.");
+        //   widget.content.update();
+        // })
       }
     });
 

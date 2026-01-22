@@ -4,8 +4,8 @@ import React, { useEffect, useRef /*, useState */ } from 'react';
 
 import { ServerConnection, KernelAPI, KernelConnection, KernelManager } from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
-import { DockLayout } from '@lumino/widgets';
-//import { Message } from '@lumino/messaging';
+import { DockLayout, Widget } from '@lumino/widgets';
+// import { Message } from '@lumino/messaging';
 
 /**
  * React component for a GeoGebra.
@@ -29,7 +29,8 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 //     });
 //   }, []);
 
-    console.log(props.kernelId, props.commTarget, props.socketPath, props.wsPort);
+    console.log("component: ", props.kernelId, props.commTarget, props.socketPath, props.wsPort);
+    window.dispatchEvent(new Event('resize'));
 
     var applet: any = null;
 
@@ -127,6 +128,17 @@ with connect("${wsUrl}") as ws:
                     api.setSize(width, height);
                 }
                 window.addEventListener('resize', resize);
+                // const widgetElemnt = window.document.querySelector('div.lm-DockPanel-widget');
+                // const widgetElemnt = window.document.querySelector('div.lm-SplitPanel-child');
+                // const widgetElemnt = window.document.querySelector('div[class*="Panel"]');
+                // if (widgetElemnt) {
+                // if (widgetRef.current) {
+                //     const resizeObserver = new ResizeObserver(() => {
+                //         console.log("Panel resized.");
+                //         resize();
+                //     });
+                //     resizeObserver.observe(widgetRef.current); //widgetElemnt);
+                // }
                 resize();
 
                 const comm = kernel.createComm(props.commTarget || 'test');
@@ -324,7 +336,7 @@ with connect("${wsUrl}") as ws:
                     showAlgebraInput: false, // 入力フィールドを表示
                     showMenuBar: true, // メニューバーを表示
                     autoHeight: true,
-                    scaleContainerClass: "lm-DockPanel-widget",
+                    scaleContainerClass: "lm-Panel", // "lm-DockPanel-widget",
                  // autoWidth: false,
                  // scale: 2,
                     allowUpscale: false,
@@ -394,6 +406,30 @@ export class GeoGebraWidget extends ReactWidget {
 //     // this.dispose();
 //   }
 
+    // protected onAfterAttach(msg: Message): void{
+    //     console.log("GeoGebraWidget is now attached.");
+    //     window.dispatchEvent(new Event('resize'));
+    //     super.onAfterAttach(msg);
+    // }
+
+    // protected onAfterShow(msg: Message): void{
+    //     console.log("GeoGebraWidget is now visible.");
+    //     window.dispatchEvent(new Event('resize'));
+    //     super.onAfterShow(msg);
+    // }
+
+    protected onResize(msg: Widget.ResizeMessage): void {
+        // console.log("GeoGebraWidget resized:", msg.width, msg.height);
+        window.dispatchEvent(new Event('resize'));
+        super.onResize(msg);
+    }
+
+    // protected onFitRequest(msg: Message): void {
+    //     console.log("GeoGebraWidget fit requested.");
+    //     window.dispatchEvent(new Event('resize'));
+    //     super.onFitRequest(msg);
+    // }
+
     dispose(): void {
         console.log("GeoGebraWidget is being disposed.");
         window.dispatchEvent(new Event('close'));
@@ -401,3 +437,11 @@ export class GeoGebraWidget extends ReactWidget {
         super.dispose();
     }
 }
+
+// const dock = new DockPanel();
+// ReactWidget.attach(dock, document.body);
+// // window.addEventListener('resize', () => { dock.update(); });
+// dock.layoutModified.connect(() => { 
+//     console.log("Dock layout modified.");
+//     dock.update(); 
+// });
