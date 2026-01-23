@@ -15,29 +15,30 @@
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Supported-brightgreen)](#cloud-deployment)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/moyhig-ecs/ggblab/main?urlpath=lab/tree/examples/example.ipynb)
 
-A JupyterLab extension that displays a GeoGebra applet in a side-by-side panel while your notebook code remains editable on the side—enabling **interactive dual coding** where you manipulate geometry visually and control it from Python. Geometric visualization and computational thinking reinforce each other. Learn programming through geometric construction; reason about geometry through Python code. Grounded in cognitive science (Dual Coding Theory, Transfer of Learning), ggblab bridges visual and symbolic domains so knowledge transfers across disciplines.
+ggblab embeds a GeoGebra applet into JupyterLab and provides a compact, async Python API to send commands and call GeoGebra functions. Open a panel from the Command Palette or from Python (`GeoGebra().init()`), interact with the applet visually, and drive it programmatically from notebook code.
 
-The GeoGebra applet displays in a fixed JupyterLab panel while your notebook remains scrollable on the side—preserving continuous visual feedback as you edit code. You can manipulate geometry directly in GeoGebra (dragging points, creating objects) and simultaneously control it from Python code. This side-by-side layout enables true bidirectional interaction: change the applet, see Python respond; run Python code, watch the geometry update.
+
 
 ### Features
 
 - **Dual Coding System**: Geometric visualization + Python code in a unified workspace—students learn through both visual and symbolic representations
-- Programmatic launch via `GeoGebra().init()` (recommended), which uses ipylab to pass communication settings before widget initialization (Command ID: `ggblab:create`, label: "React Widget"). Command Palette/Launcher work only with fixed arguments and are suitable for default settings.
+ - Programmatic launch via `GeoGebra().init()` (recommended), which uses ipylab to pass communication settings before widget initialization (Command ID: `ggblab:create`, label: "React Widget"). Use the Command Palette to open a panel; the Launcher tile has been removed.
 - Call GeoGebra commands (`command`) and API functions (`function`) from Python through the `GeoGebra` helper
 - **Domain Bridge**: Construction dependencies in GeoGebra map isomorphically to variable scoping in Python—teach computational thinking through geometric structure
 - **Transfer of Learning**: Knowledge learned in geometric context transfers to computational thinking and vice versa. Dual representations strengthen understanding across both domains.
 - **ML-ready parser outputs**: The parser enriches the construction DataFrame with production-ready features (e.g. `Sequence`, `DependsOn`, `DependsOn_minimal`) that are stored as native Polars types and are directly usable for feature engineering, graph models, and inference pipelines — see [Parser outputs for ML / Inference](#parser-outputs-for-ml--inference).
-- Combined IPython Comm + Unix domain socket (POSIX) / TCP WebSocket channel for fast data exchange
-- Frontend watches add/remove/rename/clear events and dialog messages and forwards them to the kernel
-- Settings schema is wired up (no user options yet) for future configuration
-- **Single Comm target name `ggblab-comm`** and **singleton instance per kernel session**: Multiplexing via multiple targets is avoided because (1) IPython Comm cannot receive during cell execution, and (2) more fundamentally, **asyncio's concurrency model requires all concurrent `send_recv()` tasks to share a single message buffer at class scope** to safely correlate responses by message ID. See [ggblab/utils.py section 8 — Unexpected Scope Subdivision in asyncio](ggblab/utils.py) for why instance variables fail in asyncio contexts, and [architecture.md § Asyncio Design Challenges](docs/architecture.md#asyncio-design-challenges-in-jupyter) for the full technical rationale.
+ - **Communication and events**: ggblab uses a dual-channel design — an IPython Comm (`ggblab-comm`) per notebook kernel plus an out-of-band socket (Unix domain socket or WebSocket) for larger messages and event transport. The frontend watches applet events (add/remove/rename/clear and dialog messages) and forwards them to the kernel over these channels.
+
+    By design, a notebook kernel drives one side-by-side GeoGebra applet via a single Comm; other notebooks can open and drive their own applets. Controlling multiple applets from the same kernel is possible in principle but is not enabled by default—implementations will be considered if a clear use case is proposed.
+
+    (Design note: this avoids message correlation issues because IPython Comm cannot receive during cell execution and asyncio send/receive logic relies on a single shared buffer. See [ggblab/utils.py section 8](ggblab/utils.py) and [architecture.md](docs/architecture.md#asyncio-design-challenges-in-jupyter) for details.)
 
 ### Requirements
 
 - JupyterLab >= 4.0
 - Python >= 3.10
 - Browser access to https://cdn.geogebra.org/apps/deployggb.js
-- For development: Node.js and `jlpm`
+ - For development: Node.js may be useful; `jlpm` is not required for classroom installs. Follow the Development Workflow for optional build steps.
 
 ## 📦 Package Ecosystem
 
@@ -48,9 +49,10 @@ Interactive GeoGebra widgets with bidirectional Python ↔ GeoGebra communicatio
 
 **Core features (this repo):**
 - Embedded GeoGebra applet in JupyterLab
-- Bidirectional communication (IPython Comm + WebSocket)
-- Async Python API for GeoGebra commands/functions
+- Dual-channel communication: a per-kernel IPython Comm (`ggblab-comm`) plus an out-of-band socket (Unix domain socket or WebSocket)
+- Async Python API to send commands and call GeoGebra functions; frontend watches applet events and forwards them to the kernel
 - .ggb file I/O (`ggb_file`, alias `ggb_construction`)
+- Design note: one Comm per notebook kernel drives one side-by-side applet by default; other notebooks can open their own applets. Multi-applet-from-one-kernel is not enabled by default.
 
 ### **ggblab_extra** — Analysis & Educational Tools
 
@@ -69,7 +71,6 @@ and layer-based playback. The package is not required to install the core
 
 ```bash
 pip install ggblab
-jupyter labextension list | grep ggblab
 ```
 
 #### Cloud/JupyterHub Support
@@ -82,35 +83,19 @@ This JupyterLab extension supports both local installs and managed cloud deploym
 
 For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-deployment) section.
 
-#### ⚠️ Known Browser Compatibility Issue: JupyterLab on Safari and iPadOS
+#### Compatibility & Notes
 
-**Classroom Deployment Notice**: JupyterLab's UI framework (Lumino) has known compatibility issues with Safari browser and all browsers on iPadOS. This is a **JupyterLab/Lumino limitation related to WebKit browser engine restrictions, not specific to ggblab**. Affected functionality includes:
-- **Affected platforms**: 
-  - iPad running iPadOS 26 (2025) — **all browsers on iPadOS are forced to use WebKit engine, making this unsolvable at the browser level**
-  - macOS with Safari browser
-- **Issue**: JupyterLab's Lumino UI framework relies on browser APIs that WebKit (Safari) restricts or handles differently, affecting layout rendering, widget lifecycle, and frontend-to-kernel communication reliability
-- **Not affected**: JupyterLab on Chromium-based browsers (Chrome, Edge) and Firefox on macOS, Windows, and Linux remain fully supported
-- **Impact on ggblab**: ggblab's frontend widget relies on JupyterLab's Lumino framework; when Lumino itself is compromised by WebKit limitations, ggblab functionality may degrade
-- **Workaround for classrooms**: 
-  - **iPadOS**: No browser-level workaround available (all browsers use WebKit). Consider alternatives to iPad, or use iPad only for static Jupyter notebooks
-  - **macOS**: Use Chromium-based browsers (Chrome, Edge) or Firefox instead of Safari for interactive JupyterLab sessions
-  - **Recommended**: Deploy JupyterLab on macOS, Windows, or Linux systems for classroom use; these platforms have no browser restrictions and full JupyterLab/ggblab support
-  - If JupyterHub is deployed, document these limitations and restrict interactive JupyterLab access from iPad or Safari
+- Reloading the JupyterLab window reloads the GeoGebra applet and can break the live Comm/socket connection; panels are restored but the applet may need re-initialization from the kernel.
+- Launcher removed: starting the applet from the JupyterLab Launcher does not reliably establish the kernel connection. Use the Command Palette or `GeoGebra().init()` from Python.
+- `jlpm` is not required for classroom installs; prefer `pip install ggblab` for end-user deployment.
+- Safari / iPadOS: JupyterLab's Lumino UI has known limitations on WebKit-based browsers (Safari, iPadOS). Prefer Chromium-based browsers or Firefox for interactive use in classrooms.
 
-This is an upstream JupyterLab/Lumino + WebKit browser engine limitation, not a ggblab-specific problem. See [JupyterLab documentation](https://jupyterlab.readthedocs.io/) and [GitHub Issues](https://github.com/moyhig-ecs/ggblab/issues) for current status.
+#### Resolved
 
-#### ✅ Resolved: Applet resizing and multi-panel support
+- Applet resizing: the applet now responds to panel/window resizes reliably (use `scaleContainerClass` if needed).
+- Multi-panel: multiple GeoGebra widgets in the same session are supported; each widget keeps an independent communication context.
 
-The display scaling issue previously observed after window or panel resize has been addressed.
-
-- Auto-resize support: the GeoGebra applet now follows JupyterLab window and panel resizes reliably. The widget uses a dedicated scaling container and listens to layout events so the canvas keeps correct DPI and dimensions after resizes.
-- Recommended parameter: the applet accepts an initialization parameter ``scaleContainerClass`` which assigns a dedicated container class used for scaling. When present (or when using the default ggblab container), the applet avoids the prior post-init shrinkage.
-
-- Multiple GeoGebra panels: ggblab now supports multiple GeoGebra widgets in the same JupyterLab session. Each widget maintains an independent scaling container and communication context so you can open several panels side-by-side or in separate tabs.
-
-These fixes make the applet robust to layout changes and enable multi-panel workflows for teaching and exploratory use.
-
-Uninstall:
+### Uninstall
 
 ```bash
 pip uninstall ggblab
@@ -119,8 +104,8 @@ pip uninstall ggblab
 ### Quick Start (UI)
 
 1. Open JupyterLab
-2. Run "React Widget" from the Command Palette (category "Tutorial") or click the Launcher tile under "example"
-3. A GeoGebra panel opens in the main area; layout restoration and launcher integration are enabled
+2. Run "React Widget" from the Command Palette (category "Tutorial")
+3. A GeoGebra panel opens in the main area; layout restoration is enabled
 
 ### Matching notebook panels to GeoGebra applets
 

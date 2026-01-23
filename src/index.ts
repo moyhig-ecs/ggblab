@@ -3,18 +3,18 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin,
 } from '@jupyterlab/application';
-// import { ILabShell } from '@jupyterlab/application';
 import { 
   ICommandPalette,
   MainAreaWidget,
   WidgetTracker
 } from '@jupyterlab/apputils';
-import { ILauncher } from '@jupyterlab/launcher';
+// ILauncher removed: launcher integration is not used in this build
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 //import { DockLayout } from '@lumino/widgets';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
+
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
 
@@ -32,8 +32,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'A JupyterLab extension.',
   autoStart: true,
   requires: [ICommandPalette],
-  optional: [ISettingRegistry, ILayoutRestorer, ILauncher],
-  activate: (app: JupyterFrontEnd, /* labshell: ILabShell, */ palette: ICommandPalette, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null, launcher: ILauncher | null) => {
+  optional: [ISettingRegistry, ILayoutRestorer],
+  activate: (app: JupyterFrontEnd, palette: ICommandPalette, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null) => {
     console.log(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
     if (settingRegistry) {
@@ -49,13 +49,17 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const { commands } = app;
 
+    // Tracker for created GeoGebra widgets so they can be restored after reload
+    const tracker = new WidgetTracker<MainAreaWidget<GeoGebraWidget>>({
+      namespace: "ggblab",
+    });
 
     const command = CommandIDs.create;
     commands.addCommand(command, {
       caption: 'Create a new React Widget',
       label: 'React Widget',
       icon: args => (args['isPalette'] ? undefined : reactIcon),
-      execute: (args: any) => {
+      execute: async (args: any) => {
         console.log('socketPath:', args['socketPath']);
         const content = new GeoGebraWidget({
           kernelId: args['kernelId'] || '', 
@@ -65,15 +69,22 @@ const plugin: JupyterFrontEndPlugin<void> = {
           wsPort: args['wsPort'] || 8888,
         });
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
+        // make widget id unique so restorer can identify it later
+        const idPart = (args['kernelId'] || String(Date.now())).substring(0, 24);
+        widget.id = `ggblab-${idPart}`;
         widget.title.label = 'GeoGebra (' + (args['kernelId'] || '').substring(0, 8) + ')';
         widget.title.icon = reactIcon;
+
+        // register with tracker so state will be saved for restoration
+        try {
+          await tracker.add(widget);
+        } catch (e) {
+          console.warn('Failed to add widget to tracker:', e);
+        }
+
         app.shell.add(widget, 'main', {
           mode: args['insertMode'] || 'insert-right',
         });
-        // labshell.layoutModified.connect(() => {
-        //   console.log("Shell layout modified.");
-        //   widget.content.update();
-        // })
       }
     });
 
@@ -82,24 +93,21 @@ const plugin: JupyterFrontEndPlugin<void> = {
       category: "Tutorial",
     });
 
-    let tracker = new WidgetTracker<MainAreaWidget<GeoGebraWidget>>({
-      namespace: "ggblab",
-    })
     if (restorer) {
       restorer.restore(tracker, {
         command,
-        name: () => "ggblab",
-      })
+        // use widget.id as the saved name so it is unique per widget
+        name: widget => widget.id,
+        // save kernelId reconstructed from widget.id (strip prefix)
+        args: widget => {
+          const id = widget.id || '';
+          const kernelId = id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '';
+          return { kernelId } as any;
+        }
+      });
     }
 
-    if (launcher) {
-      launcher.add({
-        command,
-        category: "example",
-        rank: 1,
-      })
-    }
-
+    // Launcher integration removed: no launcher item will be added.
   }
 };
 

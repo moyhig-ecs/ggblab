@@ -7,6 +7,8 @@ import { PageConfig } from '@jupyterlab/coreutils';
 import { DockLayout, Widget } from '@lumino/widgets';
 // import { Message } from '@lumino/messaging';
 
+// Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
+
 /**
  * React component for a GeoGebra.
  *
@@ -17,6 +19,8 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
     const widgetRef = useRef<HTMLDivElement>(null);
  // const [size, setSize] = useState<{width: number; height: number}>({width: 800, height: 600});
 
+// // Listen to resize events to update size state
+// // but not working as expected in Lumino
 //   useEffect(() => {
 //     window.addEventListener('resize', () => {
 //     if (widgetRef.current) {
@@ -35,7 +39,7 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
     const elementId = "ggb-element-" + (props?.kernelId || '').substring(0, 8);
     console.log("Element ID:", elementId);
 
-    var applet: any = null;
+    let applet: any = null;
 
     function isArrayOfArrays(value: any): boolean {
         return Array.isArray(value) && value.every(subArray => Array.isArray(subArray));
@@ -81,13 +85,22 @@ with connect("${wsUrl}") as ws:
     }
 
     useEffect(() => {
+        // Track resources created during effect so we can clean them up precisely
+        let kernel2: any = null;
+        let kernelManager: any = null;
+        let kernelConn: any = null;
+        let comm: any = null;
+        let observer: MutationObserver | null = null;
+        let resizeHandler: (() => void) | null = null;
+        let closeHandler: (() => void) | null = null;
+        let metaViewport: HTMLMetaElement | null = null;
+        let scriptTag: HTMLScriptElement | null = null;
+
         (async () => {
             return await KernelAPI.listRunning();
         })().then(async (kernels) => {
          // setKernels(kernels);
             console.log("Running kernels:", kernels);
-
-            
 
             const baseUrl = PageConfig.getBaseUrl();
             const token   = PageConfig.getToken();
@@ -99,19 +112,19 @@ with connect("${wsUrl}") as ws:
                 appendToken: true,
             });
 
-            const kernelManager = new KernelManager({ serverSettings: settings });
-            const kernel2 = await kernelManager.startNew({ name: 'python3' });
+            kernelManager = new KernelManager({ serverSettings: settings });
+            kernel2 = await kernelManager.startNew({ name: 'python3' });
             console.log("Started new kernel:", kernel2, props.kernelId);
             await kernel2.requestExecute({ code: `from websockets.sync.client import unix_connect, connect` }).done;
 
             const wsUrl = `ws://localhost:${props.wsPort}/`;
             const socketPath = props.socketPath || null;
 
-            const kernel = new KernelConnection({
+            kernelConn = new KernelConnection({
                 model: { name: 'python3', id: props.kernelId || kernels[0]['id']},
                 serverSettings: settings,
             });
-            console.log("Connected to kernel:", kernel);
+            console.log("Connected to kernel:", kernelConn);
 
             async function ggbOnLoad(api: any) {
                 console.log("GeoGebra applet loaded:", api);
@@ -123,16 +136,19 @@ with connect("${wsUrl}") as ws:
                     await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
                 })();
 
-                var resize = function() {
+                resizeHandler = function() {
                     const wrapperDiv = document.getElementById(elementId);
                     const parentDiv = wrapperDiv?.parentElement
                     const width  = parseInt(parentDiv?.style.width || "800");
                     const height = parseInt(parentDiv?.style.height || "600");
-                 // console.log("Window resized:", width, height);
                     api.recalculateEnvironments()
                     api.setSize(width, height);
                 }
-                window.addEventListener('resize', resize);
+                window.addEventListener('resize', resizeHandler);
+                resizeHandler();
+
+                // // Observe size changes of the widget's DOM element
+                // // but not working as expected in Lumino
                 // const widgetElemnt = window.document.querySelector('div.lm-DockPanel-widget');
                 // const widgetElemnt = window.document.querySelector('div.lm-SplitPanel-child');
                 // const widgetElemnt = window.document.querySelector('div[class*="Panel"]');
@@ -144,24 +160,24 @@ with connect("${wsUrl}") as ws:
                 //     });
                 //     resizeObserver.observe(widgetRef.current); //widgetElemnt);
                 // }
-                resize();
 
-                const comm = kernel.createComm(props.commTarget || 'test');
+                comm = kernelConn.createComm(props.commTarget || 'test');
                 comm.open('HELO from GGB').done;
              // comm.send('HELO2').done
 
              // kernel.registerCommTarget('test', (comm, commMsg) => {
              // console.log("Comm opened from kernel with message:", commMsg['content']['data']);
                         
-                addEventListener('close', () => {
-                 // comm.close().done;
-                 // kernel.shutdown().catch(err => console.error(err));
-                    kernel2.shutdown().catch(err => console.error(err));
+                closeHandler = () => {
+                    // Attempt to close comm and shutdown helper kernel
+                    try { comm?.close?.(); } catch (e) { console.error(e); }
+                    kernel2?.shutdown().catch((err: any) => console.error(err));
                     console.log("Kernel and comm closed.");
-                    window.removeEventListener('resize', resize);
-                });
+                    if (resizeHandler) window.removeEventListener('resize', resizeHandler);
+                };
+                window.addEventListener('close', closeHandler);
 
-                comm.onMsg = async (msg) => {
+                comm.onMsg = async (msg: any) => {
                     console.log("Message received from server:", msg['content']['data']);
 
                     const command = JSON.parse(msg.content.data as any);
@@ -169,7 +185,7 @@ with connect("${wsUrl}") as ws:
                     
                     var rmsg: any = null;
                     if (command.type === "command") {
-                        var label = api.evalCommandGetLabels(command.payload); // GeoGebraにコマンドを適用
+                        var label = api.evalCommandGetLabels(command.payload);
                         
                         rmsg = JSON.stringify({
                             "type": "created",
@@ -180,9 +196,7 @@ with connect("${wsUrl}") as ws:
                         var apiName = command.payload.name;
                         console.log(apiName);
                         var value: any[] = [];
-                        // if (command.payload.args == null) {
-                        //     value = api[apiName]();
-                        // } else 
+
                         {
                             var args = command.payload.args;
                             value = [];
@@ -222,30 +236,11 @@ with connect("${wsUrl}") as ws:
                     await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
                 }
 
-                // var clientListener = function(data: any) {
-                //  // console.log("Add listener triggered for:", data);
-                //     var msg = {
-                //         "type": "add",
-                //         "payload": data,
-                //     }
-                //     console.log("Add detected:", JSON.stringify(msg));
-                //     comm.send(JSON.stringify(msg));
-                // }
-                // api.registerClientListener(clientListener);
-
                 var addListener = async function(data: any) {
                  // console.log("Add listener triggered for:", data);
                     var msg = {
                         "type": "add",
-                        "payload": data, // {
-                            // "label": data, 
-                            // "details": {
-                            //     "type": api.getObjectType(data),
-                            //     "commandString": api.getCommandString(data, false),
-                            //     "visible": api.getVisible(data),
-                            //     "layer": api.getLayer(data),
-                            // }
-                        // }
+                        "payload": data, 
                     }
                     // console.log("Add detected:", JSON.stringify(msg));
                     await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
@@ -297,12 +292,12 @@ with connect("${wsUrl}") as ws:
                 // }
                 // api.registerClearListener(clientListener);
 
-                const observer = new MutationObserver((mutations) => {
+                observer = new MutationObserver((mutations) => {
                     mutations.forEach((mutation) => {
                         mutation.addedNodes.forEach((node) => {
                             try {
                                 (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach((n) => {
-                                 // console.log(n.textContent); 'Error'などのタイトルを検出
+                                 // console.log(n.textContent); detect titles like 'Error'
                                     ((node as HTMLElement).querySelector('div.dialogContent') as HTMLElement)
                                         .querySelectorAll(`[class$='Label']`).forEach(async (n2) => {
                                             // console.log(n2.textContent);
@@ -323,46 +318,115 @@ with connect("${wsUrl}") as ws:
                 observer.observe(document.body, { childList: true, subtree: true });  
             }    
 
-            const metaViewport = document.createElement('meta');
-            metaViewport.name = "viewport";
-            metaViewport.content = "width=device-width, initial-scale=1";
-            document.head.appendChild(metaViewport);
+            // Avoid duplicate meta/script inserts: reuse if already present
+            const existingMeta = document.getElementById('ggblab-viewport-meta') as HTMLMetaElement | null;
+            if (existingMeta) {
+                metaViewport = existingMeta;
+            } else {
+                metaViewport = document.createElement('meta');
+                metaViewport.id = 'ggblab-viewport-meta';
+                metaViewport.name = "viewport";
+                metaViewport.content = "width=device-width, initial-scale=1";
+                document.head.appendChild(metaViewport);
+            }
 
-            const scriptTag = document.createElement('script');
-            scriptTag.src = 'https://cdn.geogebra.org/apps/deployggb.js';
-            scriptTag.async = true;
-            scriptTag.onload = () => {
+            const existingScript = document.getElementById('ggblab-deployggb-script') as HTMLScriptElement | null;
+            const createApplet = () => {
                 const params = {
-                    id: "ggbApplet" + (props?.kernelId || '').substring(0, 8), // アプレットのID
-                    appName: "suite", // GeoGebra Classicスマートアプレットを指定
-                    width: 800, // アプレットの横幅
-                    height: 600, // アプレットの高さ
-                    showToolBar: true, // ツールバーを表示
-                    showAlgebraInput: false, // 入力フィールドを表示
-                    showMenuBar: true, // メニューバーを表示
+                    id: "ggbApplet" + (props?.kernelId || '').substring(0, 8), // applet ID
+                    appName: "suite", // specify GeoGebra Classic smart applet
+                    width: 800, // applet width
+                    height: 600, // applet height
+                    showToolBar: true, // show the toolbar
+                    showAlgebraInput: false, // show algebra input field
+                    showMenuBar: true, // show the menu bar
                     autoHeight: true,
                     scaleContainerClass: "lm-Panel", // "lm-DockPanel-widget",
-                 // autoWidth: false,
-                 // scale: 2,
+                    // autoWidth: false,
+                    // scale: 2,
                     allowUpscale: false,
                     appletOnLoad: ggbOnLoad
                 }
                 applet = new (window as any).GGBApplet(params, true);
                 applet.inject(elementId);
+            };
+
+            if (existingScript) {
+                scriptTag = existingScript;
+                // If script already loaded and GGBApplet is available, instantiate immediately
+                if ((window as any).GGBApplet) {
+                    createApplet();
+                } else {
+                    // Otherwise ensure we call createApplet once it loads
+                    scriptTag.addEventListener('load', createApplet, { once: true });
+                }
+            } else {
+                scriptTag = document.createElement('script');
+                scriptTag.id = 'ggblab-deployggb-script';
+                scriptTag.src = 'https://cdn.geogebra.org/apps/deployggb.js';
+                scriptTag.async = true;
+                scriptTag.onload = createApplet;
+                document.body.appendChild(scriptTag);
             }
-            document.body.appendChild(scriptTag);
         });
 
         return () => {
-         // コンポーネントのアンマウント時にスクリプトとアプレットをクリーンアップ
-         // document.head.removeChild(scriptTag);
-            if (applet) {
-                console.log("Cleaning up GeoGebra applet.");
-             // delete (window as any).applet;
-                (window as any).ggbApplet.remove();
-                applet = null;
-                delete (window as any).GGBApplet;
+            // Remove resize listener
+            if (resizeHandler) {
+                window.removeEventListener('resize', resizeHandler);
+                resizeHandler = null;
             }
+            // Remove close listener
+            if (closeHandler) {
+                window.removeEventListener('close', closeHandler);
+                closeHandler = null;
+            }
+            // Disconnect mutation observer
+            if (observer) {
+                try { observer.disconnect(); } catch (e) { console.error(e); }
+                observer = null;
+            }
+            // Remove injected meta tag
+            if (metaViewport && metaViewport.parentNode) {
+                metaViewport.parentNode.removeChild(metaViewport);
+                metaViewport = null;
+            }
+            // Remove injected script tag
+            if (scriptTag && scriptTag.parentNode) {
+                scriptTag.parentNode.removeChild(scriptTag);
+                scriptTag = null;
+            }
+            // Clean up GeoGebra applet
+            if (applet) {
+                try {
+                    console.log("Cleaning up GeoGebra applet.");
+                    (window as any).ggbApplet.remove();
+                } catch (e) {
+                    console.error(e);
+                }
+                applet = null;
+                try { delete (window as any).GGBApplet; } catch {}
+            }
+
+            // Close comm and shutdown helper kernel asynchronously
+            (async () => {
+                try {
+                    if (comm) {
+                        try { comm.close?.(); } catch (e) { console.error(e); }
+                        comm = null;
+                    }
+                    if (kernel2) {
+                        await kernel2.shutdown();
+                        kernel2 = null;
+                    }
+                    if (kernelManager) {
+                        try { await kernelManager.shutdown?.(); } catch (e) { /* ignore */ }
+                        kernelManager = null;
+                    }
+                } catch (e) {
+                    console.error('Error during cleanup:', e);
+                }
+            })();
         };
     }, []);
 
@@ -383,9 +447,7 @@ interface GGAWidgetProps {
  * A GeoGebra Lumino Widget that wraps a GeoGebraComponent.
  */
 export class GeoGebraWidget extends ReactWidget {
- // private kernelId: string;
- // private commTarget: string;
- // private socketPath: string;
+
     private props: GGAWidgetProps | undefined;
 
     /**
@@ -395,46 +457,22 @@ export class GeoGebraWidget extends ReactWidget {
         super();
         this.addClass('jp-ggblabWidget');
         this.props = props;
-     // this.kernelId = props?.kernelId || '';
-     // this.commTarget = props?.commTarget || '';
-     // this.wsPort = props?.wsPort || 0;
-     // this.socketPath = props?.socketPath || '';
     }
 
     render(): JSX.Element {
         return <GGAComponent kernelId={this.props?.kernelId} commTarget={this.props?.commTarget} wsPort={this.props?.wsPort} socketPath={this.props?.socketPath} />;
     }
 
-//   protected onCloseRequest(msg: Message): void {
-//     console.log("GeoGebraWidget is being closed.");
-//     super.onCloseRequest(msg);
-//     // this.dispose();
-//   }
-
-    // protected onAfterAttach(msg: Message): void{
-    //     console.log("GeoGebraWidget is now attached.");
-    //     window.dispatchEvent(new Event('resize'));
-    //     super.onAfterAttach(msg);
-    // }
-
-    // protected onAfterShow(msg: Message): void{
-    //     console.log("GeoGebraWidget is now visible.");
-    //     window.dispatchEvent(new Event('resize'));
-    //     super.onAfterShow(msg);
-    // }
-
+    // only onResize is responsible for size changes in Lumino,
+    // but onAfterAttach and onAfterShow and onFitRequest may also be relevant in some cases.
     protected onResize(msg: Widget.ResizeMessage): void {
         // console.log("GeoGebraWidget resized:", msg.width, msg.height);
         window.dispatchEvent(new Event('resize'));
         super.onResize(msg);
     }
 
-    // protected onFitRequest(msg: Message): void {
-    //     console.log("GeoGebraWidget fit requested.");
-    //     window.dispatchEvent(new Event('resize'));
-    //     super.onFitRequest(msg);
-    // }
-
+    // Dispose resources when the widget is disposed,
+    // onCloseRequest is not always called.
     dispose(): void {
         console.log("GeoGebraWidget is being disposed.");
         window.dispatchEvent(new Event('close'));
@@ -443,6 +481,8 @@ export class GeoGebraWidget extends ReactWidget {
     }
 }
 
+// // Example of attaching the GeoGebraWidget to a DockPanel
+// // but commented out to avoid automatic execution.
 // const dock = new DockPanel();
 // ReactWidget.attach(dock, document.body);
 // // window.addEventListener('resize', () => { dock.update(); });
