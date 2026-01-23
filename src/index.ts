@@ -1,13 +1,9 @@
 import {
   ILayoutRestorer,
   JupyterFrontEnd,
-  JupyterFrontEndPlugin,
+  JupyterFrontEndPlugin
 } from '@jupyterlab/application';
-import { 
-  ICommandPalette,
-  MainAreaWidget,
-  WidgetTracker
-} from '@jupyterlab/apputils';
+import { MainAreaWidget, WidgetTracker } from '@jupyterlab/apputils';
 // ILauncher removed: launcher integration is not used in this build
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 //import { DockLayout } from '@lumino/widgets';
@@ -31,9 +27,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
   id: 'ggblab:plugin',
   description: 'A JupyterLab extension.',
   autoStart: true,
-  requires: [ICommandPalette],
   optional: [ISettingRegistry, ILayoutRestorer],
-  activate: (app: JupyterFrontEnd, palette: ICommandPalette, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null) => {
+  activate: (
+    app: JupyterFrontEnd,
+    settingRegistry: ISettingRegistry | null,
+    restorer: ILayoutRestorer | null
+  ) => {
     console.log(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
     if (settingRegistry) {
@@ -51,7 +50,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     // Tracker for created GeoGebra widgets so they can be restored after reload
     const tracker = new WidgetTracker<MainAreaWidget<GeoGebraWidget>>({
-      namespace: "ggblab",
+      namespace: 'ggblab-tracker'
     });
 
     const command = CommandIDs.create;
@@ -62,17 +61,17 @@ const plugin: JupyterFrontEndPlugin<void> = {
       execute: async (args: any) => {
         console.log('socketPath:', args['socketPath']);
         const content = new GeoGebraWidget({
-          kernelId: args['kernelId'] || '', 
-          commTarget: args['commTarget'] || '', 
+          kernelId: args['kernelId'] || '',
+          commTarget: args['commTarget'] || '',
           insertMode: args['insertMode'] || 'split-right',
           socketPath: args['socketPath'] || '',
-          wsPort: args['wsPort'] || 8888,
+          wsPort: args['wsPort'] || 8888
         });
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
         // make widget id unique so restorer can identify it later
-        const idPart = (args['kernelId'] || String(Date.now())).substring(0, 24);
+        const idPart = (args['kernelId'] || '').substring(0, 8);
         widget.id = `ggblab-${idPart}`;
-        widget.title.label = 'GeoGebra (' + (args['kernelId'] || '').substring(0, 8) + ')';
+        widget.title.label = `GeoGebra (${idPart})`;
         widget.title.icon = reactIcon;
 
         // register with tracker so state will be saved for restoration
@@ -83,26 +82,39 @@ const plugin: JupyterFrontEndPlugin<void> = {
         }
 
         app.shell.add(widget, 'main', {
-          mode: args['insertMode'] || 'insert-right',
+          mode: args['insertMode'] || 'split-right'
         });
       }
     });
 
-    palette.addItem({
-      command,
-      category: "Tutorial",
-    });
+    // palette.addItem({
+    //   command,
+    //   category: "Tutorial",
+    // });
 
     if (restorer) {
       restorer.restore(tracker, {
         command,
         // use widget.id as the saved name so it is unique per widget
         name: widget => widget.id,
-        // save kernelId reconstructed from widget.id (strip prefix)
+        // reconstruct args (kernelId) from the saved widget id so the
+        // command can recreate the widget with the same kernel association
         args: widget => {
+          // Prefer to read the original creation props from the widget content
+          const content: any = (widget && (widget as any).content) || {};
+          const p = content.props || {};
+          // Fallback to reconstructing kernelId from the widget id if not present
           const id = widget.id || '';
-          const kernelId = id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '';
-          return { kernelId } as any;
+          const kernelId =
+            p.kernelId ||
+            (id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '');
+          return {
+            kernelId,
+            commTarget: p.commTarget || '',
+            socketPath: p.socketPath || '',
+            wsPort: p.wsPort || 8888,
+            insertMode: p.insertMode || 'split-right'
+          } as any;
         }
       });
     }

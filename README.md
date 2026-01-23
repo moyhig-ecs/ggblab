@@ -86,6 +86,7 @@ analysis and ML workflows.
 
 - Side-by-side GeoGebra applet embedded in JupyterLab.
 - Async Python API: send algebraic commands and call GeoGebra functions from notebooks.
+ - Async Python API: send algebraic commands and call GeoGebra functions from notebooks.
 - Dual-channel communication: IPython Comm for normal messages and an optional
    out-of-band socket for responsiveness during cell execution.
 - Construction I/O: load/save `.ggb` (base64 zip), XML, JSON, and normalized DataFrame
@@ -356,6 +357,14 @@ scene development docs in `ggblab_extra/docs/` for full usage and examples.
 - **Frontend** ([src/index.ts](src/index.ts), [src/widget.tsx](src/widget.tsx)): Registers the plugin `ggblab:plugin` and command `ggblab:create`. Creates a `GeoGebraWidget` ReactWidget that loads GeoGebra from the CDN, opens an IPython Comm target (default `test3`), executes commands/functions, and mirrors add/remove/rename/clear events plus dialog notices back to the kernel. Results can also be forwarded over the external socket when provided.
 - **Backend** ([ggblab/ggbapplet.py](ggblab/ggbapplet.py), [ggblab/comm.py](ggblab/comm.py), [ggblab/file.py](ggblab/file.py)): Initializes a singleton `GeoGebra`, spins up a Unix-socket/TCP WebSocket server, registers the IPython Comm target, and drives the frontend command via ipylab. `ggb_comm.send_recv` waits for responses; `ggb_file` (alias `ggb_construction`) loads multiple file formats (`.ggb`, zip, JSON, XML) and provides `geogebra_xml` + `ggb_schema` for converting construction XML to schema objects. Advanced parsing and verification live in `ggblab_extra`.
 - **Styles** ([style/index.css](style/index.css), [style/base.css](style/base.css)): Ensure the embedded applet fills the available area.
+
+**Browser reload & state restoration**
+
+- What happens: A full browser reload or JupyterLab restart destroys the front-end JavaScript context (DOM and in-memory applet instances).
+
+- Why: The browser resets the JS runtime; Lumino's `ILayoutRestorer` recreates widgets by invoking the saved command, but it does not preserve prior in-memory objects.
+
+- Consequence: Kernel connections (`kernelId`) persist on the server, but GeoGebra applets are re-created in the client. A dispose→create cycle on reload is unavoidable.
 
 #### Communication Architecture
 

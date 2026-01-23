@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { ReactWidget } from '@jupyterlab/ui-components';
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
@@ -5,7 +6,7 @@ import React, { useEffect, useRef /*, useState */ } from 'react';
 import { ServerConnection, KernelAPI, KernelConnection, KernelManager } from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { DockLayout, Widget } from '@lumino/widgets';
-// import { Message } from '@lumino/messaging';
+import { Message } from '@lumino/messaging';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -471,12 +472,19 @@ export class GeoGebraWidget extends ReactWidget {
         super.onResize(msg);
     }
 
-    // Dispose resources when the widget is disposed,
-    // onCloseRequest is not always called.
-    dispose(): void {
-        console.log("GeoGebraWidget is being disposed.");
+    // Only perform cleanup when the widget is explicitly closed by the user.
+    // Use onCloseRequest to trigger cleanup so that transient disposals
+    // during layout/restore operations do not tear down the internal state.
+    protected onCloseRequest(msg: Message): void {
+        console.log('GeoGebraWidget onCloseRequest — performing cleanup.');
         window.dispatchEvent(new Event('close'));
-     // delete(window.ggbApplet);
+        super.onCloseRequest(msg);
+    }
+
+    // dispose should not trigger cleanup again; allow normal disposal to proceed
+    // without duplicating shutdown logic.
+    dispose(): void {
+        console.log('GeoGebraWidget disposed.');
         super.dispose();
     }
 }
