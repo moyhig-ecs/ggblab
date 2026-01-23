@@ -59,226 +59,146 @@ Interactive GeoGebra widgets with bidirectional Python ↔ GeoGebra communicatio
 > **Note**: The optional `ggblab_extra` package (import name `ggblab_extra`) is
 > currently undergoing restructuring and will be republished soon as a standalone
 > package or distribution. The core `ggblab` package remains lightweight; import
-> the optional helpers with `import ggblab_extra` when you need advanced parsing
-> and analysis features.
+# ggblab
 
-Advanced parsing, verification, and curriculum tooling live in the optional
-`ggblab_extra` package. It provides construction parsing, scene verification,
-and layer-based playback. The package is not required to install the core
-`ggblab` extension and may be published separately on PyPI in the future.
+[![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
+[![Python](https://img.shields.io/pypi/pyversions/ggblab.svg)](https://pypi.org/project/ggblab/)
+[![Tests](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml/badge.svg)](https://github.com/moyhig-ecs/ggblab/actions/workflows/tests.yml)
+[![Documentation Status](https://readthedocs.org/projects/ggblab/badge/?version=latest)](https://ggblab.readthedocs.io/en/latest/?badge=latest)
 
-### Installation
+Compact overview and quick guide for contributors and users.
+
+ggblab embeds a GeoGebra applet into JupyterLab and provides an asynchronous Python API to
+drive the applet programmatically from notebooks. It is intended for teaching geometry
+side-by-side with Python and for producing reproducible construction datasets useful for
+analysis and ML workflows.
+
+--
+
+## Quick Links
+
+- Documentation: https://ggblab.readthedocs.io/
+- Examples & notebooks: [examples/](examples/)
+- Demo (Binder): see [binder/README.md](binder/README.md)
+- Blog / News: [blog/README.md](blog/README.md)
+
+## Key Features
+
+- Side-by-side GeoGebra applet embedded in JupyterLab.
+- Async Python API: send algebraic commands and call GeoGebra functions from notebooks.
+- Dual-channel communication: IPython Comm for normal messages and an optional
+   out-of-band socket for responsiveness during cell execution.
+- Construction I/O: load/save `.ggb` (base64 zip), XML, JSON, and normalized DataFrame
+   outputs (Polars) for analysis and ML.
+- Rich error-handling and pre-flight validation to catch many issues before execution.
+
+## Installation
+
+Recommended (end users / JupyterHub):
 
 ```bash
 pip install ggblab
 ```
 
-#### Cloud/JupyterHub Support
-
-This JupyterLab extension supports both local installs and managed cloud deployments:
-
-- Managed JupyterHub on Kubernetes: install via `pip install ggblab` only — no manual labextension build steps required.
-- All communication concerns are addressed and validated in cloud environments (IPython Comm + out-of-band sockets).
-- End users on JupyterHub can use the extension immediately after `pip install`; developers can follow the Development Workflow for local builds.
-
-For deployment guidance and troubleshooting, see the [Cloud Deployment](#cloud-deployment) section.
-
-#### Compatibility & Notes
-
-- Reloading the JupyterLab window reloads the GeoGebra applet and can break the live Comm/socket connection; panels are restored but the applet may need re-initialization from the kernel.
-- Launcher removed: starting the applet from the JupyterLab Launcher does not reliably establish the kernel connection. Use the Command Palette or `GeoGebra().init()` from Python.
-- `jlpm` is not required for classroom installs; prefer `pip install ggblab` for end-user deployment.
-- Safari / iPadOS: JupyterLab's Lumino UI has known limitations on WebKit-based browsers (Safari, iPadOS). Prefer Chromium-based browsers or Firefox for interactive use in classrooms.
-
-#### Resolved
-
-- Applet resizing: the applet now responds to panel/window resizes reliably (use `scaleContainerClass` if needed).
-- Multi-panel: multiple GeoGebra widgets in the same session are supported; each widget keeps an independent communication context.
-
-### Uninstall
+Development (edit & test locally):
 
 ```bash
-pip uninstall ggblab
+pip install -e ".[dev]"
+jupyter labextension develop . --overwrite
+jlpm build   # optional: only needed for frontend changes
+jupyter lab
 ```
 
-### Quick Start (UI)
+Notes:
+- For managed JupyterHub deployments, `pip install ggblab` is usually sufficient —
+   no manual `jlpm` steps are required.
 
-1. Open JupyterLab
-2. Run "React Widget" from the Command Palette (category "Tutorial")
-3. A GeoGebra panel opens in the main area; layout restoration is enabled
+## Quick Start (Python)
 
-### Matching notebook panels to GeoGebra applets
-
-Each GeoGebra applet panel includes the corresponding kernel identifier (first 8 characters) in its tab title. To confirm which notebook kernel an applet belongs to, run the following in the notebook whose kernel you want to identify:
-
-```python
-import ipykernel
-import re
-# Get the kernel connection file path
-connection_file = ipykernel.connect.get_connection_file()
-# Extract the kernel UUID from the filename
-kernel_id = re.search('kernel-(.*).json', connection_file).group(1)
-print(kernel_id)
-```
-
-Match the first eight characters of the printed `kernel_id` with the characters shown in the GeoGebra panel tab to reliably pair notebook panels with their applet panels.
-
-Design note: ggblab is optimized for a side-by-side workflow—GeoGebra stays pinned in the main area while the notebook scrolls independently. Embedding the applet inside a notebook cell is possible but not recommended because it scrolls out of view during code edits.
-
-### Quick Start (Notebook/Python)
+In a notebook cell:
 
 ```python
 from ggblab.ggbapplet import GeoGebra
 
 ggb = GeoGebra()
-await ggb.init()                 # init IPython Comm/socket and open the GeoGebra panel
+await ggb.init()    # initialize comm/socket and open the applet panel
+
+await ggb.command("A = (0,0)")
+val = await ggb.function("getValue", ["A"])
+print(val)
 ```
 
-```
-await ggb.command("A=(0,0)")    # create a point
-value = await ggb.function("getValue", ["A"])  # call GeoGebra API
-print(value)
-```
+Tips:
+- Run `await ggb.init()` in its own cell and wait for completion before sending commands.
+- Each GeoGebra panel shows the kernel id (first 8 chars) to help match notebooks↔applets.
 
-`init()` fetches the current kernel ID, starts the IPython Comm/WebSocket server, and triggers the frontend command `ggblab:create` to open the panel. `command` sends GeoGebra commands; `function` calls GeoGebra API names (single name or list) and returns the result asynchronously.
+## Examples
 
-⚠️ Important: run `await ggb.init()` in its own notebook cell. If you call `ggb.init()` and also perform `send_recv`/`command`/`function` calls in the same cell, the Comm/socket may not be fully established and `send_recv` can fail or timeout. Execute the init cell first, wait for it to complete, then run subsequent cells that send commands to the applet.
+- See [examples/example.ipynb](examples/example.ipynb) for a basic demo.
+- `ggblab_extra` contains advanced parsing and scene-development tools: see
+   [ggblab_extra/README.md](./ggblab_extra/README.md).
 
-### Error Handling — Comprehensive Exception Hierarchy
+### Plotting: Matplotlib vs GeoGebra
 
-ggblab implements a **sophisticated, multi-layer error handling system** that stands out as a remarkable achievement in transcending GeoGebra's limitations:
+If you use SymPy to generate numeric samples, you can render them either with
+classic Python plotting libraries (e.g. Matplotlib) or with an interactive
+GeoGebra panel. See [examples/eg7_plotting.ipynb](examples/eg7_plotting.ipynb)
+for a short English example that:
 
-**The Challenge**: GeoGebra provides no formal Error API or machine-readable error schema. Error information comes purely as asynchronous event messages from the applet.
+- Shows how to sample a SymPy expression with `lambdify` and `numpy.linspace`.
+- Renders the same samples with Matplotlib (static) and with GeoGebra (interactive
+   `LineGraph` or list-based import).
+- Demonstrates capturing a GeoGebra PNG via `getPNGBase64` and displaying it
+   inside the notebook.
 
-**The Breakthrough**: Rather than depending on missing GeoGebra APIs, ggblab implements a **schema-free, observation-driven error capture system** that:
-1. **Validates pre-flight** (syntax, semantics) before GeoGebra ever sees the command
-2. **Captures runtime errors asynchronously** via the dual-channel architecture (out-of-band socket)
-3. **Consolidates multiple error events** automatically
-4. **Distinguishes error sources** (pre-flight vs. runtime) through a rich exception hierarchy
+This comparison is useful for deciding whether to prioritize static publication
+quality (Matplotlib) or interactive student exploration (GeoGebra).
 
-**Result**: ggblab's error handling is **more robust and flexible than GeoGebra's native capabilities**.
+## Development & Testing
 
-```python
-from ggblab.errors import GeoGebraError, GeoGebraAppletError
+Run Python tests:
 
-# Pre-flight validation errors (caught before execution)
-try:
-    ggb.check_syntax = True
-    ggb.check_semantics = True
-    await ggb.command("Circle(A, B)")
-except GeoGebraSyntaxError as e:
-    print(f"Syntax error: {e.command}")
-except GeoGebraSemanticsError as e:
-    print(f"Missing objects: {e.missing_objects}")
-
-# Runtime errors from GeoGebra applet (caught after execution)
-try:
-    await ggb.command("Unbalanced(")
-except GeoGebraAppletError as e:
-    print(f"Applet error: {e.error_message}")
-
-# Catch all GeoGebra errors
-try:
-    await ggb.command("...")
-except GeoGebraError:
-    # Handles all GeoGebra-related exceptions
-    pass
+```bash
+pip install -e ".[dev]" pytest pytest-cov
+pytest tests/ -v
 ```
 
-**Error Types:**
-- **GeoGebraSyntaxError**: Command cannot be tokenized (pre-flight)
-- **GeoGebraSemanticsError**: Referenced objects don't exist in applet (pre-flight)
-- **GeoGebraAppletError**: GeoGebra applet produces error events during execution (runtime)
+Frontend tests and tasks (only for frontend development):
 
-**Architecture Achievements:**
-- Pre-flight validation prevents invalid commands from reaching GeoGebra
-- Runtime errors captured asynchronously via dual-channel communication (IPython Comm + WebSocket)
-- Consecutive error events automatically consolidated into semantic units
-- Full asyncio compliance with timeout handling and queue polling
-- Zero dependency on external error schemas or APIs
+```bash
+jlpm install
+jlpm test
+jlpm build
+```
 
-See [ggblab/errors.py](ggblab/errors.py) for the complete exception hierarchy and [docs/architecture.md](docs/architecture.md#runtime-error-handling-geogebraappletererror) for implementation details.
+CI: GitHub Actions runs tests and coverage on PRs — see `.github/workflows/tests.yml`.
 
 ## Documentation
 
+Full docs are in `docs/` and published at https://ggblab.readthedocs.io/.
+Start at [docs/index.md](docs/index.md) or the high-level [philosophy](docs/philosophy.md).
 
-ggblab's design philosophy and implementation details are documented across several focused documents:
+## Contributing
 
-**Full documentation available at**: https://ggblab.readthedocs.io/
+1. Fork and create a feature branch.
+2. Run tests and linters locally.
+3. Open a PR with a clear description and tests where applicable.
 
-Note: Documentation has moved under docs/. Start at [docs/index.md](docs/index.md) or [philosophy.md](docs/philosophy.md). Legacy copies are retained in docs_archive/ (git-ignored) for reference.
+For large changes, please open an issue first to discuss design.
 
-### Core Documentation
+## License
 
-- **[philosophy.md](docs/philosophy.md)** - Design principles, scope boundaries, and educational vision
-  - Communication architecture maturity and stability assessment
-  - GeoGebra + Python complementarity framework
-  - Geometric Scene evolution inspired by Wolfram's GeometricScene paradigm
-  - Manim video export as the ultimate pedagogical goal
-  - Prioritized technical roadmap (Tiers 1-5) focused on learning value
-  - Success criteria for each version milestone (v0.8 - v1.5+)
+BSD-3-Clause
 
-- **[scoping.md](docs/scoping.md)** - **Core Educational Mission**: Variable scoping via geometric construction
-  - **The foundational insight**: Geometric dependencies (points → lines → circles) are isomorphic to programming scopes (global → function → nested)
-  - How GeoGebra's construction protocol naturally forms a scope tree
-  - Computational thinking pedagogy through geometric decomposition, pattern recognition, abstraction, and algorithm design
-  - Concrete lesson plans for teaching Python scoping using geometric constructions
-  - Classroom integration roadmap with assessment rubrics
-  - Cognitive science rationale: Dual Coding Theory, Transfer of Learning, Constructivism
+--
 
-- **[architecture.md](docs/architecture.md)** - Technical implementation details
-  - Dual-channel communication design (IPython Comm + Unix socket/TCP WebSocket)
-  - Message flow patterns and error handling strategies
-  - Dependency parser architecture with performance analysis
-  - Critical limitations of `parse_subgraph()` and recommended v1.0 algorithm replacement
-  - Resource cleanup and security considerations
-  - Testing strategies and development workflow
+If you want, I can now:
 
-- **[TODO.md](TODO.md)** - Actionable development roadmap
-  - 7 priority areas: Parser, Type Safety, Error Handling, CI/CD, Documentation, Configuration, Monitoring
-  - Version targets (v0.7.3 - v1.0+) with concrete implementation tasks
-  - Blocking issues and dependency tracking
-  - Quick-fix vs. long-term architectural improvements
+- run a quick markdown preview or lint
+- update `README.md` further with more examples or screenshots
+- create a commit and open a PR draft
 
-- **[ai_assessment.md](docs/ai_assessment.md)** - Independent AI evaluation of project quality and direction
-  - Comprehensive strengths and weaknesses analysis
-  - Technical, educational, and practical usability assessment
-  - Recommended actions and prioritization guidance
-  - Critical questions for project sustainability
-
-### Advanced Integration (ggblab_extra)
-
-- **[sympy_integration.md](./ggblab_extra/docs/sympy_integration.md)** - Symbolic computation and code generation (maintained in the optional `ggblab_extra` package)
-
-### API Reference
-
-- **[API Documentation](https://ggblab.readthedocs.io/en/latest/api.html)** - Python API reference auto-generated from docstrings
-   - `GeoGebra` class: Main interface for controlling applets
-   - `ggb_comm`: Dual-channel communication layer
-   - `ggb_file` (`ggb_construction` alias): File loader and saver
-   - `ggb_schema`: XML schema loader
-      - `ConstructionIO`: Construction I/O helpers (preferred public API). Use `ConstructionIO` to
-         build Polars DataFrames from `.ggb`/XML or from a running applet; `DataFrameIO` remains
-         a backwards-compatible alias.
-   - For dependency parsing and verification, see [ggblab_extra/README.md](./ggblab_extra/README.md)
-
-### Textbook Integration & Geometric Scene Development
-
-> **Note:** Scene development documentation has moved to [ggblab_extra](./ggblab_extra). See the links below for the latest guides.
-
-- **[SCENE_DEVELOPMENT_QUICK_START.md](./ggblab_extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** - Quick implementation guide ⭐ **START HERE**
-  - Overview of ggblab's fully functional dual-coding environment
-  - What you can do NOW (load, verify, analyze constructions)
-  - Next phases (inventory, standardization, enrichment)
-  - Testing the setup with Chapter 01
-
-- **[geometric_scene_development_guide.md](./ggblab_extra/docs/geometric_scene_development_guide.md)** - Comprehensive pedagogical framework
-  - Complete analysis of textbook-2025 chapters 01–15
-  - 5-level scene decomposition pattern (sketch → free objects → derived geometry → relationships → verification)
-  - Dependency graph analysis best practices
-  - Layer-by-layer playback patterns for teaching
-  - Chapter-specific implementation strategies for all 15 chapters
-  - Why dual coding maximizes learning (cognitive theory alignment)
+Which should I do next?
   - Implementation roadmap and quick reference
 
 ### Quick Reference

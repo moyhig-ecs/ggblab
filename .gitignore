@@ -3,6 +3,7 @@ textbook-2026/
 ggblab_extra/
 examples/*.json
 examples/*.xml
+examples/*.png
 
 scripts/
 
