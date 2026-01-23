@@ -24,6 +24,14 @@ from itertools import combinations, chain
 from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
 from ggblab.parser import ggb_parser
+import logging
+import os
+from pathlib import Path
+import hashlib
+import json as _json
+
+# module logger
+logger = logging.getLogger(__name__)
 
 # Create a module-level parser instance for tokenization compatibility
 _ggb_parser = ggb_parser()
@@ -347,6 +355,37 @@ class ConstructionTreeParser:
         except Exception:
             pass
 
+        # Validate token map (self.ft) for anomalies: self-references, missing refs, cycles
+        try:
+            # determine FT report output path:
+            # precedence: instance attribute `ft_report_dir` -> env `GGBLAB_FT_REPORT_DIR` -> examples/
+            out_dir = getattr(self, 'ft_report_dir', os.environ.get('GGBLAB_FT_REPORT_DIR', 'examples'))
+            out_dir = Path(out_dir)
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                # best-effort: ignore directory creation errors
+                pass
+
+            # allow overriding filename via instance attribute `ft_report_name`
+            fname = getattr(self, 'ft_report_name', None)
+            if not fname:
+                # deterministic default: short sha1 of canonicalized ft content
+                try:
+                    canonical = [(k, list(self.ft.get(k) or [])) for k in sorted(self.ft.keys())]
+                    canonical_json = _json.dumps(canonical, ensure_ascii=False, sort_keys=True)
+                    digest = hashlib.sha1(canonical_json.encode('utf8')).hexdigest()[:8]
+                    fname = f'ft_anomalies_{digest}.json'
+                except Exception:
+                    # fallback to fixed name if hashing fails
+                    fname = 'ft_anomalies.json'
+
+            report_path = str(out_dir / fname)
+            self._validate_ft(out_path=report_path)
+        except Exception:
+            # Do not fail parse on logging or I/O errors
+            logger.exception('ft validation failed')
+
         return self.G
     
     def parse_subgraph(self):
@@ -601,29 +640,63 @@ class ConstructionTreeParser:
     def ffd(self, k, recursive=True):
         """Return forward-facing dependencies for node `k`."""
         if recursive:
-            def _ffd(k):
-                if k in self.ft:
-                    # regular polygon contain not much dependency (includes new vertices and auxiliary edges)
-                    # return [[e, _ffd(e)] for e in ft if k in (ft[e] + find_returns(k)[1:])]
-                    return ([[e, _ffd(e)] for e in self.ft if k in self.ft[e]]
-                        + [[e, _ffd(e)] for e in self.find_returns(k)[1:]])
-                else:
+            def _ffd(k, seen):
+                # Protect against cycles by tracking visited nodes in `seen`.
+                if k in seen:
+                    return []
+                seen.add(k)
+                try:
+                    if k in self.ft:
+                        results = []
+                        # forward references: nodes that list k in their tokenized args
+                        for e in self.ft:
+                            if k in self.ft[e]:
+                                results.append([e, _ffd(e, seen)])
+                        # include explicit returns if present
+                        for e in self.find_returns(k)[1:]:
+                            results.append([e, _ffd(e, seen)])
+                        seen.remove(k)
+                        return results
+                    else:
+                        seen.remove(k)
+                        return []
+                except Exception:
+                    # On unexpected errors, be conservative and stop recursion
+                    if k in seen:
+                        seen.remove(k)
                     return []
 
-            return set(flatten(_ffd(k)))
+            return set(flatten(_ffd(k, set())))
         else:
             return {e for e in self.ft if k in self.ft[e]}
 
     def fbd(self, k, recursive=True):
         """Return backward-facing dependencies for node `k`."""
         if recursive:
-            def _fbd(k):
-                if k in self.ft:
-                    return [[e, _fbd(e)] for e in self.ft[k] if e in self.ft] + [self.vertex_on_regular_polygon(k)]
-                else:
+            def _fbd(k, seen):
+                # Protect against cycles by tracking visited nodes in `seen`.
+                if k in seen:
+                    return []
+                seen.add(k)
+                try:
+                    if k in self.ft:
+                        results = []
+                        for e in self.ft[k]:
+                            if e in self.ft:
+                                results.append([e, _fbd(e, seen)])
+                        # include potential polygon vertex helper
+                        results.append(self.vertex_on_regular_polygon(k))
+                        seen.remove(k)
+                        return results
+                    else:
+                        seen.remove(k)
+                        return []
+                except Exception:
+                    if k in seen:
+                        seen.remove(k)
                     return []
 
-            return set(flatten(_fbd(k))) - {k}
+            return set(flatten(_fbd(k, set()))) - {k}
         else:
             return {e for e in self.ft[k] if e in self.ft}
 
@@ -680,6 +753,71 @@ class ConstructionTreeParser:
             return []
         else:
             return []
+
+    def _validate_ft(self, out_path=None):
+        """Detect anomalies in self.ft, log them and optionally write a JSON report.
+
+        Args:
+            out_path (str|None): If provided, writes a JSON report to this path.
+
+        Returns:
+            dict: Structured report containing lists of anomalies and diagnostics.
+        """
+        report = {'self_refs': [], 'unknown_refs': {}, 'cycles': []}
+        if not hasattr(self, 'ft') or not isinstance(self.ft, dict):
+            logger.debug('No ft to validate')
+            return report
+
+        # direct self-references
+        self_refs = [n for n, toks in self.ft.items() if isinstance(toks, (list, tuple)) and n in toks]
+        report['self_refs'] = self_refs
+        if self_refs:
+            logger.warning('Direct self-references detected in ft: %s', self_refs)
+
+        # unknown references
+        known = set(self.ft.keys())
+        unknown_refs = {}
+        for n, toks in self.ft.items():
+            if not isinstance(toks, (list, tuple)):
+                continue
+            bad = [t for t in toks if isinstance(t, str) and t not in known]
+            if bad:
+                unknown_refs[n] = bad
+        report['unknown_refs'] = unknown_refs
+        if unknown_refs:
+            logger.info('Unknown token references found in ft (node -> unknowns): %s', unknown_refs)
+
+        # build ft-graph and detect cycles
+        H = nx.DiGraph()
+        H.add_nodes_from(self.ft.keys())
+        for n, toks in self.ft.items():
+            if not isinstance(toks, (list, tuple)):
+                continue
+            for t in toks:
+                if t in known:
+                    H.add_edge(n, t)
+
+        cycles = list(nx.simple_cycles(H))
+        report['cycles'] = cycles
+        if cycles:
+            logger.warning('Cycles detected in ft token graph: %d cycles (showing up to 10): %s', len(cycles), cycles[:10])
+
+        # optional JSON dump
+        if out_path:
+            try:
+                safe = {
+                    'self_refs': report['self_refs'],
+                    'unknown_refs': report['unknown_refs'],
+                    'cycles': [list(c) for c in report['cycles']],
+                    'node_count': len(self.ft),
+                }
+                with open(out_path, 'w', encoding='utf8') as fh:
+                    json.dump(safe, fh, ensure_ascii=False, indent=2)
+                logger.info('Wrote ft validation report to %s', out_path)
+            except Exception:
+                logger.exception('Failed to write ft validation report to %s', out_path)
+
+        return report
 
     # Note: Tokenization and reconstruction utilities were moved to the
     # external `ggblab` package. The implementation has been removed from
