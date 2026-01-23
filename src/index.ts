@@ -93,6 +93,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // });
 
     if (restorer) {
+      // Note: we may in future support restoring the applet's internal
+      // state from an autosave (e.g. localStorage or a persistent store).
+      // That would involve fetching a saved XML/Base64 snapshot and
+      // passing it through `args` or a dedicated `initialXml` prop so the
+      // recreated widget can rehydrate the GeoGebra applet.
       restorer.restore(tracker, {
         command,
         // use widget.id as the saved name so it is unique per widget
