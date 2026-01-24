@@ -8,6 +8,7 @@ to ensure reliable message delivery while notebook cells execute.
 import uuid
 import json
 import queue
+import concurrent.futures
 import asyncio
 import threading
 import tempfile
@@ -45,7 +46,7 @@ class ggb_comm:
         clients (set): Currently connected WebSocket clients
         socketPath (str): Unix domain socket path (POSIX)
         wsPort (int): TCP port number (Windows)
-        recv_logs (dict): Response storage keyed by message ID
+        pending_futures (dict): Mapping of message-id to Future for awaiting responses
         recv_events (queue.Queue): Event queue for frontend notifications
     
     See:
@@ -61,7 +62,8 @@ class ggb_comm:
     # [Frontent to kernel callback - JupyterLab - Jupyter Community Forum]
     # (https://discourse.jupyter.org/t/frontent-to-kernel-callback/1666)
     recv_msgs = {}
-    recv_logs = {}
+    # pending_futures maps message-id -> concurrent.futures.Future
+    pending_futures = {}
     recv_events = queue.Queue()
     logs = []
     thread = None
@@ -78,9 +80,16 @@ class ggb_comm:
         self.clients = set()
         self.socketPath = None
         self.wsPort = 0
-        # Flag set once the frontend/applet signals it has finished loading
-        # by sending an event like: { "type": "start", ... }
-        self.applet_started = False
+        # applet_started removed; rely on out-of-band responses (pending_futures)
+        # NOTE: Originally we planned to use an explicit 'start' handshake so that
+        # `ggbapplet.init()` could be executed in the same notebook cell that
+        # starts the frontend. In practice, IPython Comm target registration and
+        # handler installation are not reliably completed until the cell's
+        # execution finishes, so messages emitted within the same cell may not
+        # be received. Because of this timing constraint the 'applet_start'
+        # handshake was left pending and removed here to avoid brittle behavior.
+        # Per-instance mapping from message id to Future
+        self.pending_futures = {}
 
     # oob websocket (unix_domain socket in posix)
     def start(self):
@@ -116,7 +125,7 @@ class ggb_comm:
     async def client_handle(self, client_id):
         """Handle messages from a connected websocket client.
 
-        Routes command responses into `recv_logs` and event messages into `recv_events`.
+        Routes command responses into `pending_futures` and event messages into `recv_events`.
         """
         self.clients.add(client_id)
         # self.logs.append(f"Client {client_id} registered.")
@@ -136,18 +145,41 @@ class ggb_comm:
                 # - Cross-domain error pattern analysis
                 
                 if _id:
-                    # Response message: store in recv_logs for send_recv() to retrieve
-                    self.recv_logs[_id] = _data['payload']
+                    # Response message: fulfill any waiting Future for this id
+                    with self.thread_lock:
+                        fut = self.pending_futures.pop(_id, None)
+                    if fut:
+                        try:
+                            fut.set_result(_data['payload'])
+                            # try:
+                            #     with self.thread_lock:
+                            #         self.logs.append(f"Fulfilled future for id {_id}")
+                            # except Exception:
+                            #     pass
+                        except Exception:
+                            # ignore set_result errors but record
+                            try:
+                                with self.thread_lock:
+                                    self.logs.append(f"Error setting result for id {_id}")
+                            except Exception:
+                                pass
+                    else:
+                        # No future waiting; log unexpected response
+                        try:
+                            with self.thread_lock:
+                                self.logs.append(f"Unexpected response for id {_id}")
+                        except Exception:
+                            pass
                 else:
                     # Event message: queue for event processing
                     # Error handling is deferred to send_recv() for proper exception propagation
-                    if (_data.get('type') == 'start'):
-                        self.logs.append('Received applet start event')
-                        self.applet_started = True
-                    else:
-                        self.recv_events.put(_data)
+                    self.recv_events.put(_data)
         except Exception as e:
-            pass
+            # record connection errors for diagnostics instead of silently passing
+            try:
+                self.logs.append(f"Connection error: {e}")
+            except Exception:
+                pass
           # self.logs.append(f"Connection closed: {e}")
         finally:
             self.clients.remove(client_id)
@@ -163,8 +195,8 @@ class ggb_comm:
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
         # with self.thread_lock:
-            # self.target_comm = comm
-            # self.logs.append(f"register_target_cb: {self.target_comm}")
+        #     self.target_comm = comm
+        #     self.logs.append(f"register_target_cb: {self.target_comm}")
         # IPython Comm is not thread-aware
         self.target_comm = comm
 
@@ -237,30 +269,36 @@ class ggb_comm:
             else:
                 _data = msg
 
-            # # Ensure the applet has signaled it started before sending commands.
-            # # Spin-wait while consuming `recv_events` until a {type: 'start'}
-            # # event arrives or a 3-second timeout is reached.
-            # async def wait_for_applet_start():
-            #     while not self.applet_started or not self.target_comm:
-            #         with self.thread_lock:
-            #             self.logs.append(f"{self.target_comm}")
-            #         await asyncio.sleep(0.1)
-            
-            # await asyncio.wait_for(wait_for_applet_start(), timeout=3.0)
+            # Note: applet start handshake removed; rely on out-of-band responses.
 
             _id = str(uuid.uuid4())
             self.mid = _id
             msg['id'] = _id
+
+            # Register a concurrent.futures.Future that client_handle will fulfill.
+            fut = concurrent.futures.Future()
+            with self.thread_lock:
+                self.pending_futures[_id] = fut
+                # try:
+                #     self.logs.append(f"Registered future for id {_id}")
+                # except Exception:
+                #     pass
+
+            # Send after registering the future to avoid races.
             self.send(json.dumps(_data))
-            
-            # Wait for response with 3-second timeout
-            async def wait_for_response():
-                while not (_id in self.recv_logs):
-                    await asyncio.sleep(0.01)
-            
-            await asyncio.wait_for(wait_for_response(), timeout=3.0)
-            
-            value = self.recv_logs.pop(_id, None)
+
+            # Await the future with a 3-second timeout
+            try:
+                value = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=3.0)
+            except Exception as e:
+                # On any exception (including Timeout), ensure mapping is cleaned up and log
+                with self.thread_lock:
+                    self.pending_futures.pop(_id, None)
+                    try:
+                        self.logs.append(f"Exception waiting for response {_id}: {e}")
+                    except Exception:
+                        pass
+                raise
             
             # If response value is empty, check for error events
             if value is None:
