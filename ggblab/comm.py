@@ -57,6 +57,12 @@ class ggb_comm:
         construction I/O and analysis helpers are provided in the optional
         ``ggblab_extra`` package; the core keeps communication and minimal
         shims only.
+    
+        Future improvement:
+            Consider integrating the out-of-band server with Jupyter's
+            Tornado/ioloop to avoid cross-thread asyncio interactions. This
+            would simplify event-loop boundaries but has non-trivial
+            implementation cost, so it's deferred for future work.
     """
 
     # [Frontent to kernel callback - JupyterLab - Jupyter Community Forum]
