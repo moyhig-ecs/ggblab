@@ -180,6 +180,9 @@ class ggb_comm:
                     # Event message: queue for event processing
                     # Error handling is deferred to send_recv() for proper exception propagation
                     self.recv_events.put(_data)
+
+                # yield to the event loop so other coroutines can make progress
+                await asyncio.sleep(0)
         except Exception as e:
             # record connection errors for diagnostics instead of silently passing
             try:
@@ -292,6 +295,8 @@ class ggb_comm:
 
             # Send after registering the future to avoid races.
             self.send(json.dumps(_data))
+            # Yield to the event loop to allow the OOB client handler to run
+            await asyncio.sleep(0)
 
             # Await the future with a 3-second timeout
             try:
