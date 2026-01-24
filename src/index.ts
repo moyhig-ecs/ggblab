@@ -60,6 +60,32 @@ const plugin: JupyterFrontEndPlugin<void> = {
       icon: args => (args['isPalette'] ? undefined : reactIcon),
       execute: async (args: any) => {
         console.log('socketPath:', args['socketPath']);
+
+        // Precompute widget id so we can detect and remove any existing panel
+        const idPart = (args['kernelId'] || '').substring(0, 8);
+        const widgetId = `ggblab-${idPart}`;
+
+        // If a widget with the same id exists, close and remove it first.
+        try {
+          const existing = (tracker as any).find((w: any) => w.id === widgetId);
+          if (existing) {
+            try {
+              existing.close();
+            } catch (e) {
+              console.warn('Failed to close existing widget:', e);
+            }
+            try {
+              // tracker.remove may return a Promise
+              await (tracker as any).remove(existing);
+            } catch (e) {
+              // non-fatal
+              console.warn('Failed to remove existing widget from tracker:', e);
+            }
+          }
+        } catch (e) {
+          // If tracker API differs, ignore and continue
+        }
+
         const content = new GeoGebraWidget({
           kernelId: args['kernelId'] || '',
           commTarget: args['commTarget'] || '',
@@ -69,8 +95,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         });
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
         // make widget id unique so restorer can identify it later
-        const idPart = (args['kernelId'] || '').substring(0, 8);
-        widget.id = `ggblab-${idPart}`;
+        widget.id = widgetId;
         widget.title.label = `GeoGebra (${idPart})`;
         widget.title.icon = reactIcon;
 

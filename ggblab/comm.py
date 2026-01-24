@@ -12,6 +12,7 @@ import concurrent.futures
 import asyncio
 import threading
 import tempfile
+import time
 from websockets.asyncio.server import unix_serve, serve
 import os
 
@@ -86,6 +87,10 @@ class ggb_comm:
         self.clients = set()
         self.socketPath = None
         self.wsPort = 0
+        # counters for noisy connect/disconnect events; used to aggregate logs
+        self._client_connect_count = 0
+        self._client_disconnect_count = 0
+        self._last_client_log_time = 0.0
         # applet_started removed; rely on out-of-band responses (pending_futures)
         # NOTE: Originally we planned to use an explicit 'start' handshake so that
         # `ggbapplet.init()` could be executed in the same notebook cell that
@@ -123,18 +128,35 @@ class ggb_comm:
             async with unix_serve(self.client_handle, path=self.socketPath) as self.server_handle:
                 await asyncio.Future()
         else:
-           async with serve(self.client_handle, "localhost", 0) as self.server_handle:
-               self.wsPort = self.server_handle.sockets[0].getsockname()[1]
-               self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
-               await asyncio.Future() 
+               async with serve(self.client_handle, "localhost", 0) as self.server_handle:
+                   with self.thread_lock:
+                       self.wsPort = self.server_handle.sockets[0].getsockname()[1]
+                       try:
+                           self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
+                       except Exception:
+                           pass
+                   await asyncio.Future()
 
     async def client_handle(self, client_id):
         """Handle messages from a connected websocket client.
 
         Routes command responses into `pending_futures` and event messages into `recv_events`.
         """
-        self.clients.add(client_id)
-        # self.logs.append(f"Client {client_id} registered.")
+        with self.thread_lock:
+            self.clients.add(client_id)
+            self._client_connect_count += 1
+            # rate-limit detailed connect logs to once every 5 seconds
+            try:
+                now = time.time()
+                if now - self._last_client_log_time > 5.0:
+                    self.logs.append(
+                        f"Clients connected: {len(self.clients)} (connects+={self._client_connect_count}, disconnects+={self._client_disconnect_count})"
+                    )
+                    self._client_connect_count = 0
+                    self._client_disconnect_count = 0
+                    self._last_client_log_time = now
+            except Exception:
+                pass
 
         try:
             async for msg in client_id:
@@ -186,13 +208,33 @@ class ggb_comm:
         except Exception as e:
             # record connection errors for diagnostics instead of silently passing
             try:
-                self.logs.append(f"Connection error: {e}")
+                with self.thread_lock:
+                    # record connection errors but avoid spamming; use same rate-limit
+                    now = time.time()
+                    if now - self._last_client_log_time > 5.0:
+                        self.logs.append(f"Connection error: {e}")
+                        self._last_client_log_time = now
             except Exception:
                 pass
           # self.logs.append(f"Connection closed: {e}")
         finally:
-            self.clients.remove(client_id)
-          # self.logs.append(f"Client disconnected: {client_id}")
+            with self.thread_lock:
+                try:
+                    self.clients.remove(client_id)
+                except Exception:
+                    pass
+                self._client_disconnect_count += 1
+                try:
+                    now = time.time()
+                    if now - self._last_client_log_time > 5.0:
+                        self.logs.append(
+                            f"Clients connected: {len(self.clients)} (connects+={self._client_connect_count}, disconnects+={self._client_disconnect_count})"
+                        )
+                        self._client_connect_count = 0
+                        self._client_disconnect_count = 0
+                        self._last_client_log_time = now
+                except Exception:
+                    pass
 
     # comm
     def register_target(self):
@@ -203,11 +245,13 @@ class ggb_comm:
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
-        # with self.thread_lock:
-        #     self.target_comm = comm
-        #     self.logs.append(f"register_target_cb: {self.target_comm}")
-        # IPython Comm is not thread-aware
-        self.target_comm = comm
+        # IPython Comm is not thread-aware; protect assignment anyway
+        with self.thread_lock:
+            self.target_comm = comm
+            try:
+                self.logs.append(f"register_target_cb: {self.target_comm}")
+            except Exception:
+                pass
 
         @comm.on_msg
         def _recv(msg):
@@ -219,8 +263,13 @@ class ggb_comm:
 
     def unregister_target_cb(self, comm, msg):
         """Unregister and close the IPython Comm connection."""
-        self.target_comm.close()
-        self.target_comm = None
+        with self.thread_lock:
+            try:
+                if self.target_comm:
+                    self.target_comm.close()
+            except Exception:
+                pass
+            self.target_comm = None
 
     def handle_recv(self, msg):
         """Handle a message received via IPython Comm (command response).
@@ -238,8 +287,10 @@ class ggb_comm:
 
     def send(self, msg):
         """Send a message via the IPython Comm channel."""
-        if self.target_comm:
-            return self.target_comm.send(msg)
+        with self.thread_lock:
+            tc = self.target_comm
+        if tc:
+            return tc.send(msg)
         else:
             raise RuntimeError("GeoGebra().init() must be called in a notebook cell before sending commands.")
 
@@ -288,28 +339,49 @@ class ggb_comm:
             fut = concurrent.futures.Future()
             with self.thread_lock:
                 self.pending_futures[_id] = fut
-                # try:
-                #     self.logs.append(f"Registered future for id {_id}")
-                # except Exception:
-                #     pass
+
+            # If no OOB clients are connected, wait a short while for one to appear.
+            with self.thread_lock:
+                has_clients = bool(self.clients)
+                has_target = self.target_comm is not None
+            if not has_clients and not has_target:
+                try:
+                    with self.thread_lock:
+                        self.logs.append(f"No clients; waiting for client before sending {_id}")
+                except Exception:
+                    pass
+                waited = 0.0
+                while waited < 2.0:
+                    with self.thread_lock:
+                        if self.clients or self.target_comm:
+                            break
+                    await asyncio.sleep(0.05)
+                    waited += 0.05
 
             # Send after registering the future to avoid races.
             self.send(json.dumps(_data))
             # Yield to the event loop to allow the OOB client handler to run
             await asyncio.sleep(0)
 
-            # Await the future with a 3-second timeout
-            try:
-                value = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=3.0)
-            except Exception as e:
-                # On any exception (including Timeout), ensure mapping is cleaned up and log
-                with self.thread_lock:
-                    self.pending_futures.pop(_id, None)
+            # Schedule a watchdog to ensure the future doesn't hang indefinitely.
+            loop = asyncio.get_running_loop()
+            def _watchdog():
+                if not fut.done():
                     try:
-                        self.logs.append(f"Exception waiting for response {_id}: {e}")
+                        fut.set_exception(asyncio.TimeoutError("oob future timed out"))
                     except Exception:
                         pass
-                raise
+
+            handle = loop.call_later(5.0, _watchdog)
+
+            # Await the future (it will be set by client_handle or by watchdog)
+            try:
+                value = await asyncio.wrap_future(fut)
+            finally:
+                # cancel watchdog and remove mapping
+                handle.cancel()
+                with self.thread_lock:
+                    self.pending_futures.pop(_id, None)
             
             # If response value is empty, check for error events
             if value is None:

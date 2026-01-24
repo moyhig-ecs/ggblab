@@ -155,6 +155,32 @@ for a short English example that:
 This comparison is useful for deciding whether to prioritize static publication
 quality (Matplotlib) or interactive student exploration (GeoGebra).
 
+## Recent Changes (since 1.0.2)
+
+This release series includes several reliability and observability fixes focused
+on widget restore, frontend lifecycle handling, and the backend communication
+layer. Key changes in this workspace:
+
+- **Restorer & widget lifecycle**: the JupyterLab `ILayoutRestorer`/tracker logic
+   was adjusted so panels persist across browser reloads and the widget's
+   internal teardown now runs on `onCloseRequest()` instead of during layout
+   restore to avoid premature disposal.
+- **Comm refactor (backend)**: `ggblab/ggblab/comm.py` moved from polling to a
+   future-based synchronization model (`pending_futures`) and added mutex
+   protection around shared state to prevent race conditions during OOB
+   responses. A watchdog prevents indefinite waits for responses.
+- **OOB send serialization (frontend)**: `callRemoteSocketSend` now serializes
+   socket sends and adds a short inter-send delay to avoid kernel `requestExecute`
+   churn when many applet listeners fire concurrently.
+- **Reduced noisy logs**: connect/disconnect and socket lifecycle messages are
+   now aggregated and rate-limited to reduce log spam during normal operation.
+- **Version bump**: package version updated to `1.1.0`.
+
+If you need more detail on any bullet, see the corresponding source files:
+- Frontend: [src/index.ts](src/index.ts) and [src/widget.tsx](src/widget.tsx)
+- Backend: [ggblab/comm.py](ggblab/comm.py)
+
+
 ## Development & Testing
 
 Run Python tests:

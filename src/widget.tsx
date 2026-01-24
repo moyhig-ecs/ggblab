@@ -64,24 +64,50 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
      * @param socketPath - Optional unix socket path (if provided, uses unix socket; otherwise uses websocket)
      * @param wsUrl - WebSocket URL (used if socketPath is not provided)
      */
+    // Serialize outgoing socket sends to avoid kernel-side requestExecute jams.
+    // `sendChain` is a promise chain that ensures each send completes before
+    // the next begins. We also add a small inter-send delay to give the
+    // remote helper kernel time to tear down connections.
+    let sendChain: Promise<void> = Promise.resolve();
+
     async function callRemoteSocketSend(
         kernel2: any,
         message: string,
         socketPath: string | null,
         wsUrl: string
     ): Promise<void> {
-        if (socketPath) {
-            await kernel2.requestExecute({ code: `
+        try {
+            console.log("callRemoteSocketSend: sending message", { socketPath, wsUrl, messagePreview: message.slice(0,200) });
+            // Queue the actual send work on the chain so sends are serialized.
+            const doSend = async () => {
+                if (socketPath) {
+                    await kernel2.requestExecute({ code: `
 with unix_connect("${socketPath}") as ws:
     ws.send(r"""${message}""")
 `
-            }).done;
-        } else {
-            await kernel2.requestExecute({ code: `
+                    }).done;
+                } else {
+                    await kernel2.requestExecute({ code: `
 with connect("${wsUrl}") as ws:
     ws.send(r"""${message}""")
 `
-            }).done;
+                    }).done;
+                }
+
+                // small delay to give the helper kernel a moment to tear down
+                // and to avoid immediate back-to-back requestExecute calls.
+                await new Promise(resolve => setTimeout(resolve, 40));
+            };
+
+            // Append to chain and ensure errors don't break future sends.
+            const next = sendChain.then(() => doSend());
+            // swallow errors on chain so chain remains healthy
+            sendChain = next.catch(() => { /* ignore errors to keep chain alive */ });
+            await next;
+            try { console.log("callRemoteSocketSend: sent", { idPreview: message.slice(0,40) }); } catch (e) { /* ignore */ }
+        } catch (err) {
+            try { console.error("callRemoteSocketSend: error sending message", err); } catch (e) { /* ignore */ }
+            throw err;
         }
     }
 
