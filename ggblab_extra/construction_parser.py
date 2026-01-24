@@ -60,6 +60,18 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
 
     G.add_nodes_from(names)
 
+    # attach Type attribute for known nodes from the dataframe
+    try:
+        if "Type" in df.columns:
+            try:
+                types_list = df["Type"].to_list()
+            except Exception:
+                types_list = list(df["Type"])
+            type_map = {name: t for name, t in zip(names, types_list)}
+            nx.set_node_attributes(G, type_map, "Type")
+    except Exception:
+        pass
+
     # obtain raw dependency column values
     if col not in df.columns:
         return G
@@ -179,6 +191,17 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
             # rebuild graph from minimal_map
             G_min = nx.DiGraph()
             G_min.add_nodes_from(names)
+            # preserve Type attributes on the reduced graph where available
+            try:
+                if "Type" in df.columns:
+                    try:
+                        types_list = df["Type"].to_list()
+                    except Exception:
+                        types_list = list(df["Type"])
+                    type_map = {name: t for name, t in zip(names, types_list)}
+                    nx.set_node_attributes(G_min, type_map, "Type")
+            except Exception:
+                pass
             for name, deps in minimal_map.items():
                 for d in deps:
                     try:
@@ -326,6 +349,22 @@ class ConstructionTreeParser:
                     # print(f"Adding edge from {n} to {o}")
                     self.G.add_edge(n, o)
 
+        # attach Type attributes from the dataframe to graph nodes when available
+        try:
+            if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
+                try:
+                    types_list = self.df["Type"].to_list()
+                except Exception:
+                    types_list = list(self.df["Type"])
+                try:
+                    names_list = self.df["Name"].to_list()
+                except Exception:
+                    names_list = list(self.df["Name"])
+                type_map = {name: t for name, t in zip(names_list, types_list)}
+                nx.set_node_attributes(self.G, type_map, "Type")
+        except Exception:
+            pass
+
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
         
@@ -411,6 +450,22 @@ class ConstructionTreeParser:
         self.G2 = nx.DiGraph()
         self.G2.clear()
 
+        # attach Type attributes from the dataframe to G2 nodes when available
+        try:
+            if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
+                try:
+                    types_list = self.df["Type"].to_list()
+                except Exception:
+                    types_list = list(self.df["Type"])
+                try:
+                    names_list = self.df["Name"].to_list()
+                except Exception:
+                    names_list = list(self.df["Name"])
+                type_map = {name: t for name, t in zip(names_list, types_list)}
+                nx.set_node_attributes(self.G2, type_map, "Type")
+        except Exception:
+            pass
+
         explored = set()
         frontier = {n for n in self.roots if n in self.ft}
 
@@ -459,7 +514,23 @@ class ConstructionTreeParser:
             explored |= frontier
             frontier = collected_matches - explored
 
-        # If a DataFrame is present, ensure `DependsOn_minimal` is a list-type column.
+            # attempt to attach Type attributes from the dataframe to G2 nodes
+            try:
+                if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
+                    try:
+                        types_list = self.df["Type"].to_list()
+                    except Exception:
+                        types_list = list(self.df["Type"])
+                    try:
+                        names_list = self.df["Name"].to_list()
+                    except Exception:
+                        names_list = list(self.df["Name"])
+                    type_map = {name: t for name, t in zip(names_list, types_list)}
+                    nx.set_node_attributes(self.G2, type_map, "Type")
+            except Exception:
+                pass
+
+            # If a DataFrame is present, ensure `DependsOn_minimal` is a list-type column.
         # If the column exists as JSON strings, decode; otherwise compute using
         # direct predecessors from G2 (fallback to G). Best-effort: do not fail.
         try:
