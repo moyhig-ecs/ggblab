@@ -29,6 +29,10 @@ import os
 from pathlib import Path
 import hashlib
 import json as _json
+from typing import Optional, Mapping, Sequence, Dict, Any, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+	from ggblab.ggbapplet import GeoGebra
 
 # module logger
 logger = logging.getLogger(__name__)
@@ -223,6 +227,7 @@ def tokenize_with_commas(cmd_string, extract_commands=False):
     return _ggb_parser.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
 
 
+
 # Tokenization is provided by the core package `ggblab.parser`.
 # We import `tokenize_with_commas` directly above and use it in-place.
 
@@ -270,7 +275,9 @@ class ConstructionTreeParser:
     
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
-    SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
+    SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral", "boolean", "numeric", "angle"]
+    # Default container types to include when searching for composite objects
+    DEFAULT_CONTAINER_TYPES = {"polygon", "segment", "circle"}
 
     def __init__(self, df=None, cache_path=None, cache_enabled=True):
         """Initialize the parser with optional construction dataframe and command caching.
@@ -770,6 +777,93 @@ class ConstructionTreeParser:
             return set(flatten(_fbd(k, set()))) - {k}
         else:
             return {e for e in self.ft[k] if e in self.ft}
+
+    def roots_to_targets_with_containers(self, targets, roots=None, include_types=None, max_container_depth=1):
+        """Return an induced subgraph containing paths from roots to targets
+        and composite objects that contain those targets.
+
+        Args:
+            targets: iterable of target node names.
+            roots: iterable of root node names (defaults to self.roots).
+            include_types: list or set of Type strings to treat as 'containers'
+                (None => include all types). If provided as a list it will be
+                coerced to a set for efficient membership tests.
+            max_container_depth: how deep to walk descendants from each target to find containers.
+
+        Returns:
+            nx.DiGraph: induced subgraph containing paths and selected containers.
+        """
+        if roots is None:
+            roots = getattr(self, 'roots', [])
+        targets = set(targets)
+
+        # determine include_types: if None, use class default; otherwise coerce to set
+        if include_types is None:
+            include_types = set(getattr(self, 'DEFAULT_CONTAINER_TYPES', []))
+        else:
+            try:
+                include_types = set(include_types)
+            except Exception:
+                include_types = {include_types}
+
+        nodes = set()
+
+        # 1) collect nodes on any path from any root to each target
+        for r in roots:
+            for t in list(targets):
+                try:
+                    for path in nx.all_simple_paths(self.G, r, t):
+                        nodes.update(path)
+                except Exception:
+                    # fallback: include ancestors if path enumeration fails
+                    if t in self.G:
+                        nodes.update(nx.ancestors(self.G, t))
+                        nodes.add(t)
+
+        # 2) ensure targets themselves are present
+        nodes.update(targets)
+
+        # 3) find container objects reachable from each target (descendants)
+        containers = set()
+        for t in targets:
+            if t not in self.G:
+                continue
+            frontier = {t}
+            depth = 0
+            visited = {t}
+            while frontier and depth < max_container_depth:
+                next_front = set()
+                for n in frontier:
+                    for child in self.G.successors(n):
+                        if child in visited:
+                            continue
+                        visited.add(child)
+                        node_type = self.G.nodes.get(child, {}).get('Type')
+                        if include_types is None or node_type in include_types:
+                            containers.add(child)
+                        next_front.add(child)
+                frontier = next_front
+                depth += 1
+
+        # 4) include containers and their immediate components
+        nodes |= containers
+        for c in list(containers):
+            try:
+                comps = list(self.G.predecessors(c))
+                nodes.update(comps)
+                nodes.add(c)
+            except Exception:
+                pass
+
+        # 5) build induced subgraph and return copy as DiGraph
+        try:
+            G_sub = self.G.subgraph(nodes).copy()
+            return nx.DiGraph(G_sub)
+        except Exception:
+            return nx.DiGraph()
+
+    # Note: use `roots_to_targets_with_containers` to obtain a subtree from
+    # roots to targets that also includes container objects (polygons, segments, circles).
 
     def initialize_dataframe(self, df=None, file=None):
         """Initialize the parser from `df` or delegate to ConstructionIO when given a file."""

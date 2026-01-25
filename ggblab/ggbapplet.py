@@ -9,6 +9,12 @@ analysis tools live in the optional `ggblab_extra` package.
 import asyncio
 import re
 import ipykernel.connect
+import logging
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime
+import hashlib
+from typing import Optional
 
 from IPython.core.getipython import get_ipython
 from ipylab import JupyterFrontEnd
@@ -223,6 +229,80 @@ class GeoGebra:
             }
         })
         return r['value']
+
+    @asynccontextmanager
+    async def preserve(self):
+        """Snapshot the current construction and restore it on exit.
+
+        Yields:
+            A `Snap` object with the following attributes and helpers:
+            - `xml` (str | None): GeoGebra construction XML (None on error)
+            - `timestamp` (datetime): UTC time when snapshot was taken
+            - `size_bytes` (int): byte length of the XML
+            - `sha1` (str): SHA1 digest of the XML
+            Methods:
+            - `await snap.restore()`: immediately restore the saved XML
+            - `snap.release()`: drop `xml` to free memory
+
+        Usage examples:
+            # automatic restore on exit (no local XML reference kept)
+            async with ggb.preserve():
+                await ggb.command("A=(1,2)")
+
+            # inspect or restore inside the block
+            async with ggb.preserve() as snap:
+                print(snap.sha1, snap.size_bytes)
+                await snap.restore()
+
+        Notes:
+            - The returned `xml` is an immutable Python string; no extra deep-copy
+              is performed when yielding it. If you hold `snap.xml` for long
+              periods it will retain memory until released or out of scope.
+            - If acquiring the XML fails, `xml` will be `None` and no automatic
+              restoration will be attempted on exit.
+        """
+        @dataclass
+        class Snap:
+            xml: Optional[str]
+            timestamp: datetime
+            size_bytes: int
+            sha1: str
+            _ggb: "GeoGebra"
+
+            async def restore(self) -> None:
+                if self.xml is None:
+                    return
+                await self._ggb.function("setXML", [self.xml])
+
+            def release(self) -> None:
+                self.xml = None
+
+        try:
+            xml = await self.function("getXML")
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to read GeoGebra XML (getXML). Proceeding without backup.")
+            xml = None
+
+        if xml is not None:
+            b = xml.encode("utf8")
+            sha1 = hashlib.sha1(b).hexdigest()
+            size = len(b)
+        else:
+            sha1 = ""
+            size = 0
+
+        snap = Snap(xml=xml, timestamp=datetime.utcnow(), size_bytes=size, sha1=sha1, _ggb=self)
+
+        try:
+            yield snap
+        finally:
+            if snap.xml is not None:
+                try:
+                    await self.function("setXML", [snap.xml])
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Failed to restore GeoGebra XML (setXML).")
 
     async def command(self, c):
         """Execute a GeoGebra command with optional validation.
