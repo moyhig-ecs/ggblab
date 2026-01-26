@@ -263,6 +263,8 @@ class GeoGebra:
         """
         @dataclass
         class Snap:
+            base64_zip: Optional[str]
+            # Optionally decoded XML (if the snapshot helper extracts it); may be None
             xml: Optional[str]
             timestamp: datetime
             size_bytes: int
@@ -270,34 +272,50 @@ class GeoGebra:
             _ggb: "GeoGebra"
 
             async def restore(self) -> None:
+                # Prefer restoring via setBase64 when possible
+                if self.base64_zip is not None:
+                    await self._ggb.function("setBase64", [self.base64_zip])
+                    return
                 if self.xml is None:
                     return
+                # Fallback: attempt to restore XML directly if available
                 await self._ggb.function("setXML", [self.xml])
 
             def release(self) -> None:
                 self.xml = None
 
         try:
-            xml = await self.function("getXML")
+            # Acquire a zip+base64 snapshot from the applet to avoid large XML strings
+            b64 = await self.function("getBase64")
         except Exception:
             logging.getLogger(__name__).exception(
-                "Failed to read GeoGebra XML (getXML). Proceeding without backup.")
-            xml = None
+                "Failed to read GeoGebra base64 snapshot (getBase64). Proceeding without backup.")
+            b64 = None
 
-        if xml is not None:
-            b = xml.encode("utf8")
-            sha1 = hashlib.sha1(b).hexdigest()
-            size = len(b)
+        if b64 is not None:
+            # Compute SHA1 and size on the decoded bytes
+            try:
+                decoded = __import__('base64').b64decode(b64)
+                sha1 = hashlib.sha1(decoded).hexdigest()
+                size = len(decoded)
+            except Exception:
+                sha1 = hashlib.sha1(b64.encode('utf8')).hexdigest()
+                size = len(b64.encode('utf8'))
+            snap = Snap(base64_zip=b64, xml=None, timestamp=datetime.utcnow(), size_bytes=size, sha1=sha1, _ggb=self)
         else:
-            sha1 = ""
-            size = 0
-
-        snap = Snap(xml=xml, timestamp=datetime.utcnow(), size_bytes=size, sha1=sha1, _ggb=self)
+            snap = Snap(base64_zip=None, xml=None, timestamp=datetime.utcnow(), size_bytes=0, sha1="", _ggb=self)
 
         try:
             yield snap
         finally:
-            if snap.xml is not None:
+            # Restore using base64 snapshot if available, otherwise attempt XML
+            if snap.base64_zip is not None:
+                try:
+                    await self.function("setBase64", [snap.base64_zip])
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Failed to restore GeoGebra snapshot via setBase64.")
+            elif snap.xml is not None:
                 try:
                     await self.function("setXML", [snap.xml])
                 except Exception:

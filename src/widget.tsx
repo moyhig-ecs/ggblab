@@ -10,6 +10,16 @@ import { Message } from '@lumino/messaging';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
+// Debug logging helper controlled from the browser console.
+// Enable message logging in the JS console by running:
+//   window.ggblabDebugMessages = true
+function dbg(...args: any[]) {
+    if ((window as any).ggblabDebugMessages) {
+        // eslint-disable-next-line no-console
+        console.log(...args);
+    }
+}
+
 /**
  * React component for a GeoGebra.
  *
@@ -76,8 +86,8 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
         socketPath: string | null,
         wsUrl: string
     ): Promise<void> {
-        try {
-            console.log("callRemoteSocketSend: sending message", { socketPath, wsUrl, messagePreview: message.slice(0,200) });
+            try {
+            dbg("callRemoteSocketSend: sending message", { socketPath, wsUrl, messagePreview: message.slice(0,200) });
             // Queue the actual send work on the chain so sends are serialized.
             const doSend = async () => {
                 if (socketPath) {
@@ -96,7 +106,7 @@ with connect("${wsUrl}") as ws:
 
                 // small delay to give the helper kernel a moment to tear down
                 // and to avoid immediate back-to-back requestExecute calls.
-                await new Promise(resolve => setTimeout(resolve, 40));
+                await new Promise(resolve => setTimeout(resolve, 30));
             };
 
             // Append to chain and ensure errors don't break future sends.
@@ -104,7 +114,7 @@ with connect("${wsUrl}") as ws:
             // swallow errors on chain so chain remains healthy
             sendChain = next.catch(() => { /* ignore errors to keep chain alive */ });
             await next;
-            try { console.log("callRemoteSocketSend: sent", { idPreview: message.slice(0,40) }); } catch (e) { /* ignore */ }
+            try { dbg("callRemoteSocketSend: sent", { idPreview: message.slice(0,40) }); } catch (e) { /* ignore */ }
         } catch (err) {
             try { console.error("callRemoteSocketSend: error sending message", err); } catch (e) { /* ignore */ }
             throw err;
@@ -205,10 +215,10 @@ with connect("${wsUrl}") as ws:
                 window.addEventListener('close', closeHandler);
 
                 comm.onMsg = async (msg: any) => {
-                    console.log("Message received from server:", msg['content']['data']);
+                    dbg("Message received from server:", msg['content']['data']);
 
                     const command = JSON.parse(msg.content.data as any);
-                    console.log("Parsed command:", command.type, command.payload);
+                    dbg("Parsed command:", command.type, command.payload);
                     
                     var rmsg: any = null;
                     if (command.type === "command") {
@@ -221,14 +231,14 @@ with connect("${wsUrl}") as ws:
                         }); // .replace(/'/g, "\\'");
                     } else if (command.type === "function") {
                         var apiName = command.payload.name;
-                        console.log(apiName);
+                        dbg("apiName:", apiName);
                         var value: any[] = [];
 
                         {
                             var args = command.payload.args;
                             value = [];
-                            (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-                                console.log(f, args);
+                                (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+                                dbg("call", f, args);
                                 if (isArrayOfArrays(args)) {
                                     var value2: any[] = [];
                                     args.forEach((arg2: any[]) => {
@@ -248,7 +258,7 @@ with connect("${wsUrl}") as ws:
                                 }
                             });
                             value = (Array.isArray(apiName) ? value : value[0]);
-                            console.log("Function value:", value);
+                            dbg("Function value:", value);
                         }
                         rmsg = JSON.stringify({
                             "type": "value",
@@ -264,7 +274,7 @@ with connect("${wsUrl}") as ws:
                 }
 
                 var addListener = async function(data: any) {
-                 // console.log("Add listener triggered for:", data);
+                 dbg("Add listener triggered for:", data);
                     var msg = {
                         "type": "add",
                         "payload": data, 
@@ -275,7 +285,7 @@ with connect("${wsUrl}") as ws:
                 api.registerAddListener(addListener);
 
                 var removeListener = async function(data: any) {
-                 // console.log("Add listener triggered for:", data);
+                 dbg("Remove listener triggered for:", data);
                     var msg = {
                         "type": "remove",
                         "payload": data,
@@ -286,7 +296,7 @@ with connect("${wsUrl}") as ws:
                 api.registerRemoveListener(removeListener);
 
                 var renameListener = async function(data: any) {
-                 // console.log("Add listener triggered for:", data);
+                 dbg("Rename listener triggered for:", data);
                     var msg = {
                         "type": "rename",
                         "payload": data,
@@ -297,7 +307,7 @@ with connect("${wsUrl}") as ws:
                 api.registerRenameListener(renameListener);
 
                 var clearListener = async function(data: any) {
-                // console.log("Add listener triggered for:", data);
+                dbg("Clear listener triggered for:", data);
                     var msg = {
                         "type": "clear",
                         "payload": data
@@ -324,10 +334,10 @@ with connect("${wsUrl}") as ws:
                         mutation.addedNodes.forEach((node) => {
                             try {
                                 (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach((n) => {
-                                 // console.log(n.textContent); detect titles like 'Error'
+                                    dbg(n.textContent); // detect titles like 'Error'
                                     ((node as HTMLElement).querySelector('div.dialogContent') as HTMLElement)
-                                        .querySelectorAll(`[class$='Label']`).forEach(async (n2) => {
-                                            // console.log(n2.textContent);
+                                            .querySelectorAll(`[class$='Label']`).forEach(async (n2) => {
+                                                dbg(n2.textContent);
                                             const msg = JSON.stringify({
                                                 "type": n.textContent,
                                                 "payload": n2.textContent

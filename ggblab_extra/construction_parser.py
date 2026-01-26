@@ -25,6 +25,7 @@ from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
 from ggblab.parser import ggb_parser
 import logging
+import time
 import os
 from pathlib import Path
 import hashlib
@@ -433,8 +434,8 @@ class ConstructionTreeParser:
             logger.exception('ft validation failed')
 
         return self.G
-    
-    def parse_subgraph(self):
+
+    def parse_subgraph(self, max_depth: Optional[int] = None, timeout_seconds: Optional[float] = 10.0):
         """
         Extract a simplified dependency subgraph (G2) from the full graph (G).
 
@@ -451,9 +452,22 @@ class ConstructionTreeParser:
         - Performance is combinatorial in the number of active roots; avoid
           using this on constructions with many independent roots.
 
+        Args:
+            max_depth: Optional[int] maximum number of frontier expansion
+                iterations to perform. If ``None`` (default) the algorithm
+                runs to completion. Use this to bound execution time on
+                large graphs; each while-iteration corresponds to one level
+                of frontier expansion.
+            timeout_seconds: Optional[float] wall-clock timeout in seconds.
+                If provided and exceeded during exploration, the method will
+                log a warning and fall back to ``parse_subgraph_legacy``.
+                Set to ``None`` to disable time-based timeout. Default: 10.0.
+
         Returns:
             The constructed `G2` (assigned to `self.G2`).
         """
+        start_time = time.monotonic()
+
         self.G2 = nx.DiGraph()
         self.G2.clear()
 
@@ -475,8 +489,13 @@ class ConstructionTreeParser:
 
         explored = set()
         frontier = {n for n in self.roots if n in self.ft}
+        depth = 0
 
         while frontier:
+            # Check timeout at start of each iteration
+            if timeout_seconds is not None and (time.monotonic() - start_time) > timeout_seconds:
+                logger.warning("parse_subgraph: timeout exceeded (%.2fs), falling back to parse_subgraph_legacy", timeout_seconds)
+                return self.parse_subgraph_legacy()
             # Build all candidate active-sets from the current frontier
             candidate_active_sets = [explored | set(combo)
                                      for combo in chain.from_iterable(combinations(frontier, r)
@@ -485,6 +504,10 @@ class ConstructionTreeParser:
             collected_matches = set()
 
             for active_set in candidate_active_sets:
+                # Periodically check timeout inside heavy loops
+                if timeout_seconds is not None and (time.monotonic() - start_time) > timeout_seconds:
+                    logger.warning("parse_subgraph: timeout exceeded during candidate evaluation (%.2fs), falling back to parse_subgraph_legacy", timeout_seconds)
+                    return self.parse_subgraph_legacy()
                 # neighbors_of_active: union of neighbors of each node in active_set
                 neighbor_sets = [set(self.G.neighbors(node)) for node in active_set]
                 potential_targets = set().union(*neighbor_sets) if neighbor_sets else set()
@@ -520,6 +543,12 @@ class ConstructionTreeParser:
             # advance frontier: mark current frontier as explored and set new frontier
             explored |= frontier
             frontier = collected_matches - explored
+
+            # increment depth and enforce max_depth if provided
+            depth += 1
+            if max_depth is not None and depth >= max_depth:
+                # stop exploring further to bound runtime
+                break
 
             # attempt to attach Type attributes from the dataframe to G2 nodes
             try:

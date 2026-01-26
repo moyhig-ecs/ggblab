@@ -372,7 +372,7 @@ class ggb_comm:
                     except Exception:
                         pass
 
-            handle = loop.call_later(5.0, _watchdog)
+            handle = loop.call_later(3.0, _watchdog)
 
             # Await the future (it will be set by client_handle or by watchdog)
             try:
