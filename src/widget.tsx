@@ -44,11 +44,11 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 //     });
 //   }, []);
 
-    console.log("Component props: ", props.kernelId, props.commTarget, props.socketPath, props.wsPort);
+    dbg("Component props: ", props.kernelId, props.commTarget, props.socketPath, props.wsPort);
     // window.dispatchEvent(new Event('resize'));
 
     const elementId = "ggb-element-" + (props?.kernelId || '').substring(0, 8);
-    console.log("Element ID:", elementId);
+    dbg("Element ID:", elementId);
 
     let applet: any = null;
 
@@ -127,6 +127,8 @@ with connect("${wsUrl}") as ws:
         let kernelManager: any = null;
         let kernelConn: any = null;
         let comm: any = null;
+        let widgetComm: any = null;
+        let appletApi: any = null;
         let observer: MutationObserver | null = null;
         let resizeHandler: (() => void) | null = null;
         let closeHandler: (() => void) | null = null;
@@ -137,12 +139,12 @@ with connect("${wsUrl}") as ws:
             return await KernelAPI.listRunning();
         })().then(async (kernels) => {
          // setKernels(kernels);
-            console.log("Running kernels:", kernels);
+            dbg("Running kernels:", kernels);
 
             const baseUrl = PageConfig.getBaseUrl();
             const token   = PageConfig.getToken();
-            console.log(`Base URL: ${baseUrl}`);
-            console.log(`Token: ${token}`);
+            dbg(`Base URL: ${baseUrl}`);
+            dbg(`Token: ${token}`);
             const settings = ServerConnection.makeSettings({
                 baseUrl: baseUrl, //'http://localhost:8889/',
                 token: token,     //'7e89be30eb93ee7c149a839d4c7577e08c2c25b3c7f14647',
@@ -151,7 +153,7 @@ with connect("${wsUrl}") as ws:
 
             kernelManager = new KernelManager({ serverSettings: settings });
             kernel2 = await kernelManager.startNew({ name: 'python3' });
-            console.log("Started new kernel:", kernel2, props.kernelId);
+            dbg("Started new kernel:", kernel2, props.kernelId);
             await kernel2.requestExecute({ code: `from websockets.sync.client import unix_connect, connect` }).done;
 
             const wsUrl = `ws://localhost:${props.wsPort}/`;
@@ -161,10 +163,199 @@ with connect("${wsUrl}") as ws:
                 model: { name: 'python3', id: props.kernelId || kernels[0]['id']},
                 serverSettings: settings,
             });
-            console.log("Connected to kernel:", kernelConn);
+            dbg("Connected to kernel:", kernelConn);
+
+            // Keep comm lifecycle state and helpers for recovery when comms close
+            let commClosed = false;
+            const attachCommCloseHandler = (c: any) => {
+                try {
+                    (c as any).onClose = (m: any) => {
+                        try {
+                            commClosed = true;
+                            const closedId = (m && m.content && m.content.comm_id) || (c as any)?.comm_id || (c as any)?.commId || null;
+                            dbg('Kernel comm closed', { target: props.commTarget, commId: closedId, message: m });
+                        } catch (e) {
+                            dbg('Kernel comm closed (no id available)', props.commTarget, m);
+                        }
+                    };
+                } catch (e) {
+                    dbg('Unable to attach onClose to kernel comm', e);
+                }
+            };
+
+            // Handler for incoming messages on the kernel-created comm; defined
+            // once so it can be reattached if we recreate the comm.
+            const handleIncomingCommMessage = async (msg: any) => {
+                dbg('handleIncomingCommMessage:', msg);
+                try {
+                    dbg('Kernel comm onMsg received', { commTarget: props.commTarget, msg });
+
+                    const command = JSON.parse(msg.content.data as any);
+                    dbg('Parsed command:', command.type, command.payload);
+
+                    var rmsg: any = null;
+                    if (command.type === 'command') {
+                        var label = appletApi.evalCommandGetLabels(command.payload);
+
+                        rmsg = JSON.stringify({
+                            type: 'created',
+                            id: command.id,
+                            payload: label
+                        });
+                    } else if (command.type === 'function') {
+                        var apiName = command.payload.name;
+                        dbg('apiName:', apiName);
+                        var value: any[] = [];
+
+                        {
+                            var args = command.payload.args;
+                            value = [];
+                            (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+                                dbg('call', f, args);
+                                if (isArrayOfArrays(args)) {
+                                    var value2: any[] = [];
+                                    args.forEach((arg2: any[]) => {
+                                        if (args) {
+                                            value2.push(appletApi[f](...arg2) || null);
+                                        } else {
+                                            value2.push(appletApi[f]() || null);
+                                        }
+                                    });
+                                    value.push(value2);
+                                } else {
+                                    if (args) {
+                                        value.push(appletApi[f](...args) || null);
+                                    } else {
+                                        value.push(appletApi[f]() || null);
+                                    }
+                                }
+                            });
+                            value = (Array.isArray(apiName) ? value : value[0]);
+                            dbg('Function value:', value);
+                        }
+                        rmsg = JSON.stringify({
+                            type: 'value',
+                            id: command.id,
+                            payload: { value: value }
+                        });
+                    }
+
+                    // Try to send via kernel comm; if that fails, mirror to remote socket.
+                    try {
+                        try {
+                            const cId = (comm as any)?.comm_id || (comm as any)?.commId || null;
+                            dbg('Sending via kernel comm', { commTarget: props.commTarget, commId: cId, preview: (rmsg || '').slice(0,200) });
+                        } catch (e) { /* ignore */ }
+                        // If comm is closed or missing, attempt to recreate before send
+                        if (!comm || commClosed) {
+                            try {
+                                await ensureKernelComm();
+                            } catch (e) {
+                                dbg('ensureKernelComm failed before sending reply', e);
+                            }
+                        }
+                        if (comm) {
+                            comm.send(rmsg);
+                        } else {
+                            dbg('No kernel comm available to send reply; will mirror via remote socket');
+                        }
+                    } catch (e) {
+                        dbg('Failed to send via kernel comm, will still attempt remote socket send', e, { rmsgPreview: (rmsg || '').slice(0,200) });
+                    }
+                    await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
+                } catch (e) {
+                    dbg('Error in handleIncomingCommMessage', e);
+                }
+            };
+
+            // Ensure a kernel comm exists; create and attach handlers if missing.
+            const ensureKernelComm = async () => {
+                if (comm && !commClosed) return comm;
+                try {
+                    if (!kernelConn) {
+                        throw new Error('No kernelConn available to create comm');
+                    }
+                    comm = kernelConn.createComm(props.commTarget);
+                    try {
+                        const maybeId = (comm as any)?.comm_id || (comm as any)?.commId || (comm as any)?.id || null;
+                        dbg('Recreated kernel comm', { target: props.commTarget, commObject: comm, commId: maybeId });
+                    } catch (e) {
+                        dbg('Recreated kernel comm (unable to read id)', props.commTarget, comm);
+                    }
+                    // attach handlers
+                    try { comm.onMsg = handleIncomingCommMessage; } catch (e) { dbg('Failed to attach onMsg to recreated comm', e); }
+                    attachCommCloseHandler(comm);
+                    // open the comm
+                    try { comm.open('REOPEN from GGB').done; } catch (e) { dbg('Failed to open recreated comm', e); }
+                    commClosed = false;
+                    return comm;
+                } catch (e) {
+                    dbg('ensureKernelComm failed', e);
+                    return null;
+                }
+            };
+
+            // Register handlers to accept widget-model comms created by the kernel's
+            // ipywidgets machinery. When the kernel creates a widget (e.g. IntSlider)
+            // it will open a comm to the frontend with target 'jupyter.widget'
+            // (and sometimes 'jupyter.widget.control'). We register a simple
+            // passthrough handler only when no widgetManager is present; if a
+            // widgetManager is available we must not intercept those comms.
+            try {
+                if (props.widgetManager) {
+                    dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
+                } else {
+                    const simpleHandler = (commOp: any, msg: any) => {
+                        dbg('widget comm opened (jupyter.widget)', commOp, msg);
+                        try {
+                            commOp.onMsg = async (m: any) => {
+                                let content = m?.content?.data || m;
+                                try {
+                                    const command = typeof content === 'string' ? JSON.parse(content) : content;
+                                    let rmsg: any = null;
+                                    if (command.type === 'command' && appletApi) {
+                                        const label = appletApi.evalCommandGetLabels(command.payload);
+                                        rmsg = JSON.stringify({ type: 'created', id: command.id, payload: label });
+                                    } else if (command.type === 'function' && appletApi) {
+                                        const apiName = command.payload.name;
+                                        const args = command.payload.args;
+                                        let value: any[] = [];
+                                        (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+                                            if (isArrayOfArrays(args)) {
+                                                const v2: any[] = [];
+                                                args.forEach((a: any[]) => { v2.push(appletApi[f](...a) || null); });
+                                                value.push(v2);
+                                            } else {
+                                                value.push(args ? appletApi[f](...args) || null : appletApi[f]() || null);
+                                            }
+                                        });
+                                        value = Array.isArray(apiName) ? value : value[0];
+                                        rmsg = JSON.stringify({ type: 'value', id: command.id, payload: { value } });
+                                    }
+                                    if (rmsg) {
+                                        try { commOp.send(rmsg); } catch (e) { dbg('commOp.send failed', e); }
+                                        try { await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl); } catch (e) { dbg('callRemoteSocketSend failed', e); }
+                                    }
+                                } catch (e) {
+                                    dbg('Error handling widget comm message', e);
+                                }
+                            };
+                        } catch (e) {
+                            dbg('Failed to attach onMsg to widget comm', e);
+                        }
+                    };
+
+                    kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
+                    kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
+                }
+            } catch (e) {
+                dbg('Widget comm target registration skipped or failed', e);
+            }
 
             async function ggbOnLoad(api: any) {
-                console.log("GeoGebra applet loaded:", api);
+                dbg("GeoGebra applet loaded:", api);
+                // expose applet API to other handlers (widgetComm etc.)
+                appletApi = api;
                 (async function () {
                     var msg = {
                         "type": "start",
@@ -198,8 +389,38 @@ with connect("${wsUrl}") as ws:
                 //     resizeObserver.observe(widgetRef.current); //widgetElemnt);
                 // }
 
-                comm = kernelConn.createComm(props.commTarget || 'test');
-                comm.open('HELO from GGB').done;
+                if (props.commTarget) {
+                    comm = kernelConn.createComm(props.commTarget);
+                    try {
+                        // Log comm creation details for debugging 'Comm not found' issues
+                        try {
+                            const maybeId = (comm as any)?.comm_id || (comm as any)?.commId || (comm as any)?.id || null;
+                            dbg('Created kernel comm', { target: props.commTarget, commObject: comm, commId: maybeId });
+                        } catch (e) {
+                            dbg('Created kernel comm (unable to read id)', props.commTarget, comm);
+                        }
+                        comm.open('HELO from GGB').done;
+                    } catch (e) {
+                        dbg('Failed to open kernel comm for', props.commTarget, e);
+                    }
+                    // Attach close handler to surface unexpected closes
+                    try {
+                        comm.onClose = (m: any) => {
+                            try {
+                                const closedId = (m && m.content && m.content.comm_id) || (comm as any)?.comm_id || (comm as any)?.commId || null;
+                                dbg('Kernel comm closed', { target: props.commTarget, commId: closedId, message: m });
+                            } catch (e) {
+                                dbg('Kernel comm closed (no id available)', props.commTarget, m);
+                            }
+                        };
+                    } catch (e) {
+                        dbg('Unable to attach onClose to kernel comm', e);
+                    }
+                } else {
+                    // No kernel-level comm target provided: rely on remote socket
+                    comm = null;
+                    dbg('No commTarget provided; skipping kernel comm creation');
+                }
              // comm.send('HELO2').done
 
              // kernel.registerCommTarget('test', (comm, commMsg) => {
@@ -209,68 +430,14 @@ with connect("${wsUrl}") as ws:
                     // Attempt to close comm and shutdown helper kernel
                     try { comm?.close?.(); } catch (e) { console.error(e); }
                     kernel2?.shutdown().catch((err: any) => console.error(err));
-                    console.log("Kernel and comm closed.");
+                    dbg("Kernel and comm closed.");
                     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
                 };
                 window.addEventListener('close', closeHandler);
-
-                comm.onMsg = async (msg: any) => {
-                    dbg("Message received from server:", msg['content']['data']);
-
-                    const command = JSON.parse(msg.content.data as any);
-                    dbg("Parsed command:", command.type, command.payload);
-                    
-                    var rmsg: any = null;
-                    if (command.type === "command") {
-                        var label = api.evalCommandGetLabels(command.payload);
-                        
-                        rmsg = JSON.stringify({
-                            "type": "created",
-                            "id": command.id,                  
-                            "payload": label
-                        }); // .replace(/'/g, "\\'");
-                    } else if (command.type === "function") {
-                        var apiName = command.payload.name;
-                        dbg("apiName:", apiName);
-                        var value: any[] = [];
-
-                        {
-                            var args = command.payload.args;
-                            value = [];
-                                (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-                                dbg("call", f, args);
-                                if (isArrayOfArrays(args)) {
-                                    var value2: any[] = [];
-                                    args.forEach((arg2: any[]) => {
-                                        if (args) {
-                                            value2.push(api[f](...arg2) || null);
-                                        } else {
-                                            value2.push(api[f]() || null);
-                                        }
-                                    });
-                                    value.push(value2);
-                                } else {
-                                    if (args) {
-                                        value.push(api[f](...args) || null);
-                                    } else {
-                                        value.push(api[f]() || null);
-                                    }
-                                }
-                            });
-                            value = (Array.isArray(apiName) ? value : value[0]);
-                            dbg("Function value:", value);
-                        }
-                        rmsg = JSON.stringify({
-                            "type": "value",
-                            "id": command.id,
-                            "payload": {
-                                //"label": command.payload,
-                                "value": value
-                            }
-                        }); // .replace(/'/g, "\\'");
-                    }
-                    comm.send(rmsg);
-                    await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
+                if (comm) {
+                    try { comm.onMsg = handleIncomingCommMessage; } catch (e) { dbg('Failed to attach handleIncomingCommMessage to comm', e); }
+                } else {
+                    dbg('No kernel comm available; messages will be sent via remote socket only');
                 }
 
                 var addListener = async function(data: any) {
@@ -280,7 +447,12 @@ with connect("${wsUrl}") as ws:
                         "payload": data, 
                     }
                     // console.log("Add detected:", JSON.stringify(msg));
-                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+                    // Prefer to send via widget comm bridge if available
+                    const s = JSON.stringify(msg);
+                    if (widgetComm) {
+                        try { widgetComm.send(s); return; } catch (e) { dbg('widgetComm.send failed, falling back', e); }
+                    }
+                    await callRemoteSocketSend(kernel2, s, socketPath, wsUrl);
                 }
                 api.registerAddListener(addListener);
 
@@ -291,7 +463,11 @@ with connect("${wsUrl}") as ws:
                         "payload": data,
                     }
                     // console.log("Remove detected:", JSON.stringify(msg));
-                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+                    const s = JSON.stringify(msg);
+                    if (widgetComm) {
+                        try { widgetComm.send(s); return; } catch (e) { dbg('widgetComm.send failed, falling back', e); }
+                    }
+                    await callRemoteSocketSend(kernel2, s, socketPath, wsUrl);
                 }
                 api.registerRemoveListener(removeListener);
 
@@ -302,7 +478,11 @@ with connect("${wsUrl}") as ws:
                         "payload": data,
                     }
                     // console.log("Rename detected:", JSON.stringify(msg));
-                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+                    const s = JSON.stringify(msg);
+                    if (widgetComm) {
+                        try { widgetComm.send(s); return; } catch (e) { dbg('widgetComm.send failed, falling back', e); }
+                    }
+                    await callRemoteSocketSend(kernel2, s, socketPath, wsUrl);
                 }
                 api.registerRenameListener(renameListener);
 
@@ -313,7 +493,11 @@ with connect("${wsUrl}") as ws:
                         "payload": data
                     }
                     // console.log("Rename detected:", JSON.stringify(msg));
-                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+                    const s = JSON.stringify(msg);
+                    if (widgetComm) {
+                        try { widgetComm.send(s); return; } catch (e) { dbg('widgetComm.send failed, falling back', e); }
+                    }
+                    await callRemoteSocketSend(kernel2, s, socketPath, wsUrl);
                 }
                 api.registerClearListener(clearListener);
 
@@ -436,10 +620,10 @@ with connect("${wsUrl}") as ws:
             // Clean up GeoGebra applet
             if (applet) {
                 try {
-                    console.log("Cleaning up GeoGebra applet.");
+                    dbg("Cleaning up GeoGebra applet.");
                     (window as any).ggbApplet.remove();
                 } catch (e) {
-                    console.error(e);
+                    dbg('Error while removing GeoGebra applet', e);
                 }
                 applet = null;
                 try { delete (window as any).GGBApplet; } catch {}
@@ -449,13 +633,16 @@ with connect("${wsUrl}") as ws:
             (async () => {
                 try {
                     if (comm) {
-                        try { comm.close?.(); } catch (e) { console.error(e); }
+                        try { comm.close?.(); } catch (e) { dbg('Error closing comm during cleanup', e); }
                         comm = null;
                     }
                     if (kernel2) {
                         await kernel2.shutdown();
                         kernel2 = null;
                     }
+                        // Clear any widget comm bridge reference
+                        try { widgetComm = null; } catch (e) { /* ignore */ }
+                        try { appletApi = null; } catch (e) { /* ignore */ }
                     if (kernelManager) {
                         try { await kernelManager.shutdown?.(); } catch (e) { /* ignore */ }
                         kernelManager = null;
@@ -478,6 +665,8 @@ interface GGAWidgetProps {
     insertMode?: DockLayout.InsertMode;
     wsPort?: number;
     socketPath?: string;
+    // Optional WidgetManager module or instance provided by the plugin activation
+    widgetManager?: any;
 }
 
 /**
@@ -497,7 +686,7 @@ export class GeoGebraWidget extends ReactWidget {
     }
 
     render(): JSX.Element {
-        return <GGAComponent kernelId={this.props?.kernelId} commTarget={this.props?.commTarget} wsPort={this.props?.wsPort} socketPath={this.props?.socketPath} />;
+        return <GGAComponent kernelId={this.props?.kernelId} commTarget={this.props?.commTarget} wsPort={this.props?.wsPort} socketPath={this.props?.socketPath} widgetManager={this.props?.widgetManager} />;
     }
 
     // only onResize is responsible for size changes in Lumino,
@@ -512,7 +701,7 @@ export class GeoGebraWidget extends ReactWidget {
     // Use onCloseRequest to trigger cleanup so that transient disposals
     // during layout/restore operations do not tear down the internal state.
     protected onCloseRequest(msg: Message): void {
-        console.log('GeoGebraWidget onCloseRequest — performing cleanup.');
+        dbg('GeoGebraWidget onCloseRequest — performing cleanup.');
         window.dispatchEvent(new Event('close'));
         super.onCloseRequest(msg);
     }
@@ -520,7 +709,7 @@ export class GeoGebraWidget extends ReactWidget {
     // dispose should not trigger cleanup again; allow normal disposal to proceed
     // without duplicating shutdown logic.
     dispose(): void {
-        console.log('GeoGebraWidget disposed.');
+        dbg('GeoGebraWidget disposed.');
         super.dispose();
     }
 }

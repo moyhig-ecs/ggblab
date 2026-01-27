@@ -4,7 +4,6 @@ This module implements a dual-channel communication layer combining
 IPython Comm with an out-of-band socket (Unix domain socket or WebSocket)
 to ensure reliable message delivery while notebook cells execute.
 """
-
 import uuid
 import json
 import queue
@@ -19,6 +18,14 @@ import os
 from IPython import get_ipython
 
 from .errors import GeoGebraAppletError
+
+# Optional ipywidgets import for DOMWidget-based comm bridge
+try:
+    import ipywidgets as _ipywidgets
+    _WIDGETS_AVAILABLE = True
+except Exception:
+    _ipywidgets = None
+    _WIDGETS_AVAILABLE = False
 
 
 class ggb_comm:
@@ -50,15 +57,6 @@ class ggb_comm:
         pending_futures (dict): Mapping of message-id to Future for awaiting responses
         recv_events (queue.Queue): Event queue for frontend notifications
     
-    See:
-        docs/architecture.md for detailed communication architecture.
-        
-    Note:
-        This module focuses on communication primitives. Higher-level
-        construction I/O and analysis helpers are provided in the optional
-        ``ggblab_extra`` package; the core keeps communication and minimal
-        shims only.
-    
         Future improvement:
             Consider integrating the out-of-band server with Jupyter's
             Tornado/ioloop to avoid cross-thread asyncio interactions. This
@@ -87,6 +85,8 @@ class ggb_comm:
         self.clients = set()
         self.socketPath = None
         self.wsPort = 0
+        # Event to signal the background server thread to stop
+        self._stop_event = threading.Event()
         # counters for noisy connect/disconnect events; used to aggregate logs
         self._client_connect_count = 0
         self._client_disconnect_count = 0
@@ -101,6 +101,15 @@ class ggb_comm:
         # handshake was left pending and removed here to avoid brittle behavior.
         # Per-instance mapping from message id to Future
         self.pending_futures = {}
+        # Optional ipywidgets bridge widget whose comm can be reused
+        self.widget_bridge = None
+        # Prefer to register the IPython Comm target by default so the
+        # frontend can open a kernel-level Comm for command/response.
+        # Older behaviour allowed opting out; keep the flag for backwards
+        # compatibility but default to True which is the expected path now.
+        self.use_ipython_comm = True
+        # Debug flag: when False, suppress non-actionable diagnostic log entries
+        self.debug = False
 
     # oob websocket (unix_domain socket in posix)
     def start(self):
@@ -109,24 +118,52 @@ class ggb_comm:
         Creates a Unix domain socket (POSIX) or TCP WebSocket server (Windows)
         and runs it in a daemon thread. The server listens for GeoGebra responses.
         """
+        # Ensure any previous stop event is cleared and start server thread
+        try:
+            self._stop_event.clear()
+        except Exception:
+            self._stop_event = threading.Event()
+
         self.server_thread = threading.Thread(target=lambda: asyncio.run(self.server()), daemon=True)
         self.server_thread.start()
 
     def stop(self):
         """Stop the out-of-band socket server."""
-        self.server_handle.close()
+        try:
+            # Signal the server to stop
+            self._stop_event.set()
+        except Exception:
+            pass
+
+        try:
+            # Allow the server coroutine to exit its context and the thread to join
+            if self.server_thread is not None:
+                self.server_thread.join(timeout=1.0)
+        except Exception:
+            pass
+
+        try:
+            if self.server_handle is not None:
+                # best-effort close; actual closure happens when server coroutine exits
+                close = getattr(self.server_handle, 'close', None)
+                if callable(close):
+                    close()
+        except Exception:
+            pass
 
     async def server(self):
         """Run the out-of-band socket server.
 
         Uses a Unix domain socket on POSIX systems and a TCP WebSocket otherwise.
         """
+        loop = asyncio.get_running_loop()
         if os.name in [ 'posix' ]:
             _fd, self.socketPath = tempfile.mkstemp(prefix="/tmp/ggb_")
             os.close(_fd)
             os.remove(self.socketPath)
             async with unix_serve(self.client_handle, path=self.socketPath) as self.server_handle:
-                await asyncio.Future()
+                # Wait until stop_event is set in another thread
+                await loop.run_in_executor(None, self._stop_event.wait)
         else:
                async with serve(self.client_handle, "localhost", 0) as self.server_handle:
                    with self.thread_lock:
@@ -135,7 +172,8 @@ class ggb_comm:
                            self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
                        except Exception:
                            pass
-                   await asyncio.Future()
+                   # Wait until stop_event is set in another thread
+                   await loop.run_in_executor(None, self._stop_event.wait)
 
     async def client_handle(self, client_id):
         """Handle messages from a connected websocket client.
@@ -178,24 +216,48 @@ class ggb_comm:
                         fut = self.pending_futures.pop(_id, None)
                     if fut:
                         try:
-                            fut.set_result(_data['payload'])
-                            # try:
-                            #     with self.thread_lock:
-                            #         self.logs.append(f"Fulfilled future for id {_id}")
-                            # except Exception:
-                            #     pass
-                        except Exception:
-                            # ignore set_result errors but record
+                            # Safely set the result on the waiting Future.
+                            # Handle both asyncio.Future (must be set on its loop)
+                            # and concurrent.futures.Future (thread-safe set_result).
+                            import asyncio as _asyncio
                             try:
-                                with self.thread_lock:
-                                    self.logs.append(f"Error setting result for id {_id}")
+                                is_asyncio = isinstance(fut, _asyncio.Future)
+                            except Exception:
+                                is_asyncio = False
+
+                            if is_asyncio:
+                                # Try to obtain the loop associated with the future.
+                                loop = None
+                                try:
+                                    get_loop = getattr(fut, 'get_loop', None)
+                                    if callable(get_loop):
+                                        loop = get_loop()
+                                except Exception:
+                                    loop = getattr(fut, '_loop', None)
+
+                                # If the loop is running, schedule thread-safe set_result.
+                                if loop is not None and getattr(loop, 'is_running', lambda: False)():
+                                    loop.call_soon_threadsafe(fut.set_result, _data['payload'])
+                                else:
+                                    # Fallback: set directly (may raise if not allowed).
+                                    fut.set_result(_data['payload'])
+                            else:
+                                # concurrent.futures.Future is safe to set from other threads
+                                fut.set_result(_data['payload'])
+                        except Exception:
+                            # ignore set_result errors but record for diagnostics when debug
+                            try:
+                                if getattr(self, 'debug', False):
+                                    with self.thread_lock:
+                                        self.logs.append(f"Error setting result for id {_id}")
                             except Exception:
                                 pass
                     else:
-                        # No future waiting; log unexpected response
+                        # No future waiting; quietly ignore unless debugging
                         try:
-                            with self.thread_lock:
-                                self.logs.append(f"Unexpected response for id {_id}")
+                            if getattr(self, 'debug', False):
+                                with self.thread_lock:
+                                    self.logs.append(f"Unexpected response for id {_id}")
                         except Exception:
                             pass
                 else:
@@ -212,11 +274,12 @@ class ggb_comm:
                     # record connection errors but avoid spamming; use same rate-limit
                     now = time.time()
                     if now - self._last_client_log_time > 5.0:
+                        # Connection errors are notable; always record
                         self.logs.append(f"Connection error: {e}")
                         self._last_client_log_time = now
             except Exception:
                 pass
-          # self.logs.append(f"Connection closed: {e}")
+            # self.logs.append(f"Connection closed: {e}")
         finally:
             with self.thread_lock:
                 try:
@@ -238,10 +301,82 @@ class ggb_comm:
 
     # comm
     def register_target(self):
-        """Register the IPython Comm target for frontend messages."""
-        get_ipython().kernel.comm_manager.register_target(
-            self.target_name,
-            self.register_target_cb)
+        """Register the IPython Comm target for frontend messages.
+
+        Note: IPython Comm registration is disabled by default (see
+        `self.use_ipython_comm`). Callers may enable it by setting that
+        attribute to True before calling this method.
+        """
+        if not getattr(self, 'use_ipython_comm', False):
+            # Prefer an ipywidgets-based bridge: create a minimal widget whose
+            # Comm is managed by the widget manager. This avoids direct use of
+            # IPython kernel-level Comm targets which can conflict with other
+            # widget activity in the frontend.
+            if not _WIDGETS_AVAILABLE:
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('ipywidgets not available; IPython Comm registration skipped')
+                except Exception:
+                    pass
+                return
+
+            try:
+                # create or reuse bridge
+                if self.widget_bridge is None:
+                    wb = _ipywidgets.Widget()
+                    self.widget_bridge = wb
+
+                    # route widget messages to handle_recv
+                    def _on_msg(widget, content, buffers):
+                        try:
+                            # normalize into previous message shape
+                            msg = {'content': {'data': content}}
+                            self.handle_recv(msg)
+                        except Exception:
+                            try:
+                                with self.thread_lock:
+                                    self.logs.append('Error handling widget bridge message')
+                            except Exception:
+                                pass
+
+                    try:
+                        self.widget_bridge.on_msg(_on_msg)
+                    except Exception:
+                        # Older ipywidgets may use different signature; ignore if not supported
+                        pass
+
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('Using ipywidgets bridge for comms')
+                except Exception:
+                    pass
+            except Exception:
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('Failed to create ipywidgets bridge')
+                except Exception:
+                    pass
+            return
+
+        # If explicitly requested, perform IPython Comm registration (best-effort)
+        try:
+            get_ipython().kernel.comm_manager.register_target(
+                self.target_name,
+                self.register_target_cb)
+        except Exception:
+            try:
+                with self.thread_lock:
+                    self.logs.append('Failed to register IPython Comm target')
+            except Exception:
+                pass
+        # Ensure we have a post-execute hook to flush any queued events
+        try:
+            self.register_post_execute()
+        except Exception:
+            pass
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
@@ -249,7 +384,8 @@ class ggb_comm:
         with self.thread_lock:
             self.target_comm = comm
             try:
-                self.logs.append(f"register_target_cb: {self.target_comm}")
+                if getattr(self, 'debug', False):
+                    self.logs.append(f"register_target_cb: {self.target_comm}")
             except Exception:
                 pass
 
@@ -261,7 +397,7 @@ class ggb_comm:
         def _close():
             self.target_comm = None
 
-    def unregister_target_cb(self, comm, msg):
+    def unregister_target_cb(self):
         """Unregister and close the IPython Comm connection."""
         with self.thread_lock:
             try:
@@ -271,28 +407,218 @@ class ggb_comm:
                 pass
             self.target_comm = None
 
+    def _post_execute_handler(self, *args, **kwargs):
+        """Post-execute handler to flush queued recv events.
+
+        Some frontends (and ipywidgets-based backends) rely on processing
+        queued events after a cell finishes execution. Registering a
+        `post_execute` hook helps ensure any events that arrived while a
+        cell was executing are drained and surfaced to diagnostics.
+        """
+        try:
+            drained = 0
+            while True:
+                try:
+                    ev = self.recv_events.get_nowait()
+                except queue.Empty:
+                    break
+                drained += 1
+                try:
+                    with self.thread_lock:
+                        # Keep a compact diagnostic of the event
+                        self.logs.append(f"post_execute: event {ev.get('type', 'unknown')}")
+                except Exception:
+                    pass
+            if drained:
+                try:
+                    with self.thread_lock:
+                        self.logs.append(f"post_execute: flushed {drained} recv_events")
+                except Exception:
+                    pass
+        except Exception as e:
+            try:
+                with self.thread_lock:
+                    self.logs.append(f"post_execute handler error: {e}")
+            except Exception:
+                pass
+
+    def register_post_execute(self):
+        """Register the `_post_execute_handler` with IPython's post_execute event.
+
+        Returns True if registration succeeded.
+        """
+        try:
+            ip = get_ipython()
+            if ip is None:
+                return False
+            try:
+                ip.events.register('post_execute', self._post_execute_handler)
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('Registered post_execute handler for recv_events')
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                try:
+                    with self.thread_lock:
+                        self.logs.append('Failed to register post_execute handler')
+                except Exception:
+                    pass
+                return False
+        except Exception:
+            return False
+
     def handle_recv(self, msg):
         """Handle a message received via IPython Comm (command response).
 
         Event-type messages are routed via the out-of-band socket; this method
         processes response messages delivered over IPython Comm.
         """
-        if isinstance(msg['content']['data'], str):
-            _data = json.loads(msg['content']['data'])
-        else:
-            _data = msg['content']['data']
-        
-        # All messages here are assumed to be responses with 'id'
-        # (event messages are handled via client_handle in the out-of-band socket)
+        # Normalize incoming payload
+        try:
+            if isinstance(msg['content']['data'], str):
+                _data = json.loads(msg['content']['data'])
+            else:
+                _data = msg['content']['data']
+        except Exception:
+            try:
+                with self.thread_lock:
+                    self.logs.append('Malformed comm message received')
+            except Exception:
+                pass
+            return
+
+        # If the message contains an 'id' field treat it as a response
+        _id = _data.get('id') if isinstance(_data, dict) else None
+        if _id:
+            with self.thread_lock:
+                fut = self.pending_futures.pop(_id, None)
+            if fut:
+                try:
+                    import asyncio as _asyncio
+                    try:
+                        is_asyncio = isinstance(fut, _asyncio.Future)
+                    except Exception:
+                        is_asyncio = False
+
+                    if is_asyncio:
+                        loop = None
+                        try:
+                            get_loop = getattr(fut, 'get_loop', None)
+                            if callable(get_loop):
+                                loop = get_loop()
+                        except Exception:
+                            loop = getattr(fut, '_loop', None)
+
+                        if loop is not None and getattr(loop, 'is_running', lambda: False)():
+                            loop.call_soon_threadsafe(fut.set_result, _data.get('payload'))
+                        else:
+                            fut.set_result(_data.get('payload'))
+                    else:
+                        fut.set_result(_data.get('payload'))
+                except Exception:
+                    try:
+                        with self.thread_lock:
+                            self.logs.append(f"Error setting result for id {_id}")
+                    except Exception:
+                        pass
+            else:
+                try:
+                    with self.thread_lock:
+                        self.logs.append(f"Unexpected response for id {_id}")
+                except Exception:
+                    pass
+            return
+
+        # Otherwise it's an event message: enqueue for consumers
+        try:
+            self.recv_events.put(_data)
+        except Exception:
+            try:
+                with self.thread_lock:
+                    self.logs.append('Failed to enqueue recv event')
+            except Exception:
+                pass
+        return
 
     def send(self, msg):
         """Send a message via the IPython Comm channel."""
         with self.thread_lock:
             tc = self.target_comm
         if tc:
+            # Prefer scheduling the send on the kernel I/O loop if available
+            try:
+                kernel = get_ipython().kernel
+                io_loop = getattr(kernel, 'io_loop', None)
+                if io_loop is not None and hasattr(io_loop, 'add_callback'):
+                    try:
+                        io_loop.add_callback(lambda: tc.send(msg))
+                        return
+                    except Exception:
+                        # fall through to direct send
+                        pass
+            except Exception:
+                pass
             return tc.send(msg)
-        else:
+
+        # Fallback: try to use an ipywidgets-managed comm (widget bridge)
+        try:
+            if not self._ensure_widget_bridge():
+                raise RuntimeError("No active Comm: GeoGebra().init() must be called in a notebook cell before sending commands.")
+            wb = self.widget_bridge
+            comm = getattr(wb, 'comm', None)
+            if comm:
+                return comm.send(msg)
+            raise RuntimeError("Widget bridge created but no comm available.")
+        except RuntimeError:
+            raise
+        except Exception:
             raise RuntimeError("GeoGebra().init() must be called in a notebook cell before sending commands.")
+
+    def _ensure_widget_bridge(self):
+        """Ensure a small ipywidgets widget exists whose Comm can be used as a bridge.
+
+        Returns True if a usable widget bridge with an active comm is available.
+        This is a best-effort fallback to improve compatibility with the
+        frontend widget manager when the original target_comm is unavailable.
+        """
+        try:
+            from ipywidgets import IntSlider
+        except Exception:
+            return False
+
+        # If existing bridge looks usable, accept it
+        try:
+            wb = self.widget_bridge
+            if wb is not None and getattr(wb, 'comm', None) is not None and getattr(wb.comm, 'comm_id', None):
+                return True
+        except Exception:
+            pass
+
+        # Create a minimal widget (not displayed) to open a comm via ipywidgets
+        try:
+            w = IntSlider()
+            # store bridge
+            with self.thread_lock:
+                self.widget_bridge = w
+
+            # wait briefly for kernel-side comm to register
+            waited = 0.0
+            while waited < 1.0:
+                try:
+                    comm = getattr(w, 'comm', None)
+                    if comm and getattr(comm, 'comm_id', None):
+                        return True
+                except Exception:
+                    pass
+                time.sleep(0.05)
+                waited += 0.05
+        except Exception:
+            return False
+
+        return False
 
     async def send_recv(self, msg):
         """Send a message via IPython Comm and wait for response via out-of-band socket.

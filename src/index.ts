@@ -33,13 +33,13 @@ const plugin: JupyterFrontEndPlugin<void> = {
     settingRegistry: ISettingRegistry | null,
     restorer: ILayoutRestorer | null
   ) => {
-    console.log(`JupyterLab extension ggblab-${pkg.version} is activated!`);
+    console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
     if (settingRegistry) {
       settingRegistry
         .load(plugin.id)
         .then(settings => {
-          console.log('ggblab settings loaded:', settings.composite);
+          console.debug('ggblab settings loaded:', settings.composite);
         })
         .catch(reason => {
           console.error('Failed to load settings for ggblab.', reason);
@@ -59,7 +59,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
       label: 'React Widget',
       icon: args => (args['isPalette'] ? undefined : reactIcon),
       execute: async (args: any) => {
-        console.log('socketPath:', args['socketPath']);
+        console.debug('socketPath:', args['socketPath']);
 
         // Precompute widget id so we can detect and remove any existing panel
         const idPart = (args['kernelId'] || '').substring(0, 8);
@@ -86,12 +86,17 @@ const plugin: JupyterFrontEndPlugin<void> = {
           // If tracker API differs, ignore and continue
         }
 
+        // Do not pass a WidgetManager here to avoid interfering with ipywidgets.
+        // Force use of kernel-level Comm for ggblab to avoid widget-protocol conflicts.
+        const widgetManager: any = undefined;
+
         const content = new GeoGebraWidget({
           kernelId: args['kernelId'] || '',
           commTarget: args['commTarget'] || '',
           insertMode: args['insertMode'] || 'split-right',
           socketPath: args['socketPath'] || '',
-          wsPort: args['wsPort'] || 8888
+          wsPort: args['wsPort'] || 8888,
+          widgetManager: widgetManager
         });
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
         // make widget id unique so restorer can identify it later
