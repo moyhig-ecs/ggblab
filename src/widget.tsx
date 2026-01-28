@@ -1,4 +1,3 @@
-/* eslint-disable */
 import { ReactWidget } from '@jupyterlab/ui-components';
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
@@ -30,6 +29,10 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
     const widgetRef = useRef<HTMLDivElement>(null);
  // const [size, setSize] = useState<{width: number; height: number}>({width: 800, height: 600});
 
+// The following `useState` + resize-listener is intentionally commented out.
+// Lumino's layout and `onResize` handling are the primary resize signals
+// for this widget; the code is kept as a reference for future experiments
+// (ResizeObserver and alternate strategies were unreliable across themes).
 // // Listen to resize events to update size state
 // // but not working as expected in Lumino
 //   useEffect(() => {
@@ -127,6 +130,10 @@ with connect("${wsUrl}") as ws:
         let kernelManager: any = null;
         let kernelConn: any = null;
         let comm: any = null;
+        // Reserved for future ipywidgets-based bridge (kept intentionally).
+        // When enabled, `widgetComm` will be assigned to a frontend-managed
+        // widget comm to allow in-kernel widgets to be routed directly to
+        // the GeoGebra instance without using the remote socket.
         let widgetComm: any = null;
         let appletApi: any = null;
         let observer: MutationObserver | null = null;
@@ -501,6 +508,9 @@ with connect("${wsUrl}") as ws:
                 }
                 api.registerClearListener(clearListener);
 
+                // The `clientListener` example below is kept commented out as a
+                // reference for future event types. It's disabled because it
+                // was not used in production and could generate noisy traffic.
                 // // nothing triggered?
                 // var clientListener = async function(data: any) {
                 // // console.log("Add listener triggered for:", data);
@@ -570,6 +580,9 @@ with connect("${wsUrl}") as ws:
                 }
                 applet = new (window as any).GGBApplet(params, true);
                 applet.inject(elementId);
+                // Expose the active applet instance on `window.ggbApplet` for
+                // consistency across the codebase and for debug tooling.
+                try { (window as any).ggbApplet = applet; } catch (e) { /* ignore */ }
             };
 
             if (existingScript) {
@@ -621,12 +634,14 @@ with connect("${wsUrl}") as ws:
             if (applet) {
                 try {
                     dbg("Cleaning up GeoGebra applet.");
-                    (window as any).ggbApplet.remove();
+                    // Use the unified `window.ggbApplet` reference when available
+                    const winApplet = (window as any).ggbApplet || applet;
+                    try { winApplet.remove(); } catch (e) { dbg('Error removing applet instance', e); }
                 } catch (e) {
                     dbg('Error while removing GeoGebra applet', e);
                 }
                 applet = null;
-                try { delete (window as any).GGBApplet; } catch {}
+                try { delete (window as any).ggbApplet; } catch {}
             }
 
             // Close comm and shutdown helper kernel asynchronously

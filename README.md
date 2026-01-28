@@ -175,7 +175,8 @@ layer. Key changes in this workspace:
    churn when many applet listeners fire concurrently.
 - **Reduced noisy logs**: connect/disconnect and socket lifecycle messages are
    now aggregated and rate-limited to reduce log spam during normal operation.
-- **Version bump**: package version updated to `1.1.0`.
+- **Version bump**: package version updated to `1.2.0`.
+- **ipywidgets / ipympl interop**: Improved compatibility with ipywidgets-based backends (e.g. ipympl) so they can asynchronously process Comm messages without conflicting with ggblab's Comm handling. To avoid surprising transient kernel-side Comms during initialization, ggblab yields to frontend widget managers using a `post_execute` drain and keeps the optional ipywidgets bridge disabled by default. Advanced users may review the `enable_widget_bridge` flag in `ggblab/comm.py` if they need a kernel-side widget bridge.
 
 If you need more detail on any bullet, see the corresponding source files:
 - Frontend: [src/index.ts](src/index.ts) and [src/widget.tsx](src/widget.tsx)

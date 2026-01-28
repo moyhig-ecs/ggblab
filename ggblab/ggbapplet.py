@@ -140,115 +140,13 @@ class GeoGebra:
                 'socketPath': self.comm.socketPath,
               # 'wsPort': self.comm.wsPort,
             })
-            # Wait briefly for the frontend to finish initializing and for
-            # comms to stabilize. Creating the GeoGebra panel can cause the
-            # frontend to re-initialize widget managers which may replace
-            # comm ids; wait until the kernel-side comm list stops changing
-            # for a short period to avoid race conditions when users create
-            # additional ipywidgets immediately after init().
-            try:
-                km = get_ipython().kernel.comm_manager
-                prev = set(getattr(km, 'comms', {}).keys())
-                stable = 0
-                for _ in range(40):
-                    await asyncio.sleep(0.05)
-                    cur = set(getattr(km, 'comms', {}).keys())
-                    if cur == prev:
-                        stable += 1
-                        if stable >= 4:
-                            break
-                    else:
-                        prev = cur
-                        stable = 0
-            except Exception:
-                # If introspection fails, ignore and continue; this wait is
-                # a best-effort mitigation and must not prevent initialization.
-                pass
+            # Skipping comm-stability wait: removed as it can trigger
+            # kernel-side comm introspection that creates transient comms
+            # and leads to "No such comm" errors during initialization.
 
-            # Probe the widget manager more robustly. The front-end can be in
-            # a transient state immediately after panel creation; try two
-            # strategies in sequence:
-            #  1) low-level Comm probe (fast)
-            #  2) instantiate a minimal ipywidget (`IntSlider`) from the
-            #     kernel and check that the kernel-side Comm appears
-            # Both are best-effort and will not prevent initialization.
-            try:
-                km = get_ipython().kernel.comm_manager
-                probe_ok = False
-
-                # quick low-level Comm probe
-                try:
-                    from ipykernel.comm import Comm
-                    for _ in range(8):
-                        try:
-                            probe = Comm(target_name='jupyter.widget')
-                            await asyncio.sleep(0.05)
-                            if km.get_comm(getattr(probe, 'comm_id', None)) is not None:
-                                probe.close()
-                                probe_ok = True
-                                break
-                        except Exception:
-                            try:
-                                probe.close()
-                            except Exception:
-                                pass
-                            await asyncio.sleep(0.05)
-                except Exception:
-                    # low-level probe not available; continue to widget probe
-                    pass
-
-                # If low-level probe failed, try creating a real widget from
-                # the kernel side (this more closely exercises the same code
-                # path a user widget would take). Create and immediately
-                # close the widget once the kernel-side comm is visible.
-                if not probe_ok:
-                    try:
-                        from ipywidgets import IntSlider
-                        for _ in range(20):
-                            try:
-                                prev_keys = set(getattr(km, 'comms', {}).keys())
-                                w = IntSlider()
-                                # wait briefly for kernel-side comms to appear
-                                found = False
-                                for _ in range(6):
-                                    await asyncio.sleep(0.05)
-                                    cur_keys = set(getattr(km, 'comms', {}).keys())
-                                    new = cur_keys - prev_keys
-                                    if new:
-                                        # assume any new comm is the widget's comm
-                                        try:
-                                            w.close()
-                                        except Exception:
-                                            pass
-                                        probe_ok = True
-                                        found = True
-                                        break
-                                if found:
-                                    break
-                                else:
-                                    try:
-                                        w.close()
-                                    except Exception:
-                                        pass
-                                    await asyncio.sleep(0.05)
-                            except Exception:
-                                # Widget creation/opening failed on front-end,
-                                # so wait and retry.
-                                await asyncio.sleep(0.05)
-                    except Exception:
-                        pass
-
-                if not probe_ok:
-                    try:
-                        import warnings
-                        warnings.warn(
-                            'Widget manager probe failed: frontend may not accept new ipywidgets immediately after GeoGebra.init()'
-                        )
-                    except Exception:
-                        pass
-            except Exception:
-                # If probing is not possible, don't fail initialization.
-                pass
+            # Widget-manager probing removed: unnecessary and causes hidden
+            # kernel-side Comm creation during init which can lead to "No such
+            # comm" errors. Skipping probing and continuing initialization.
             
             # Initialize object cache
             # await self.refresh_object_cache()

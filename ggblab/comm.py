@@ -108,6 +108,10 @@ class ggb_comm:
         # Older behaviour allowed opting out; keep the flag for backwards
         # compatibility but default to True which is the expected path now.
         self.use_ipython_comm = True
+        # Feature flag: enable creation of an ipywidgets-based bridge
+        # when `use_ipython_comm` is False. Keep disabled by default to
+        # avoid creating transient kernel-side Comms during init.
+        self.enable_widget_bridge = False
         # Debug flag: when False, suppress non-actionable diagnostic log entries
         self.debug = False
 
@@ -308,10 +312,17 @@ class ggb_comm:
         attribute to True before calling this method.
         """
         if not getattr(self, 'use_ipython_comm', False):
-            # Prefer an ipywidgets-based bridge: create a minimal widget whose
-            # Comm is managed by the widget manager. This avoids direct use of
-            # IPython kernel-level Comm targets which can conflict with other
-            # widget activity in the frontend.
+            # If widget-bridge creation is disabled, return early.
+            if not getattr(self, 'enable_widget_bridge', False):
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('IPython Comm registration skipped (use_ipython_comm=False)')
+                except Exception:
+                    pass
+                return
+
+            # Otherwise attempt to create a minimal ipywidgets bridge (best-effort).
             if not _WIDGETS_AVAILABLE:
                 try:
                     if getattr(self, 'debug', False):
@@ -563,62 +574,10 @@ class ggb_comm:
                 pass
             return tc.send(msg)
 
-        # Fallback: try to use an ipywidgets-managed comm (widget bridge)
-        try:
-            if not self._ensure_widget_bridge():
-                raise RuntimeError("No active Comm: GeoGebra().init() must be called in a notebook cell before sending commands.")
-            wb = self.widget_bridge
-            comm = getattr(wb, 'comm', None)
-            if comm:
-                return comm.send(msg)
-            raise RuntimeError("Widget bridge created but no comm available.")
-        except RuntimeError:
-            raise
-        except Exception:
-            raise RuntimeError("GeoGebra().init() must be called in a notebook cell before sending commands.")
+        # No widget-bridge fallback supported; require active IPython Comm
+        raise RuntimeError("No active Comm: GeoGebra().init() must be called in a notebook cell before sending commands.")
 
-    def _ensure_widget_bridge(self):
-        """Ensure a small ipywidgets widget exists whose Comm can be used as a bridge.
-
-        Returns True if a usable widget bridge with an active comm is available.
-        This is a best-effort fallback to improve compatibility with the
-        frontend widget manager when the original target_comm is unavailable.
-        """
-        try:
-            from ipywidgets import IntSlider
-        except Exception:
-            return False
-
-        # If existing bridge looks usable, accept it
-        try:
-            wb = self.widget_bridge
-            if wb is not None and getattr(wb, 'comm', None) is not None and getattr(wb.comm, 'comm_id', None):
-                return True
-        except Exception:
-            pass
-
-        # Create a minimal widget (not displayed) to open a comm via ipywidgets
-        try:
-            w = IntSlider()
-            # store bridge
-            with self.thread_lock:
-                self.widget_bridge = w
-
-            # wait briefly for kernel-side comm to register
-            waited = 0.0
-            while waited < 1.0:
-                try:
-                    comm = getattr(w, 'comm', None)
-                    if comm and getattr(comm, 'comm_id', None):
-                        return True
-                except Exception:
-                    pass
-                time.sleep(0.05)
-                waited += 0.05
-        except Exception:
-            return False
-
-        return False
+    # Widget-bridge fallback removed: rely on IPython Comm target only.
 
     async def send_recv(self, msg):
         """Send a message via IPython Comm and wait for response via out-of-band socket.
