@@ -190,6 +190,9 @@ with connect("${wsUrl}") as ws:
             dbg("Started new kernel:", kernel2, kernelId);
             await kernel2.requestExecute({ code: `from websockets.sync.client import unix_connect, connect` }).done;
 
+            const wsUrl = `ws://localhost:${props.wsPort}/`;
+            const socketPath = props.socketPath || null;
+
             // Send an early probe via the helper kernel to ensure the out-of-band
             // socket server receives a client connection as soon as possible.
             // This increases the chance that kernel-side send_recv will find
@@ -202,9 +205,6 @@ with connect("${wsUrl}") as ws:
             } catch (e) {
                 dbg('Failed to schedule early OOB probe', e);
             }
-
-            const wsUrl = `ws://localhost:${props.wsPort}/`;
-            const socketPath = props.socketPath || null;
 
             kernelConn = new KernelConnection({
                 model: { name: 'python3', id: kernelId || kernels[0]['id']},
