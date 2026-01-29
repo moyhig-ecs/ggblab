@@ -746,7 +746,10 @@ export class GeoGebraWidget extends ReactWidget {
     constructor(props?: GGAWidgetProps) {
         super();
         this.addClass('jp-ggblabWidget');
-        this.props = props;
+        this.props = props || {};
+        // Ensure a sensible default comm target so frontend and kernel
+        // consistently use the same channel when callers omit it.
+        this.props.commTarget = this.props.commTarget || 'ggblab-comm';
     }
 
     render(): JSX.Element {

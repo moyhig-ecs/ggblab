@@ -276,7 +276,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         const content = new GeoGebraWidget({
           kernelId: args['kernelId'] || '',
-          commTarget: args['commTarget'] || '',
+          commTarget: args['commTarget'] || 'ggblab-comm',
           insertMode: args['insertMode'] || 'split-right',
           socketPath: args['socketPath'] || '',
           wsPort: args['wsPort'] || 8888,
