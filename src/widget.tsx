@@ -47,17 +47,18 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 //     });
 //   }, []);
 
-    dbg("Component props: ", props.kernelId, props.commTarget, props.socketPath, props.wsPort);
-    // window.dispatchEvent(new Event('resize'));
+    // Normalize kernelId early to avoid undefined issues when props are missing
+    const kernelId = props?.kernelId || '';
+    dbg("Component props: ", kernelId, props.commTarget, props.socketPath, props.wsPort);
 
-    const elementId = "ggb-element-" + (props?.kernelId || '').substring(0, 8);
+    const elementId = "ggb-element-" + kernelId.substring(0, 8);
     dbg("Element ID:", elementId);
 
     let applet: any = null;
 
     // Prefer a widget manager explicitly passed via props; otherwise try
     // to pick up a manager placed in the global store by integration code.
-    const widgetManagerFromWindow = (window as any).__ggblab_widget_manager ? (window as any).__ggblab_widget_manager[props.kernelId] : undefined;
+    const widgetManagerFromWindow = (window as any).__ggblab_widget_manager ? (window as any).__ggblab_widget_manager[kernelId] : undefined;
     const effectiveWidgetManager = (props as any).widgetManager || widgetManagerFromWindow;
 
     function isArrayOfArrays(value: any): boolean {
@@ -165,14 +166,14 @@ with connect("${wsUrl}") as ws:
 
             kernelManager = new KernelManager({ serverSettings: settings });
             kernel2 = await kernelManager.startNew({ name: 'python3' });
-            dbg("Started new kernel:", kernel2, props.kernelId);
+            dbg("Started new kernel:", kernel2, kernelId);
             await kernel2.requestExecute({ code: `from websockets.sync.client import unix_connect, connect` }).done;
 
             const wsUrl = `ws://localhost:${props.wsPort}/`;
             const socketPath = props.socketPath || null;
 
             kernelConn = new KernelConnection({
-                model: { name: 'python3', id: props.kernelId || kernels[0]['id']},
+                model: { name: 'python3', id: kernelId || kernels[0]['id']},
                 serverSettings: settings,
             });
             dbg("Connected to kernel:", kernelConn);
@@ -289,13 +290,13 @@ with connect("${wsUrl}") as ws:
                     // before the widget fully mounts.
                     try {
                         const store = (window as any).__ggblab_comm_store || {};
-                        const pre = props.kernelId ? store[props.kernelId] : null;
+                        const pre = kernelId ? store[kernelId] : null;
                         if (pre) {
                             comm = pre;
                             try { comm.onMsg = handleIncomingCommMessage; } catch (e) { dbg('Failed to attach onMsg to pre-registered comm', e); }
                             attachCommCloseHandler(comm);
                             commClosed = false;
-                            dbg('Using pre-registered frontend comm for kernel', props.kernelId);
+                            dbg('Using pre-registered frontend comm for kernel', kernelId);
                             return comm;
                         }
                     } catch (e) {
