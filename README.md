@@ -1,5 +1,7 @@
 # ggblab — A JupyterLab extension for learning geometry and Python programming side-by-side with GeoGebra
 
+Summary: ggblab embeds a GeoGebra applet into JupyterLab and exposes an asynchronous Python API to drive the applet programmatically from notebooks. It uses a dual-channel communication design (an IPython Comm per kernel plus an optional out-of-band socket) to balance responsiveness and message size. Note: `init()` must be executed in its own notebook cell to avoid an unavoidable timing race between frontend comm_open and kernel comm registration.
+
 🚀 Quick links:
 
 - **Binder (Demo)**: Hosted demo and instructions to launch the examples in JupyterLab — see [binder/README.md](binder/README.md).
@@ -199,6 +201,17 @@ jlpm install
 jlpm test
 jlpm build
 ```
+
+## Future Work / Roadmap
+
+- Automate kernel-side comm registration: explore a JupyterLab plugin hook or kernel startup snippet so `ggblab-comm` can be registered automatically when a kernel starts or a workspace is opened.
+- Robust widget-manager integration: investigate a formally supported widget-manager registration flow so ipywidgets and ggblab interoperate without manual init steps.
+- Multi-applet support: enable safe multi-applet control from a single kernel while preserving message isolation and avoiding comm conflicts.
+- Improved OOB reliability: refine the out-of-band socket protocol (handshakes, retries, backpressure) to further reduce edge-case races and improve performance for large messages.
+- Packaging & distribution: simplify classroom installation (bundled labextension wheels, docker-based IoC deployment recipes) and publish reproducible release artifacts.
+- Tests & CI: expand end-to-end tests that exercise kernel↔frontend comm timing, including simulated slow networks and delayed frontends.
+
+Contributions and experiment proposals are welcome — open an issue or a PR with a short design note outlining trade-offs and testing strategy.
 
 CI: GitHub Actions runs tests and coverage on PRs — see `.github/workflows/tests.yml`.
 
