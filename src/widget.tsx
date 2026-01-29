@@ -196,86 +196,86 @@ with connect("${wsUrl}") as ws:
                 }
             };
 
+            // Centralized processing of a parsed command and sending replies.
+            // `sourceComm` is optional and, when provided, will be used to
+            // send the reply. Otherwise we fall back to the kernel-side `comm`
+            // or the remote socket.
+            const processCommand = async (command: any, sourceComm?: any) => {
+                try {
+                    dbg('processCommand:', command?.type, command?.payload);
+                    let rmsg: any = null;
+                    if (!appletApi) {
+                        dbg('Applet API not ready; cannot service command');
+                        return;
+                    }
+
+                    if (command.type === 'command') {
+                        const label = appletApi.evalCommandGetLabels(command.payload);
+                        rmsg = JSON.stringify({ type: 'created', id: command.id, payload: label });
+                    } else if (command.type === 'function') {
+                        const apiName = command.payload.name;
+                        const args = command.payload.args;
+                        let value: any[] = [];
+                        (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+                            if (isArrayOfArrays(args)) {
+                                const v2: any[] = [];
+                                args.forEach((a: any[]) => { v2.push(appletApi[f](...a) || null); });
+                                value.push(v2);
+                            } else {
+                                value.push(args ? appletApi[f](...args) || null : appletApi[f]() || null);
+                            }
+                        });
+                        value = Array.isArray(apiName) ? value : value[0];
+                        rmsg = JSON.stringify({ type: 'value', id: command.id, payload: { value } });
+                    }
+
+                    if (!rmsg) return;
+
+                    // Prefer replying on the source comm (widget-manager comm)
+                    // if provided. Next prefer the kernel-created comm. Fallback
+                    // to callRemoteSocketSend.
+                    try {
+                        if (sourceComm && typeof sourceComm.send === 'function') {
+                            try { sourceComm.send(rmsg); dbg('Replied via sourceComm'); } catch (e) { dbg('sourceComm.send failed', e); throw e; }
+                            return;
+                        }
+                    } catch (e) {
+                        dbg('Error sending via sourceComm', e);
+                    }
+
+                    try {
+                        if (!comm || commClosed) {
+                            await ensureKernelComm();
+                        }
+                        if (comm && typeof comm.send === 'function') {
+                            try { comm.send(rmsg); dbg('Replied via kernel comm'); } catch (e) { dbg('kernel comm.send failed', e); throw e; }
+                            return;
+                        }
+                    } catch (e) {
+                        dbg('Error sending via kernel comm', e);
+                    }
+
+                    // Last resort: mirror to remote socket
+                    try {
+                        await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
+                        dbg('Replied via remote socket');
+                    } catch (e) {
+                        dbg('Failed to reply via remote socket', e);
+                    }
+                } catch (e) {
+                    dbg('processCommand error', e);
+                }
+            };
+
             // Handler for incoming messages on the kernel-created comm; defined
-            // once so it can be reattached if we recreate the comm.
+            // once so it can be reattached if we recreate the comm. This assumes
+            // kernel comm messages place the command JSON in `msg.content.data`.
             const handleIncomingCommMessage = async (msg: any) => {
                 dbg('handleIncomingCommMessage:', msg);
                 try {
-                    dbg('Kernel comm onMsg received', { commTarget: props.commTarget, msg });
-
-                    const command = JSON.parse(msg.content.data as any);
-                    dbg('Parsed command:', command.type, command.payload);
-
-                    var rmsg: any = null;
-                    if (command.type === 'command') {
-                        var label = appletApi.evalCommandGetLabels(command.payload);
-
-                        rmsg = JSON.stringify({
-                            type: 'created',
-                            id: command.id,
-                            payload: label
-                        });
-                    } else if (command.type === 'function') {
-                        var apiName = command.payload.name;
-                        dbg('apiName:', apiName);
-                        var value: any[] = [];
-
-                        {
-                            var args = command.payload.args;
-                            value = [];
-                            (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-                                dbg('call', f, args);
-                                if (isArrayOfArrays(args)) {
-                                    var value2: any[] = [];
-                                    args.forEach((arg2: any[]) => {
-                                        if (args) {
-                                            value2.push(appletApi[f](...arg2) || null);
-                                        } else {
-                                            value2.push(appletApi[f]() || null);
-                                        }
-                                    });
-                                    value.push(value2);
-                                } else {
-                                    if (args) {
-                                        value.push(appletApi[f](...args) || null);
-                                    } else {
-                                        value.push(appletApi[f]() || null);
-                                    }
-                                }
-                            });
-                            value = (Array.isArray(apiName) ? value : value[0]);
-                            dbg('Function value:', value);
-                        }
-                        rmsg = JSON.stringify({
-                            type: 'value',
-                            id: command.id,
-                            payload: { value: value }
-                        });
-                    }
-
-                    // Try to send via kernel comm; if that fails, mirror to remote socket.
-                    try {
-                        try {
-                            const cId = (comm as any)?.comm_id || (comm as any)?.commId || null;
-                            dbg('Sending via kernel comm', { commTarget: props.commTarget, commId: cId, preview: (rmsg || '').slice(0,200) });
-                        } catch (e) { /* ignore */ }
-                        // If comm is closed or missing, attempt to recreate before send
-                        if (!comm || commClosed) {
-                            try {
-                                await ensureKernelComm();
-                            } catch (e) {
-                                dbg('ensureKernelComm failed before sending reply', e);
-                            }
-                        }
-                        if (comm) {
-                            comm.send(rmsg);
-                        } else {
-                            dbg('No kernel comm available to send reply; will mirror via remote socket');
-                        }
-                    } catch (e) {
-                        dbg('Failed to send via kernel comm, will still attempt remote socket send', e, { rmsgPreview: (rmsg || '').slice(0,200) });
-                    }
-                    await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
+                    const data = msg?.content?.data || msg;
+                    const command = typeof data === 'string' ? JSON.parse(data) : data;
+                    await processCommand(command, /* sourceComm */ comm);
                 } catch (e) {
                     dbg('Error in handleIncomingCommMessage', e);
                 }
@@ -333,7 +333,47 @@ with connect("${wsUrl}") as ws:
             // widgetManager is available we must not intercept those comms.
             try {
                 if (effectiveWidgetManager) {
-                    dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
+                    dbg('widgetManager present; installing manager-based comm adapter');
+                    try {
+                        const mgr: any = effectiveWidgetManager;
+                        // Heuristics to find the underlying comm manager
+                        const commManager = mgr.comm_manager || mgr.commManager || mgr._commManager || mgr._manager?.comm_manager || mgr._kernel?.comm_manager || null;
+                        if (commManager && typeof commManager.register_target === 'function') {
+                            const target = props.commTarget || 'ggblab-comm';
+                            commManager.register_target(target, (commOp: any, msg: any) => {
+                                dbg('manager adapter: comm opened', target, commOp, msg);
+                                try {
+                                    widgetComm = commOp;
+                                    try { widgetComm.onMsg = async (m: any) => {
+                                        const data = m?.content?.data || m;
+                                        const command = typeof data === 'string' ? JSON.parse(data) : data;
+                                        await processCommand(command, widgetComm);
+                                    }; } catch (e) { dbg('Failed to attach onMsg to manager-provided comm', e); }
+                                    try { /* attach close handler if possible */ } catch (e) { /* ignore */ }
+                                } catch (e) {
+                                    dbg('Error in manager adapter comm handler', e);
+                                }
+                            });
+                            dbg('Registered manager-based comm adapter for target', props.commTarget);
+                        } else {
+                            dbg('No comm manager found on widgetManager; falling back to kernelConn registration');
+                            // Fall back to raw kernelConn registration
+                            const simpleHandler = (commOp: any, msg: any) => {
+                                dbg('widget comm opened (fallback jupyter.widget)', commOp, msg);
+                                try {
+                                    commOp.onMsg = async (m: any) => {
+                                        const data = m?.content?.data || m;
+                                        const command = typeof data === 'string' ? JSON.parse(data) : data;
+                                        await processCommand(command, commOp);
+                                    };
+                                } catch (e) { dbg('Failed to attach onMsg to widget comm (fallback)', e); }
+                            };
+                            kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
+                            kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
+                        }
+                    } catch (e) {
+                        dbg('Error installing manager-based adapter', e);
+                    }
                 } else {
                     const simpleHandler = (commOp: any, msg: any) => {
                         dbg('widget comm opened (jupyter.widget)', commOp, msg);
@@ -342,30 +382,7 @@ with connect("${wsUrl}") as ws:
                                 let content = m?.content?.data || m;
                                 try {
                                     const command = typeof content === 'string' ? JSON.parse(content) : content;
-                                    let rmsg: any = null;
-                                    if (command.type === 'command' && appletApi) {
-                                        const label = appletApi.evalCommandGetLabels(command.payload);
-                                        rmsg = JSON.stringify({ type: 'created', id: command.id, payload: label });
-                                    } else if (command.type === 'function' && appletApi) {
-                                        const apiName = command.payload.name;
-                                        const args = command.payload.args;
-                                        let value: any[] = [];
-                                        (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-                                            if (isArrayOfArrays(args)) {
-                                                const v2: any[] = [];
-                                                args.forEach((a: any[]) => { v2.push(appletApi[f](...a) || null); });
-                                                value.push(v2);
-                                            } else {
-                                                value.push(args ? appletApi[f](...args) || null : appletApi[f]() || null);
-                                            }
-                                        });
-                                        value = Array.isArray(apiName) ? value : value[0];
-                                        rmsg = JSON.stringify({ type: 'value', id: command.id, payload: { value } });
-                                    }
-                                    if (rmsg) {
-                                        try { commOp.send(rmsg); } catch (e) { dbg('commOp.send failed', e); }
-                                        try { await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl); } catch (e) { dbg('callRemoteSocketSend failed', e); }
-                                    }
+                                    await processCommand(command, commOp);
                                 } catch (e) {
                                     dbg('Error handling widget comm message', e);
                                 }
