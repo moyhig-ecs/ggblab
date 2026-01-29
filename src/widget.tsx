@@ -437,6 +437,8 @@ with connect("${wsUrl}") as ws:
 
                     const target = props.commTarget || 'ggblab-comm';
                     try { commManager.register_target(target, (commOp: any, msg: any) => attachHandler(commOp, msg, target)); dbg('Registered manager-based comm adapter for target', target); } catch (e) { dbg('Failed to register target on commManager', e); }
+                    try { commManager.register_target('jupyter.widget', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget')); } catch (e) { /* ignore */ }
+                    try { commManager.register_target('jupyter.widget.control', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget.control')); } catch (e) { /* ignore */ }
 
                     // Attempt to remove kernelConn passthrough targets if possible
                     try {
@@ -453,7 +455,6 @@ with connect("${wsUrl}") as ws:
                 }
             };
 
-            // Listen for global registration events and adopt when available
             const onGlobalManager = () => {
                 try {
                     const store = (window as any).__ggblab_widget_manager || {};
