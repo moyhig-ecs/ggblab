@@ -131,7 +131,7 @@ print(val)
 ```
 
 Tips:
-- Run `await ggb.init()` in its own cell and wait for completion before sending commands.
+- Important: do NOT run `await ggb.init()` inside the same notebook cell as other commands — due to the unavoidable timing between the frontend's `comm_open` and the kernel's comm registration, a race will occur if `init()` is executed together with other code. Always run `await ggb.init()` in its own cell and wait for it to complete before sending further commands to the applet.
 - Each GeoGebra panel shows the kernel id (first 8 chars) to help match notebooks↔applets.
 
 ## Examples
