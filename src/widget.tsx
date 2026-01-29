@@ -387,7 +387,7 @@ with connect("${wsUrl}") as ws:
                     // Register common widget manager targets and the ggblab-specific target
                     try { registerTarget(props.commTarget || 'ggblab-comm'); } catch (e) { dbg('registerTarget failed for commTarget', e); }
                     try { registerTarget('ggblab-comm'); } catch (e) { /* ignore */ }
-                    try { registerTarget('jupyter.widget'); } catch (e) { /* ignore */ }
+                    try { registerTarget('ggblab-comm'); } catch (e) { /* ignore */ }
                     try { registerTarget('jupyter.widget.control'); } catch (e) { /* ignore */ }
                 }
             } catch (e) {
@@ -440,7 +440,7 @@ with connect("${wsUrl}") as ws:
 
                     const target = props.commTarget || 'ggblab-comm';
                     try { commManager.register_target(target, (commOp: any, msg: any) => attachHandler(commOp, msg, target)); dbg('Registered manager-based comm adapter for target', target); } catch (e) { dbg('Failed to register target on commManager', e); }
-                    try { commManager.register_target('jupyter.widget', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget')); } catch (e) { /* ignore */ }
+                    try { commManager.register_target('ggblab-comm', (commOp: any, msg: any) => attachHandler(commOp, msg, 'ggblab-comm')); } catch (e) { /* ignore */ }
                     try { commManager.register_target('jupyter.widget.control', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget.control')); } catch (e) { /* ignore */ }
 
                     // Attempt to remove kernelConn passthrough targets if possible
