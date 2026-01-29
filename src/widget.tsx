@@ -56,31 +56,10 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 
     let applet: any = null;
 
-    // Prefer a widget manager explicitly passed via props; otherwise try
-    // to pick up a manager placed in the global store by integration code.
-    const widgetManagerFromWindow = (() => {
-        try {
-            const store = (window as any).__ggblab_widget_manager || {};
-            if (props?.kernelId && store[props.kernelId]) return store[props.kernelId];
-            const keys = Object.keys(store || {});
-            if (!keys.length) return undefined;
-            // Try to match by short kernel id if available
-            if (props?.kernelId) {
-                const short = (props.kernelId || '').substring(0, 8);
-                for (const k of keys) {
-                    if (k === props.kernelId) return store[k];
-                    if (k.startsWith(short) || k.includes(short)) return store[k];
-                }
-            }
-            // Fallback to the first registered manager
-            return store[keys[0]];
-        } catch (e) {
-            dbg('Error reading __ggblab_widget_manager store', e);
-            return undefined;
-        }
-    })();
-    const effectiveWidgetManager = (props as any).widgetManager || widgetManagerFromWindow;
-    dbg('effectiveWidgetManager resolved:', !!effectiveWidgetManager, { kernelId, availableManagers: Object.keys((window as any).__ggblab_widget_manager || {}) });
+    // Prefer a widget manager explicitly passed via props. Global manager
+    // registration has been removed; do not attempt to read `window.__ggblab_widget_manager`.
+    const effectiveWidgetManager = (props as any).widgetManager;
+    dbg('effectiveWidgetManager resolved:', !!effectiveWidgetManager, { kernelId });
 
     function isArrayOfArrays(value: any): boolean {
         return Array.isArray(value) && value.every(subArray => Array.isArray(subArray));
@@ -134,8 +113,6 @@ with connect("${wsUrl}") as ws:
                     }).done;
                 }
 
-                // small delay to give the helper kernel a moment to tear down
-                // and to avoid immediate back-to-back requestExecute calls.
                 await new Promise(resolve => setTimeout(resolve, 30));
             };
 
@@ -152,6 +129,7 @@ with connect("${wsUrl}") as ws:
     }
 
     useEffect(() => {
+        // No global widget-manager events are used now.
         // Track resources created during effect so we can clean them up precisely
         let kernel2: any = null;
         let kernelManager: any = null;
@@ -162,6 +140,8 @@ with connect("${wsUrl}") as ws:
         // widget comm to allow in-kernel widgets to be routed directly to
         // the GeoGebra instance without using the remote socket.
         let widgetComm: any = null;
+        let managerAdopted = false;
+        let registeredKernelTargets: string[] = [];
         let appletApi: any = null;
         let observer: MutationObserver | null = null;
         let resizeHandler: (() => void) | null = null;
@@ -193,15 +173,23 @@ with connect("${wsUrl}") as ws:
             const wsUrl = `ws://localhost:${props.wsPort}/`;
             const socketPath = props.socketPath || null;
 
-            // Send an early probe via the helper kernel to ensure the out-of-band
-            // socket server receives a client connection as soon as possible.
-            // This increases the chance that kernel-side send_recv will find
-            // an active OOB client when called from the same notebook cell.
+            // Try an early out-of-band probe so the kernel may mark the
+            // helper-server channel as ready for same-cell replies. This is
+            // a fire-and-forget probe executed on the helper kernel (`kernel2`).
             try {
                 const probeMsg = JSON.stringify({ type: 'probe', payload: 'ready' });
                 // fire-and-forget the probe so we don't block the widget mount
                 callRemoteSocketSend(kernel2, probeMsg, socketPath, wsUrl).catch((e: any) => dbg('probe send failed', e));
                 dbg('Sent early OOB probe via helper kernel');
+                // Also send an explicit oob_ready signal so the kernel can
+                // mark the out-of-band channel as ready for same-cell replies.
+                try {
+                    const readyMsg = JSON.stringify({ type: 'oob_ready', payload: 'frontend' });
+                    callRemoteSocketSend(kernel2, readyMsg, socketPath, wsUrl).catch((e: any) => dbg('oob_ready send failed', e));
+                    dbg('Sent explicit oob_ready via helper kernel');
+                } catch (e) {
+                    dbg('Failed to schedule oob_ready send', e);
+                }
             } catch (e) {
                 dbg('Failed to schedule early OOB probe', e);
             }
@@ -366,119 +354,131 @@ with connect("${wsUrl}") as ws:
             // passthrough handler only when no widgetManager is present; if a
             // widgetManager is available we must not intercept those comms.
             try {
-                if (effectiveWidgetManager) {
-                    dbg('widgetManager present; installing manager-based comm adapter');
-                    try {
-                        const mgr: any = effectiveWidgetManager;
-                        // Heuristics to find the underlying comm manager
-                        const commManager = mgr.comm_manager || mgr.commManager || mgr._commManager || mgr._manager?.comm_manager || mgr._kernel?.comm_manager || null;
-                        if (commManager && typeof commManager.register_target === 'function') {
-                            const target = props.commTarget || 'ggblab-comm';
-
-                            const attachHandler = (commOp: any, msg: any, sourceName: string) => {
-                                dbg('manager adapter: comm opened', sourceName, commOp, msg);
-                                try {
-                                    widgetComm = commOp;
-                                    // Attach a message handler in a defensive way; different
-                                    // comm implementations use different callback names.
-                                    const handler = async (m: any) => {
-                                        const data = m?.content?.data || m;
-                                        const command = typeof data === 'string' ? JSON.parse(data) : data;
-                                        await processCommand(command, widgetComm);
-                                    };
-                                    try {
-                                        if (typeof commOp.on_msg === 'function') {
-                                            commOp.on_msg(handler);
-                                        } else if (typeof commOp.onMsg === 'function') {
-                                            commOp.onMsg = handler;
-                                        } else if (typeof commOp.on === 'function') {
-                                            commOp.on('msg', handler);
-                                        } else if ('on_msg' in commOp) {
-                                            // sometimes on_msg is an attribute to assign
-                                            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                                            // @ts-ignore
-                                            commOp.on_msg = handler;
-                                        } else {
-                                            try { commOp.onMsg = handler; } catch (e) { dbg('Unable to attach handler to commOp', e); }
-                                        }
-                                    } catch (e) {
-                                        dbg('Failed to attach message handler to manager-provided comm', e);
-                                    }
-                                } catch (e) {
-                                    dbg('Error in manager adapter comm handler', e);
-                                }
-                            };
-
-                            // Register our ggblab target
-                            commManager.register_target(target, (commOp: any, msg: any) => attachHandler(commOp, msg, target));
-                            dbg('Registered manager-based comm adapter for target', target);
-
-                            // Also register standard ipywidgets targets so we can reuse
-                            // ipywidgets-created comms and route them into our command
-                            // processing. This allows existing widget code to open a
-                            // comm and have messages handled by ggblab.
-                            try {
-                                commManager.register_target('jupyter.widget', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget'));
-                                commManager.register_target('jupyter.widget.control', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget.control'));
-                                dbg('Registered manager-based adapters for jupyter.widget targets');
-                            } catch (e) {
-                                dbg('Failed to register jupyter.widget targets on commManager', e);
-                            }
-                        } else {
-                            dbg('No comm manager found on widgetManager; falling back to kernelConn registration');
-                            // Fall back to raw kernelConn registration
-                            const simpleHandler = (commOp: any, msg: any) => {
-                                dbg('widget comm opened (fallback jupyter.widget)', commOp, msg);
-                                try {
-                                    commOp.onMsg = async (m: any) => {
-                                        const data = m?.content?.data || m;
-                                        const command = typeof data === 'string' ? JSON.parse(data) : data;
-                                        await processCommand(command, commOp);
-                                    };
-                                } catch (e) { dbg('Failed to attach onMsg to widget comm (fallback)', e); }
-                            };
-                            kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
-                            kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
-                        }
-                    } catch (e) {
-                        dbg('Error installing manager-based adapter', e);
-                    }
+                // Small delay to give any late-arriving manager passed via props
+                await new Promise((res) => setTimeout(res, 120));
+                const lateMgr = (props as any).widgetManager;
+                if (lateMgr) {
+                    dbg('Widget manager provided via props; skipping passthrough registration');
                 } else {
-                    const simpleHandler = (commOp: any, msg: any) => {
-                        dbg('widget comm opened (jupyter.widget)', commOp, msg);
+                    dbg('No widget manager provided; registering passthrough comm targets');
+                    const registerTarget = (target: string) => {
                         try {
-                            commOp.onMsg = async (m: any) => {
-                                let content = m?.content?.data || m;
+                            if (registeredKernelTargets.includes(target)) {
+                                dbg('Skipping duplicate registration for target', target);
+                                return;
+                            }
+                            kernelConn.registerCommTarget(target, (c: any, msg: any) => {
                                 try {
-                                    const command = typeof content === 'string' ? JSON.parse(content) : content;
-                                    await processCommand(command, commOp);
+                                    dbg('Accepted comm open for target', target, { msg });
+                                    try { c.onMsg = handleIncomingCommMessage; } catch (e) { dbg('Failed to attach onMsg to incoming comm', e); }
+                                    attachCommCloseHandler(c);
+                                    comm = c;
                                 } catch (e) {
-                                    dbg('Error handling widget comm message', e);
+                                    dbg('Error handling incoming comm open', e);
                                 }
-                            };
+                            });
+                            registeredKernelTargets.push(target);
+                            dbg('Registered comm target', target);
                         } catch (e) {
-                            dbg('Failed to attach onMsg to widget comm', e);
+                            dbg('Failed to register comm target', target, e);
                         }
                     };
 
-                    kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
-                    kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
+                    // Register common widget manager targets and the ggblab-specific target
+                    try { registerTarget(props.commTarget || 'ggblab-comm'); } catch (e) { dbg('registerTarget failed for commTarget', e); }
+                    try { registerTarget('ggblab-comm'); } catch (e) { /* ignore */ }
+                    try { registerTarget('jupyter.widget'); } catch (e) { /* ignore */ }
+                    try { registerTarget('jupyter.widget.control'); } catch (e) { /* ignore */ }
                 }
             } catch (e) {
                 dbg('Widget comm target registration skipped or failed', e);
             }
 
+            // Adopt a WidgetManager if/when it appears at runtime.
+            const adoptWidgetManager = (mgr: any) => {
+                try {
+                    if (!mgr) return;
+                    if (managerAdopted) return;
+                    const commManager = mgr?.comm_manager || mgr?.commManager || mgr?._commManager || mgr?._manager?.comm_manager || mgr?._kernel?.comm_manager || null;
+                    if (!commManager || typeof commManager.register_target !== 'function') {
+                        dbg('adoptWidgetManager: no comm_manager available on manager', !!commManager);
+                        return;
+                    }
+                    managerAdopted = true;
+                    dbg('Adopting widget manager; registering targets on commManager');
+
+                    const attachHandler = (commOp: any, msg: any, sourceName: string) => {
+                        dbg('manager adapter: comm opened', sourceName, commOp, msg);
+                        try {
+                            widgetComm = commOp;
+                            const handler = async (m: any) => {
+                                const data = m?.content?.data || m;
+                                const command = typeof data === 'string' ? JSON.parse(data) : data;
+                                await processCommand(command, widgetComm);
+                            };
+                            try {
+                                if (typeof commOp.on_msg === 'function') {
+                                    commOp.on_msg(handler);
+                                } else if (typeof commOp.onMsg === 'function') {
+                                    commOp.onMsg = handler;
+                                } else if (typeof commOp.on === 'function') {
+                                    commOp.on('msg', handler);
+                                } else if ('on_msg' in commOp) {
+                                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                                    // @ts-ignore
+                                    commOp.on_msg = handler;
+                                } else {
+                                    try { commOp.onMsg = handler; } catch (e) { dbg('Unable to attach handler to commOp', e); }
+                                }
+                            } catch (e) {
+                                dbg('Failed to attach message handler to manager-provided comm', e);
+                            }
+                        } catch (e) {
+                            dbg('Error in manager adapter comm handler', e);
+                        }
+                    };
+
+                    const target = props.commTarget || 'ggblab-comm';
+                    try { commManager.register_target(target, (commOp: any, msg: any) => attachHandler(commOp, msg, target)); dbg('Registered manager-based comm adapter for target', target); } catch (e) { dbg('Failed to register target on commManager', e); }
+                    try { commManager.register_target('jupyter.widget', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget')); } catch (e) { /* ignore */ }
+                    try { commManager.register_target('jupyter.widget.control', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget.control')); } catch (e) { /* ignore */ }
+
+                    // Attempt to remove kernelConn passthrough targets if possible
+                    try {
+                        if (kernelConn && (kernelConn as any).removeCommTarget) {
+                            registeredKernelTargets.forEach((t) => {
+                                try { (kernelConn as any).removeCommTarget(t); dbg('Removed kernelConn target', t); } catch (e) { /* ignore */ }
+                            });
+                        }
+                    } catch (e) {
+                        dbg('Error while removing kernelConn targets', e);
+                    }
+                } catch (e) {
+                    dbg('adoptWidgetManager error', e);
+                }
+            };
+
+            // Listen for global registration events and adopt when available
+            const onGlobalManager = () => {
+                try {
+                    const store = (window as any).__ggblab_widget_manager || {};
+                    if (props?.kernelId && store[props.kernelId]) return adoptWidgetManager(store[props.kernelId]);
+                    const keys = Object.keys(store || {});
+                    if (keys.length) return adoptWidgetManager(store['last'] || store[keys[0]]);
+                } catch (e) { dbg('onGlobalManager error', e); }
+            };
+            window.addEventListener('ggblab:widget-manager-registered', onGlobalManager as EventListener);
+
+            // If a manager was already present at mount, adopt immediately
+            try { if (effectiveWidgetManager) adoptWidgetManager(effectiveWidgetManager); } catch (e) { dbg('Immediate adopt failed', e); }
+
             async function ggbOnLoad(api: any) {
                 dbg("GeoGebra applet loaded:", api);
                 // expose applet API to other handlers (widgetComm etc.)
                 appletApi = api;
-                (async function () {
-                    var msg = {
-                        "type": "start",
-                        "payload": {}
-                    }
-                    await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
-                })();
+                // "start" is unnecessary because the frontend emits an
+                // explicit "oob_ready" when the applet loads; kernel-side
+                // logic should treat that as the readiness/start signal.
 
                 resizeHandler = function() {
                     const wrapperDiv = document.getElementById(elementId);
