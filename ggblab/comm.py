@@ -684,50 +684,6 @@ class ggb_comm:
             with self.thread_lock:
                 self.pending_futures[_id] = fut
 
-        def status(self):
-            """Return a dict describing current comm registration/state.
-
-            Useful for debugging from the kernel to inspect which comm target
-            and comm object (if any) the instance is currently using.
-            """
-            try:
-                with self.thread_lock:
-                    tc = self.target_comm
-                    try:
-                        comm_id = getattr(tc, 'comm_id', None) or getattr(tc, 'commId', None) or getattr(tc, 'id', None)
-                    except Exception:
-                        comm_id = None
-                    return {
-                        'target_name': getattr(self, 'target_name', None),
-                        'registered': bool(getattr(self, '_registered', False)),
-                        'target_comm_id': comm_id,
-                        'has_oob_clients': bool(getattr(self, 'clients', None)),
-                        'socketPath': getattr(self, 'socketPath', None),
-                        'wsPort': getattr(self, 'wsPort', None),
-                    }
-            except Exception:
-                return {
-                    'target_name': getattr(self, 'target_name', None),
-                    'registered': bool(getattr(self, '_registered', False)),
-                }
-
-
-        def report_comm_status():
-            """Helper to find the module-level `ggb_comm_instance` (if present)
-            and return its status. Returns None if no instance is found.
-            """
-            try:
-                ip = get_ipython()
-                user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
-                inst = user_ns.get('ggb_comm_instance') or globals().get('ggb_comm_instance')
-                if inst is None:
-                    return None
-                try:
-                    return inst.status()
-                except Exception:
-                    return None
-            except Exception:
-                return None
 
             # If no OOB clients are connected, wait a short while for one to appear.
             with self.thread_lock:
@@ -800,3 +756,49 @@ class ggb_comm:
             # On timeout, raise the error
             print(f"TimeoutError in send_recv {msg}")
             raise
+
+    def status(self):
+        """Return a dict describing current comm registration/state.
+
+        Useful for debugging from the kernel to inspect which comm target
+        and comm object (if any) the instance is currently using.
+        """
+        try:
+            with self.thread_lock:
+                tc = self.target_comm
+                try:
+                    comm_id = getattr(tc, 'comm_id', None) or getattr(tc, 'commId', None) or getattr(tc, 'id', None)
+                except Exception:
+                    comm_id = None
+                return {
+                    'target_name': getattr(self, 'target_name', None),
+                    'registered': bool(getattr(self, '_registered', False)),
+                    'target_comm_id': comm_id,
+                    'has_oob_clients': bool(getattr(self, 'clients', None)),
+                    'socketPath': getattr(self, 'socketPath', None),
+                    'wsPort': getattr(self, 'wsPort', None),
+                }
+        except Exception:
+            return {
+                'target_name': getattr(self, 'target_name', None),
+                'registered': bool(getattr(self, '_registered', False)),
+            }
+
+
+    def report_comm_status():
+        """Helper to find the module-level `ggb_comm_instance` (if present)
+        and return its status. Returns None if no instance is found.
+        """
+        try:
+            ip = get_ipython()
+            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+            inst = user_ns.get('ggb_comm_instance') or globals().get('ggb_comm_instance')
+            if inst is None:
+                return None
+            try:
+                return inst.status()
+            except Exception:
+                return None
+        except Exception:
+            return None
+
