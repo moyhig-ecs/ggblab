@@ -116,7 +116,7 @@ class GeoGebra:
             # Non-fatal; this is a best-effort alignment only.
             pass
   
-    async def init(self):
+    async def init(self, comm_target: Optional[str] = None):
         """Initialize the GeoGebra widget and communication channels.
 
         This method:
@@ -168,13 +168,6 @@ class GeoGebra:
                     # Best-effort only; don't fail init on repointing issues
                     pass
             self.comm = comm_instance
-            # Ensure OOB server is started on the instance we reuse/create
-            try:
-                self.comm.start()
-            except Exception:
-                pass
-            while self.comm.socketPath is None:
-                await asyncio.sleep(.01)
             # Ensure the kernel-side target registration is requested on this instance
             try:
                 self.comm.register_target()
@@ -185,37 +178,14 @@ class GeoGebra:
             self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
 
             self.app = JupyterFrontEnd()
+            # Determine comm target: explicit arg > existing comm.target_name > default
+            if comm_target is None:
+                comm_target = getattr(self.comm, 'target_name', None) or 'ggblab-comm'
             self.app.commands.execute('ggblab:create', {
                 'kernelId': self.kernel_id,
-                'commTarget': 'jupyter.widget',
+                'commTarget': comm_target,
                 'insertMode': 'split-right',
-                'socketPath': self.comm.socketPath,
-                # 'wsPort': self.comm.wsPort,
             })
-
-            # Best-effort: wait briefly for an out-of-band client to connect.
-            # This improves same-cell reliability by giving the frontend a short
-            # window to start its helper kernel and connect to the socket.
-            try:
-                waited = 0.0
-                while waited < 3.0:
-                    stat = None
-                    try:
-                        stat = self.comm.status()
-                    except Exception:
-                        stat = None
-                    if stat and stat.get('has_oob_clients'):
-                        break
-                    await asyncio.sleep(0.05)
-                    waited += 0.05
-                if waited >= 3.0:
-                    # not a fatal error; continue but log for diagnostics
-                    try:
-                        print('ggblab: warning - no out-of-band client connected after wait')
-                    except Exception:
-                        pass
-            except Exception:
-                pass
             # Skipping comm-stability wait: removed as it can trigger
             # kernel-side comm introspection that creates transient comms
             # and leads to "No such comm" errors during initialization.

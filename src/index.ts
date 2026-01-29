@@ -15,7 +15,6 @@ import { PageConfig } from '@jupyterlab/coreutils';
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
-import registerWidgetManagerPlugin from './register_widget_manager_plugin';
 
 namespace CommandIDs {
   export const create = 'ggblab:create';
@@ -38,24 +37,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ) => {
     console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
-    // Expose a global registration helper so other extensions (for example
-    // the jupyter-widgets manager) can notify us when a per-kernel
-    // WidgetManager becomes available. This enables automatic integration
-    // without patching third-party code: the widget manager can call
-    // `window.__ggblab_register_widget_manager(kernelId, manager)` when ready.
-    try {
-      (window as any).__ggblab_widget_manager = (window as any).__ggblab_widget_manager || {};
-      (window as any).__ggblab_register_widget_manager = (kernelId: string, manager: any) => {
-        try {
-          (window as any).__ggblab_widget_manager[kernelId] = manager;
-          console.debug('ggblab: registered widgetManager for kernel', kernelId);
-        } catch (e) {
-          console.warn('ggblab: failed to register widgetManager', e);
-        }
-      };
-    } catch (e) {
-      console.warn('ggblab: unable to install widgetManager global registration', e);
-    }
+    // Note: widget manager global registration removed — no global registrar
+    // is installed. WidgetManager must be passed explicitly via `widgetManager`
+    // in the widget creation args when available.
 
     // Best-effort attempt to detect if the official jupyter-widgets
     // extension is available in the host. If it is, try to wrap its
@@ -241,11 +225,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
           // If tracker API differs, ignore and continue
         }
 
-        // Attempt to pass a WidgetManager if one was registered in a global
-        // store by the widget manager integration. This allows optional
-        // ipywidgets-based bridging when the environment provides a
-        // WidgetManager for the target kernel. Fallback to `undefined`.
-        const widgetManager: any = (window as any).__ggblab_widget_manager && (window as any).__ggblab_widget_manager[args['kernelId']] ? (window as any).__ggblab_widget_manager[args['kernelId']] : undefined;
+        // WidgetManager must be provided explicitly via args if available.
+        const widgetManager: any = args['widgetManager'] || undefined;
 
         // Ensure a frontend-side comm handler is registered early for the
         // requested kernel so that comm_open from the kernel will be accepted
@@ -345,7 +326,5 @@ const plugin: JupyterFrontEndPlugin<void> = {
   }
 };
 
-// Export both the main plugin and the auto-register plugin so JupyterLab
-// will activate them. Exporting an array is the supported pattern.
-const plugins: Array<JupyterFrontEndPlugin<any>> = [plugin, registerWidgetManagerPlugin as JupyterFrontEndPlugin<any>];
-export default plugins;
+// Export the main plugin only.
+export default plugin;

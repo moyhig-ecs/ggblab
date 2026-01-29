@@ -20,6 +20,7 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
           : Array.isArray(mod)
           ? mod
           : [];
+        console.debug('ggblab: register-widget-manager candidates count', candidates.length);
 
         for (const p of candidates) {
           if (!p || typeof p.activate !== 'function') {
@@ -32,6 +33,18 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
           p.activate = function (appArg: any, ...args: any[]) {
+            console.info('ggblab: wrapped widget-manager activate called', { argsCount: args.length });
+            try {
+              const summaries = args.map((a: any) => {
+                try {
+                  return { type: typeof a, keys: Object.keys(a || {}).slice(0, 10) };
+                } catch (e) {
+                  return { type: typeof a };
+                }
+                
+              });
+              console.debug('ggblab: wrapped activate args summary', summaries);
+            } catch (e) { /* ignore */ }
             const result = origActivate(appArg, ...args);
             try {
               for (const a of args) {
@@ -85,6 +98,9 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
                     }
                   } catch (e) {}
                 }
+                // Fallback behavior removed: do not write manager into a global
+                // `__ggblab_widget_manager` store. Integration should pass
+                // managers explicitly via extension APIs or props.
               }
             } catch (e) {
               console.warn('ggblab: error while probing widget-manager activate args', e);

@@ -385,7 +385,8 @@ with connect("${wsUrl}") as ws:
                     };
 
                     // Register common widget manager targets and the ggblab-specific target
-                    try { registerTarget('jupyter.widget.control'); } catch (e) { /* ignore */ }
+                    // try { registerTarget('jupyter.widget.control'); } catch (e) { /* ignore */ }
+                    try { registerTarget(props.commTarget || 'ggblab-comm'); } catch (e) { /* ignore */ }
                 }
             } catch (e) {
                 dbg('Widget comm target registration skipped or failed', e);
@@ -457,6 +458,14 @@ with connect("${wsUrl}") as ws:
 
             const onGlobalManager = () => {
                 try {
+                    // If a specific comm target was provided by the kernel, do
+                    // not adopt a manager from the global store — the kernel
+                    // explicitly requested the comm target and we should avoid
+                    // overriding that decision.
+                    if (props?.commTarget) {
+                        dbg('props.commTarget present; skipping adoptWidgetManager');
+                        return;
+                    }
                     const store = (window as any).__ggblab_widget_manager || {};
                     if (props?.kernelId && store[props.kernelId]) return adoptWidgetManager(store[props.kernelId]);
                     const keys = Object.keys(store || {});
