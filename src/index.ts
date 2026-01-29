@@ -63,13 +63,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // created a manager for a kernel.
     (async () => {
       try {
-        const mod = await import('@jupyter-widgets/jupyterlab-manager');
+        await import('@jupyter-widgets/jupyterlab-manager');
         console.debug('ggblab: jupyter-widgets manager module is present');
-        // If desired, we could attempt deeper integration here, but doing so
-        // risks coupling to internals of that package; prefer cooperative
-        // registration via the global function instead.
       } catch (e) {
-        // Not critical; many environments won't have the manager installed.
         console.debug('ggblab: jupyter-widgets manager not available');
       }
     })();
@@ -88,6 +84,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
     const { commands } = app;
 
     // Tracker for created GeoGebra widgets so they can be restored after reload
+    // @ts-expect-error TS2344: cross-package Lumino types can differ between
+    // @jupyterlab/ui-components and @jupyterlab/apputils; ignore here and
+    // prefer structural compatibility at runtime.
     const tracker = new WidgetTracker<MainAreaWidget<GeoGebraWidget>>({
       namespace: 'ggblab-tracker'
     });
@@ -166,6 +165,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
           wsPort: args['wsPort'] || 8888,
           widgetManager: widgetManager
         });
+        // @ts-expect-error TS2344: cross-package Lumino types can differ between
+        // @jupyterlab/ui-components and @jupyterlab/apputils; ignore here and
+        // prefer structural compatibility at runtime.
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
         // make widget id unique so restorer can identify it later
         widget.id = widgetId;
