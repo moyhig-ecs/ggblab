@@ -340,21 +340,56 @@ with connect("${wsUrl}") as ws:
                         const commManager = mgr.comm_manager || mgr.commManager || mgr._commManager || mgr._manager?.comm_manager || mgr._kernel?.comm_manager || null;
                         if (commManager && typeof commManager.register_target === 'function') {
                             const target = props.commTarget || 'ggblab-comm';
-                            commManager.register_target(target, (commOp: any, msg: any) => {
-                                dbg('manager adapter: comm opened', target, commOp, msg);
+
+                            const attachHandler = (commOp: any, msg: any, sourceName: string) => {
+                                dbg('manager adapter: comm opened', sourceName, commOp, msg);
                                 try {
                                     widgetComm = commOp;
-                                    try { widgetComm.onMsg = async (m: any) => {
+                                    // Attach a message handler in a defensive way; different
+                                    // comm implementations use different callback names.
+                                    const handler = async (m: any) => {
                                         const data = m?.content?.data || m;
                                         const command = typeof data === 'string' ? JSON.parse(data) : data;
                                         await processCommand(command, widgetComm);
-                                    }; } catch (e) { dbg('Failed to attach onMsg to manager-provided comm', e); }
-                                    try { /* attach close handler if possible */ } catch (e) { /* ignore */ }
+                                    };
+                                    try {
+                                        if (typeof commOp.on_msg === 'function') {
+                                            commOp.on_msg(handler);
+                                        } else if (typeof commOp.onMsg === 'function') {
+                                            commOp.onMsg = handler;
+                                        } else if (typeof commOp.on === 'function') {
+                                            commOp.on('msg', handler);
+                                        } else if ('on_msg' in commOp) {
+                                            // sometimes on_msg is an attribute to assign
+                                            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                                            // @ts-ignore
+                                            commOp.on_msg = handler;
+                                        } else {
+                                            try { commOp.onMsg = handler; } catch (e) { dbg('Unable to attach handler to commOp', e); }
+                                        }
+                                    } catch (e) {
+                                        dbg('Failed to attach message handler to manager-provided comm', e);
+                                    }
                                 } catch (e) {
                                     dbg('Error in manager adapter comm handler', e);
                                 }
-                            });
-                            dbg('Registered manager-based comm adapter for target', props.commTarget);
+                            };
+
+                            // Register our ggblab target
+                            commManager.register_target(target, (commOp: any, msg: any) => attachHandler(commOp, msg, target));
+                            dbg('Registered manager-based comm adapter for target', target);
+
+                            // Also register standard ipywidgets targets so we can reuse
+                            // ipywidgets-created comms and route them into our command
+                            // processing. This allows existing widget code to open a
+                            // comm and have messages handled by ggblab.
+                            try {
+                                commManager.register_target('jupyter.widget', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget'));
+                                commManager.register_target('jupyter.widget.control', (commOp: any, msg: any) => attachHandler(commOp, msg, 'jupyter.widget.control'));
+                                dbg('Registered manager-based adapters for jupyter.widget targets');
+                            } catch (e) {
+                                dbg('Failed to register jupyter.widget targets on commManager', e);
+                            }
                         } else {
                             dbg('No comm manager found on widgetManager; falling back to kernelConn registration');
                             // Fall back to raw kernelConn registration
