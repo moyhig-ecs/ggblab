@@ -58,8 +58,29 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 
     // Prefer a widget manager explicitly passed via props; otherwise try
     // to pick up a manager placed in the global store by integration code.
-    const widgetManagerFromWindow = (window as any).__ggblab_widget_manager ? (window as any).__ggblab_widget_manager[kernelId] : undefined;
+    const widgetManagerFromWindow = (() => {
+        try {
+            const store = (window as any).__ggblab_widget_manager || {};
+            if (props?.kernelId && store[props.kernelId]) return store[props.kernelId];
+            const keys = Object.keys(store || {});
+            if (!keys.length) return undefined;
+            // Try to match by short kernel id if available
+            if (props?.kernelId) {
+                const short = (props.kernelId || '').substring(0, 8);
+                for (const k of keys) {
+                    if (k === props.kernelId) return store[k];
+                    if (k.startsWith(short) || k.includes(short)) return store[k];
+                }
+            }
+            // Fallback to the first registered manager
+            return store[keys[0]];
+        } catch (e) {
+            dbg('Error reading __ggblab_widget_manager store', e);
+            return undefined;
+        }
+    })();
     const effectiveWidgetManager = (props as any).widgetManager || widgetManagerFromWindow;
+    dbg('effectiveWidgetManager resolved:', !!effectiveWidgetManager, { kernelId, availableManagers: Object.keys((window as any).__ggblab_widget_manager || {}) });
 
     function isArrayOfArrays(value: any): boolean {
         return Array.isArray(value) && value.every(subArray => Array.isArray(subArray));
