@@ -15,6 +15,7 @@ import { PageConfig } from '@jupyterlab/coreutils';
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
+import registerWidgetManagerPlugin from './register_widget_manager_plugin';
 
 namespace CommandIDs {
   export const create = 'ggblab:create';
@@ -344,4 +345,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   }
 };
 
-export default plugin;
+// Export both the main plugin and the auto-register plugin so JupyterLab
+// will activate them. Exporting an array is the supported pattern.
+const plugins: Array<JupyterFrontEndPlugin<any>> = [plugin, registerWidgetManagerPlugin as JupyterFrontEndPlugin<any>];
+export default plugins;
