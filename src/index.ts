@@ -10,7 +10,7 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
-import { ServerConnection, KernelConnection, KernelManager } from '@jupyterlab/services';
+import { ServerConnection, KernelConnection } from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
 
 // Import package.json to reflect the package version in the UI log.
@@ -88,9 +88,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
           // If tracker API differs, ignore and continue
         }
 
-        // Do not pass a WidgetManager here to avoid interfering with ipywidgets.
-        // Force use of kernel-level Comm for ggblab to avoid widget-protocol conflicts.
-        const widgetManager: any = undefined;
+        // Attempt to pass a WidgetManager if one was registered in a global
+        // store by the widget manager integration. This allows optional
+        // ipywidgets-based bridging when the environment provides a
+        // WidgetManager for the target kernel. Fallback to `undefined`.
+        const widgetManager: any = (window as any).__ggblab_widget_manager && (window as any).__ggblab_widget_manager[args['kernelId']] ? (window as any).__ggblab_widget_manager[args['kernelId']] : undefined;
 
         // Ensure a frontend-side comm handler is registered early for the
         // requested kernel so that comm_open from the kernel will be accepted

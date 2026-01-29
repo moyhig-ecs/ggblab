@@ -185,13 +185,16 @@ class GeoGebra:
             self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
             
             self.app = JupyterFrontEnd()
-            self.app.commands.execute('ggblab:create', {
-                'kernelId': self.kernel_id,
-                'commTarget': 'ggblab-comm',
-                'insertMode': 'split-right',
-                'socketPath': self.comm.socketPath,
-              # 'wsPort': self.comm.wsPort,
-            })
+                        # Use the communication instance's target name so the frontend
+                        # and kernel agree on the exact Comm target rather than relying
+                        # on a hardcoded string.
+                        self.app.commands.execute('ggblab:create', {
+                                'kernelId': self.kernel_id,
+                                'commTarget': getattr(self.comm, 'target_name', 'ggblab-comm'),
+                                'insertMode': 'split-right',
+                                'socketPath': self.comm.socketPath,
+                            # 'wsPort': self.comm.wsPort,
+                        })
             # Skipping comm-stability wait: removed as it can trigger
             # kernel-side comm introspection that creates transient comms
             # and leads to "No such comm" errors during initialization.

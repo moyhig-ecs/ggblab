@@ -55,6 +55,11 @@ const GGAComponent = (props: GGAWidgetProps): JSX.Element => {
 
     let applet: any = null;
 
+    // Prefer a widget manager explicitly passed via props; otherwise try
+    // to pick up a manager placed in the global store by integration code.
+    const widgetManagerFromWindow = (window as any).__ggblab_widget_manager ? (window as any).__ggblab_widget_manager[props.kernelId] : undefined;
+    const effectiveWidgetManager = (props as any).widgetManager || widgetManagerFromWindow;
+
     function isArrayOfArrays(value: any): boolean {
         return Array.isArray(value) && value.every(subArray => Array.isArray(subArray));
     }
@@ -326,7 +331,7 @@ with connect("${wsUrl}") as ws:
             // passthrough handler only when no widgetManager is present; if a
             // widgetManager is available we must not intercept those comms.
             try {
-                if (props.widgetManager) {
+                if (effectiveWidgetManager) {
                     dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
                 } else {
                     const simpleHandler = (commOp: any, msg: any) => {
