@@ -57,16 +57,132 @@ const plugin: JupyterFrontEndPlugin<void> = {
     }
 
     // Best-effort attempt to detect if the official jupyter-widgets
-    // extension is available in the host. If it is, log that fact. We do
-    // not assume a specific API here; the preferred integration is for the
-    // widget manager plugin to call the global registrar above when it has
-    // created a manager for a kernel.
+    // extension is available in the host. If it is, try to wrap its
+    // exported plugin(s) and observe the `activate` call so we can obtain
+    // the per-kernel WidgetManager instance and call our registrar
+    // `window.__ggblab_register_widget_manager(kernelId, manager)`
+    // automatically. This uses only the module's public exports and
+    // performs structural checks at runtime so it is robust across
+    // versions.
     (async () => {
       try {
-        await import('@jupyter-widgets/jupyterlab-manager');
+        const mod: any = await import('@jupyter-widgets/jupyterlab-manager');
         console.debug('ggblab: jupyter-widgets manager module is present');
+
+        // The package may export a single plugin or an array of plugins.
+        const candidates: any[] = Array.isArray(mod.default)
+          ? mod.default
+          : Array.isArray(mod)
+          ? mod
+          : [];
+
+        for (const p of candidates) {
+          if (!p || typeof p.activate !== 'function') {
+            continue;
+          }
+
+          // Wrap the activate function so that when the widget-manager
+          // plugin runs, we can inspect arguments for a manager instance
+          // and register it with our global registrar. This is defensive
+          // and will not change the plugin's behaviour otherwise.
+          const origActivate = p.activate.bind(p);
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore - runtime wrapping of third-party plugin
+          p.activate = function (app: any, ...args: any[]) {
+            const result = origActivate(app, ...args);
+
+            try {
+              // Look for a manager-like arg in the activate args.
+              for (const a of args) {
+                if (!a || typeof a !== 'object') {
+                  continue;
+                }
+
+                // Heuristic: manager typically exposes `create_view` or
+                // `display_view_for_model` or similar methods. We check a
+                // small set of possibilities to find a likely manager.
+                const isManager =
+                  typeof a.create_view === 'function' ||
+                  typeof a.display_view_for_model === 'function' ||
+                  !!a._create_views_for_model;
+
+                if (!isManager) {
+                  // Some plugins pass a registry or other helpers; skip them.
+                  continue;
+                }
+
+                const manager = a;
+
+                // Attempt to determine a kernel id associated with this
+                // manager. Different manager implementations expose the
+                // session/kernel in different places; probe common paths.
+                let kernelId = '';
+                try {
+                  kernelId = (
+                    (manager.context && manager.context.session && manager.context.session.kernel && manager.context.session.kernel.id) ||
+                    (manager.kernel && manager.kernel.id) ||
+                    ''
+                  );
+                } catch (e) {
+                  kernelId = '';
+                }
+
+                // If we have a kernel id, call the registrar immediately.
+                if (kernelId && (window as any).__ggblab_register_widget_manager) {
+                  try {
+                    (window as any).__ggblab_register_widget_manager(kernelId, manager);
+                    console.debug('ggblab: auto-registered widgetManager for kernel', kernelId);
+                  } catch (e) {
+                    console.warn('ggblab: failed to auto-register widgetManager', e);
+                  }
+                } else if (manager && manager.context && manager.context.session) {
+                  // Otherwise, listen for kernel changes and register when
+                  // the kernel becomes available or changes.
+                  try {
+                    const sess = manager.context.session;
+                    // Some session implementations expose a `kernelChanged` signal
+                    // or similar. Try to connect if present.
+                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                    // @ts-ignore - may not exist on all implementations
+                    if (sess.kernelChanged && typeof sess.kernelChanged.connect === 'function') {
+                      // Connect once to register when kernel is set.
+                      const handler = (_sender: any, kernel: any) => {
+                        try {
+                          const kid = kernel ? kernel.id : '';
+                          if (kid && (window as any).__ggblab_register_widget_manager) {
+                            (window as any).__ggblab_register_widget_manager(kid, manager);
+                            console.debug('ggblab: auto-registered widgetManager on kernelChanged for', kid);
+                            // disconnect handler if possible
+                            try {
+                              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                              // @ts-ignore
+                              sess.kernelChanged.disconnect(handler);
+                            } catch (e) {
+                              /* ignore */
+                            }
+                          }
+                        } catch (ee) {
+                          /* ignore */
+                        }
+                      };
+                      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                      // @ts-ignore
+                      sess.kernelChanged.connect(handler);
+                    }
+                  } catch (e) {
+                    /* ignore */
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('ggblab: error while probing widget-manager activate args', e);
+            }
+
+            return result;
+          };
+        }
       } catch (e) {
-        console.debug('ggblab: jupyter-widgets manager not available');
+        console.debug('ggblab: jupyter-widgets manager not available', e);
       }
     })();
 
