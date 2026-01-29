@@ -385,7 +385,6 @@ with connect("${wsUrl}") as ws:
                     };
 
                     // Register common widget manager targets and the ggblab-specific target
-                    try { registerTarget('ggblab-comm'); } catch (e) { /* ignore */ }
                     try { registerTarget('jupyter.widget.control'); } catch (e) { /* ignore */ }
                 }
             } catch (e) {
