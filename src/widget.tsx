@@ -279,6 +279,23 @@ with connect("${wsUrl}") as ws:
             const ensureKernelComm = async () => {
                 if (comm && !commClosed) return comm;
                 try {
+                    // If an early frontend-side comm was registered (plugin activation)
+                    // reuse it. This allows comm_open from the kernel to be accepted
+                    // before the widget fully mounts.
+                    try {
+                        const store = (window as any).__ggblab_comm_store || {};
+                        const pre = props.kernelId ? store[props.kernelId] : null;
+                        if (pre) {
+                            comm = pre;
+                            try { comm.onMsg = handleIncomingCommMessage; } catch (e) { dbg('Failed to attach onMsg to pre-registered comm', e); }
+                            attachCommCloseHandler(comm);
+                            commClosed = false;
+                            dbg('Using pre-registered frontend comm for kernel', props.kernelId);
+                            return comm;
+                        }
+                    } catch (e) {
+                        dbg('Error checking pre-registered comm store', e);
+                    }
                     if (!kernelConn) {
                         throw new Error('No kernelConn available to create comm');
                     }

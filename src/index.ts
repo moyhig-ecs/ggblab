@@ -10,6 +10,8 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
+import { ServerConnection, KernelConnection, KernelManager } from '@jupyterlab/services';
+import { PageConfig } from '@jupyterlab/coreutils';
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
@@ -89,6 +91,33 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Do not pass a WidgetManager here to avoid interfering with ipywidgets.
         // Force use of kernel-level Comm for ggblab to avoid widget-protocol conflicts.
         const widgetManager: any = undefined;
+
+        // Ensure a frontend-side comm handler is registered early for the
+        // requested kernel so that comm_open from the kernel will be accepted
+        // even if it happens before the widget fully mounts. Store any
+        // accepted comms in a global map keyed by kernel id for the widget
+        // instance to consume when it mounts.
+        try {
+          const baseUrl = PageConfig.getBaseUrl();
+          const token = PageConfig.getToken();
+          const settings = ServerConnection.makeSettings({ baseUrl, token, appendToken: true });
+          const model = { name: 'python3', id: args['kernelId'] || '' };
+          const earlyConn = new KernelConnection({ model, serverSettings: settings });
+          // create global store if missing
+          (window as any).__ggblab_comm_store = (window as any).__ggblab_comm_store || {};
+          const store: any = (window as any).__ggblab_comm_store;
+          // Register a no-op handler that saves the comm object for later use
+          earlyConn.registerCommTarget(args['commTarget'] || 'ggblab-comm', (commOp: any, msg: any) => {
+            try {
+              store[args['kernelId']] = commOp;
+              console.debug('Registered early frontend comm for kernel', args['kernelId']);
+            } catch (e) {
+              console.warn('Failed to store early frontend comm', e);
+            }
+          });
+        } catch (e) {
+          console.warn('Failed to register early frontend comm target', e);
+        }
 
         const content = new GeoGebraWidget({
           kernelId: args['kernelId'] || '',
