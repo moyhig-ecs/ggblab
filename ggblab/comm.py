@@ -133,6 +133,12 @@ class ggb_comm:
         # are not yet populated due to ordering races.
         self._oob_ready = False
 
+        # Outbound message queue: messages queued when a Comm isn't yet
+        # available but the target was registered. Messages are flushed
+        # when `target_comm` becomes available or an OOB client signals
+        # readiness.
+        self._outbound_queue = []
+
         # Feature flag: when True, treat an incoming 'oob_ready' event as
         # equivalent to an applet 'start' event. This causes the kernel to
         # consider the applet started and also inject a synthetic 'start'
@@ -331,6 +337,18 @@ class ggb_comm:
 
         # If explicitly requested, perform IPython Comm registration (best-effort)
         try:
+            # Ensure the out-of-band socket server is running so clients can
+            # connect and responses can be delivered. Start it lazily here
+            # if it hasn't been started already.
+            try:
+                if getattr(self, 'server_thread', None) is None:
+                    try:
+                        self.start()
+                    except Exception:
+                        # Best-effort: don't fail registration if OOB server can't start
+                        pass
+            except Exception:
+                pass
             get_ipython().kernel.comm_manager.register_target(
                 self.target_name,
                 self.register_target_cb)
@@ -356,31 +374,108 @@ class ggb_comm:
         return True
 
     def register_target_cb(self, comm, msg):
-        """Register the IPython Comm connection callback and install message handlers."""
-        # IPython Comm is not thread-aware; protect assignment anyway
+        """Register the IPython Comm connection callback and install message handlers.
+
+        Uses a shared handler attachment helper so the same logic can adopt
+        Comm objects created elsewhere in the kernel (e.g. when user code
+        calls `create_comm`/`Comm(...)`). This makes the instance robust to
+        different Comm implementations and the ipykernel deprecation path.
+        """
+        # Attach handlers and adopt the comm object
+        try:
+            self._attach_comm_handlers(comm)
+            with self.thread_lock:
+                try:
+                    self._registered = True
+                except Exception:
+                    pass
+                if getattr(self, 'debug', False):
+                    try:
+                        self.logs.append(f"register_target_cb: {self.target_comm}")
+                    except Exception:
+                        pass
+        except Exception:
+            try:
+                with self.thread_lock:
+                    self.logs.append('Failed to attach handlers to incoming comm')
+            except Exception:
+                pass
+
+    def adopt_comm(self, comm):
+        """Public helper to adopt an externally-created Comm object.
+
+        Call this from kernel-side code if you create a Comm manually and
+        want `ggb_comm_instance` to use it for send/recv. Example:
+
+            from ggblab.comm import ggb_comm_instance
+            c = create_comm('ggblab-comm')  # or Comm(...)
+            ggb_comm_instance.adopt_comm(c)
+
+        The method is tolerant to different Comm implementations and will
+        attach handlers as needed.
+        """
+        try:
+            self._attach_comm_handlers(comm)
+        except Exception:
+            try:
+                with self.thread_lock:
+                    self.logs.append('adopt_comm: failed to adopt provided comm')
+            except Exception:
+                pass
+
+    def _attach_comm_handlers(self, comm):
+        """Internal helper to attach handlers to a Comm-like object.
+
+        Supports objects exposing either decorator-based hooks (e.g.
+        `@comm.on_msg`) or callback registration methods (e.g.
+        `comm.on_msg(callback)`), and similarly for close events.
+        The function stores the comm as `self.target_comm` under lock.
+        """
+        # Store reference under lock
         with self.thread_lock:
             self.target_comm = comm
             try:
                 self._registered = True
             except Exception:
                 pass
-            try:
-                if getattr(self, 'debug', False):
-                    self.logs.append(f"register_target_cb: {self.target_comm}")
-            except Exception:
-                pass
 
+        # Attach message handler: support decorator or direct registration
         try:
-            @comm.on_msg
-            def _recv(msg):
-                self.handle_recv(msg)
+            # decorator style: comm.on_msg(function) via decorator
+            if hasattr(comm, 'on_msg') and callable(getattr(comm, 'on_msg')):
+                try:
+                    # Some implementations expect call: comm.on_msg(callback)
+                    comm.on_msg(lambda msg: self.handle_recv(msg))
+                except TypeError:
+                    # Others use decorator (@comm.on_msg)
+                    try:
+                        @comm.on_msg
+                        def _recv(msg):
+                            self.handle_recv(msg)
+                    except Exception:
+                        pass
         except Exception:
-            # some comm implementations use different hook patterns
             pass
 
+        # Attach close handler: try multiple common patterns
         try:
-            @comm.on_close
-            def _close():
+            if hasattr(comm, 'on_close') and callable(getattr(comm, 'on_close')):
+                try:
+                    comm.on_close(lambda: self._on_comm_close())
+                except TypeError:
+                    try:
+                        @comm.on_close
+                        def _close():
+                            self._on_comm_close()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def _on_comm_close(self):
+        """Internal callback when the adopted comm is closed."""
+        try:
+            with self.thread_lock:
                 self.target_comm = None
                 try:
                     self._registered = False
@@ -528,30 +623,32 @@ class ggb_comm:
         try:
             # Detect explicit OOB-ready notification from frontend and set
             # internal readiness flag so send_recv() can proceed earlier.
-            try:
-                if isinstance(_data, dict) and _data.get('type') == 'oob_ready':
-                    try:
-                        with self.thread_lock:
-                            self._oob_ready = True
-                            if getattr(self, 'debug', False):
-                                self.logs.append('Received oob_ready from frontend')
-                    except Exception:
-                        pass
-                    # Optionally treat oob_ready as an applet 'start' event
-                    try:
-                        if getattr(self, 'treat_oob_ready_as_start', False):
-                            try:
-                                start_event = {'type': 'start', 'payload': _data.get('payload')}
-                                self.recv_events.put(start_event)
-                                if getattr(self, 'debug', False):
-                                    with self.thread_lock:
-                                        self.logs.append('Translated oob_ready -> start event')
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            if isinstance(_data, dict) and _data.get('type') == 'oob_ready':
+                try:
+                    with self.thread_lock:
+                        self._oob_ready = True
+                        if getattr(self, 'debug', False):
+                            self.logs.append('Received oob_ready from frontend')
+                except Exception:
+                    pass
+
+                # Optionally treat oob_ready as an applet 'start' event
+                try:
+                    if getattr(self, 'treat_oob_ready_as_start', False):
+                        start_event = {'type': 'start', 'payload': _data.get('payload')}
+                        self.recv_events.put(start_event)
+                        if getattr(self, 'debug', False):
+                            with self.thread_lock:
+                                self.logs.append('Translated oob_ready -> start event')
+                except Exception:
+                    pass
+
+                # When oob_ready is received, flush any queued outbound messages
+                try:
+                    self._flush_outbound_queue()
+                except Exception:
+                    pass
+
             # Enqueue event messages for consumers
             self.recv_events.put(_data)
         except Exception:
@@ -570,29 +667,24 @@ class ggb_comm:
             registered = getattr(self, '_registered', False)
 
         # If no active comm but the target registration was performed,
-        # wait briefly for the comm_open to arrive (frontend may be racing).
+        # queue the message for later delivery and return. This avoids
+        # failing sends when the frontend's comm_open is racing the kernel.
         if not tc and registered:
-            waited = 0.0
-            while waited < 2.0:
+            try:
                 with self.thread_lock:
-                    tc = self.target_comm
-                if tc:
-                    break
-                time.sleep(0.05)
-                waited += 0.05
+                    self._outbound_queue.append(msg)
+                    if getattr(self, 'debug', False):
+                        self.logs.append('Queued outbound message; will flush when comm available')
+            except Exception:
+                pass
+            return
 
-        # If still no comm, raise a clearer error depending on registration state
+        # If still no comm and target not registered, raise a clearer error
         if not tc:
-            if registered:
-                raise RuntimeError(
-                    "No active Comm: target registered but comm_open not received yet. "
-                    "Ensure the frontend has created the Comm for the requested target and retry."
-                )
-            else:
-                raise RuntimeError(
-                    "No active Comm: Comm target not registered. "
-                    "Call ggb_comm_instance.register_target(<name>) in the kernel or ensure the frontend requests registration before sending."
-                )
+            raise RuntimeError(
+                "No active Comm: Comm target not registered. "
+                "Call ggb_comm_instance.register_target(<name>) in the kernel or ensure the frontend requests registration before sending."
+            )
 
         # Prefer scheduling the send on the kernel I/O loop if available
         try:
@@ -600,7 +692,27 @@ class ggb_comm:
             io_loop = getattr(kernel, 'io_loop', None)
             if io_loop is not None and hasattr(io_loop, 'add_callback'):
                 try:
-                    io_loop.add_callback(lambda: tc.send(msg))
+                    def _do_send(tc_local=tc, mm=msg):
+                        try:
+                            tc_local.send(mm)
+                        except Exception:
+                            try:
+                                if getattr(self, 'debug', False):
+                                    with self.thread_lock:
+                                        self.logs.append('Scheduled send failed; attempting direct send')
+                            except Exception:
+                                pass
+                            try:
+                                tc_local.send(mm)
+                            except Exception:
+                                try:
+                                    if getattr(self, 'debug', False):
+                                        with self.thread_lock:
+                                            self.logs.append('Direct resend failed in scheduled _do_send')
+                                except Exception:
+                                    pass
+
+                    io_loop.add_callback(_do_send)
                     return
                 except Exception:
                     # fall through to direct send
@@ -608,6 +720,46 @@ class ggb_comm:
         except Exception:
             pass
         return tc.send(msg)
+
+    def _flush_outbound_queue(self):
+        """Flush queued outbound messages via the active Comm or OOB channel.
+
+        This method attempts to send any messages queued while the Comm
+        target was registered but not yet open. It's safe to call from
+        different threads; it acquires `thread_lock` for coordination.
+        """
+        with self.thread_lock:
+            if not self._outbound_queue:
+                return
+            queued = list(self._outbound_queue)
+            self._outbound_queue.clear()
+
+        # Attempt to send each queued message using existing send scheduling.
+        for m in queued:
+            try:
+                # Use existing send path which will schedule on I/O loop
+                # if available; this also handles serialization.
+                try:
+                    kernel = get_ipython().kernel
+                    io_loop = getattr(kernel, 'io_loop', None)
+                    if io_loop is not None and hasattr(io_loop, 'add_callback') and getattr(self, 'target_comm', None) is not None:
+                        try:
+                            io_loop.add_callback(lambda mm=m: self.target_comm.send(mm))
+                            continue
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                if getattr(self, 'target_comm', None) is not None:
+                    self.target_comm.send(m)
+            except Exception:
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('Failed to flush queued outbound message')
+                except Exception:
+                    pass
 
     # Widget-bridge fallback removed: rely on IPython Comm target only.
 
@@ -678,7 +830,44 @@ class ggb_comm:
                     waited += 0.05
 
             # Send after registering the future to avoid races.
-            self.send(json.dumps(_data))
+            try:
+                self.send(json.dumps(_data))
+            except RuntimeError as re:
+                # If the kernel attempted to send before the frontend's
+                # comm_open arrived, wait briefly (mitigate race) and retry.
+                try:
+                    msgtxt = str(re)
+                except Exception:
+                    msgtxt = ''
+                if 'No active Comm' in msgtxt:
+                    waited = 0.0
+                    waited_ok = False
+                    try:
+                        with self.thread_lock:
+                            self.logs.append(f"send_recv: send blocked, waiting for comm {_id}")
+                    except Exception:
+                        pass
+                    while waited < 2.0:
+                        with self.thread_lock:
+                            if getattr(self, 'target_comm', None) or getattr(self, 'clients', None) or getattr(self, '_oob_ready', False):
+                                waited_ok = True
+                                break
+                        await asyncio.sleep(0.05)
+                        waited += 0.05
+                    if waited_ok:
+                        # retry send once
+                        try:
+                            self.send(json.dumps(_data))
+                        except Exception:
+                            # bubble up original RuntimeError if retry fails
+                            raise
+                    else:
+                        # re-raise original RuntimeError with clearer context
+                        raise RuntimeError(
+                            "No active Comm after waiting for frontend; ensure the frontend opened the Comm target and retry."
+                        )
+                else:
+                    raise
             # Yield briefly so comm handlers can process incoming messages
             await asyncio.sleep(0)
 
@@ -775,4 +964,16 @@ class ggb_comm:
                 return None
         except Exception:
             return None
+
+
+# Module-level singleton for convenience and backwards compatibility.
+# Older code and notebooks expect `ggb_comm_instance` to be available
+# after `from ggblab.comm import ggb_comm_instance`.
+try:
+    ggb_comm_instance
+except NameError:
+    try:
+        ggb_comm_instance = ggb_comm()
+    except Exception:
+        ggb_comm_instance = None
 

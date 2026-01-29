@@ -10,7 +10,11 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
-import { ServerConnection, KernelConnection } from '@jupyterlab/services';
+import {
+  ServerConnection,
+  KernelConnection,
+  KernelManager
+} from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
 
 // Import package.json to reflect the package version in the UI log.
@@ -41,135 +45,374 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // is installed. WidgetManager must be passed explicitly via `widgetManager`
     // in the widget creation args when available.
 
-    // Best-effort attempt to detect if the official jupyter-widgets
-    // extension is available in the host. If it is, try to wrap its
-    // exported plugin(s) and observe the `activate` call so we can obtain
-    // the per-kernel WidgetManager instance and call our registrar
-    // `window.__ggblab_register_widget_manager(kernelId, manager)`
-    // automatically. This uses only the module's public exports and
-    // performs structural checks at runtime so it is robust across
-    // versions.
-    (async () => {
+    // Pre-register comm targets for any kernels visible to the front-end
+    // KernelManager. This helps accept `comm_open` messages that arrive
+    // before a widget mounts. Factor the logic into a function so we can
+    // re-run it when sessions change (e.g. kernels start/stop).
+    const defaultCommTarget = 'ggblab-comm';
+    const registered = new Set<string>();
+
+    const scanAndRegisterKernels = async () => {
+      console.debug('ggblab: scanAndRegisterKernels start');
+      console.debug('ggblab: currently registered (start)', Array.from(registered));
       try {
-        const mod: any = await import('@jupyter-widgets/jupyterlab-manager');
-        console.debug('ggblab: jupyter-widgets manager module is present');
+        const base = PageConfig.getBaseUrl() || '/';
+        const token = PageConfig.getToken();
+        const serverSettings = ServerConnection.makeSettings({
+          baseUrl: base,
+          token,
+          appendToken: true
+        });
 
-        // The package may export a single plugin or an array of plugins.
-        const candidates: any[] = Array.isArray(mod.default)
-          ? mod.default
-          : Array.isArray(mod)
-          ? mod
-          : [];
-
-        for (const p of candidates) {
-          if (!p || typeof p.activate !== 'function') {
-            continue;
+        const registerKernel = async (kid: string, model: any) => {
+          console.debug('ggblab: registerKernel called', kid);
+          console.debug('ggblab: registerKernel model snapshot', model && typeof model === 'object' ? { id: model.id, name: model.name } : model);
+          if (!kid) {
+            console.debug('ggblab: registerKernel - empty kid, skipping');
+            return;
           }
-
-          // Wrap the activate function so that when the widget-manager
-          // plugin runs, we can inspect arguments for a manager instance
-          // and register it with our global registrar. This is defensive
-          // and will not change the plugin's behaviour otherwise.
-          const origActivate = p.activate.bind(p);
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore - runtime wrapping of third-party plugin
-          p.activate = function (app: any, ...args: any[]) {
-            const result = origActivate(app, ...args);
-
+          if (registered.has(kid)) {
+            console.debug('ggblab: registerKernel - already registered', kid);
+            return;
+          }
+          try {
+            (window as any).__ggblab_comm_store =
+              (window as any).__ggblab_comm_store || {};
+            const store: any = (window as any).__ggblab_comm_store;
+            // Prefer using an existing live kernel connection object when
+            // the `model` argument already exposes `registerCommTarget`.
+            // This ensures we attach to the same frontend-managed connection
+            // that receives comm_open messages from the kernel. If `model`
+            // is only a kernel model object, fall back to creating a
+            // dedicated `KernelConnection` instance.
+            const kernel: any = (model && typeof (model as any).registerCommTarget === 'function')
+              ? model
+              : new KernelConnection({ model, serverSettings });
             try {
-              // Look for a manager-like arg in the activate args.
-              for (const a of args) {
-                if (!a || typeof a !== 'object') {
-                  continue;
-                }
+              console.debug('ggblab: using KernelConnection for registration', { id: kernel?.id || (model && model.id) || null, hasRegister: typeof kernel.registerCommTarget === 'function' });
+            } catch (ee) {
+              console.debug('ggblab: unable to inspect kernel connection', ee);
+            }
 
-                // Heuristic: manager typically exposes `create_view` or
-                // `display_view_for_model` or similar methods. We check a
-                // small set of possibilities to find a likely manager.
-                const isManager =
-                  typeof a.create_view === 'function' ||
-                  typeof a.display_view_for_model === 'function' ||
-                  !!a._create_views_for_model;
-
-                if (!isManager) {
-                  // Some plugins pass a registry or other helpers; skip them.
-                  continue;
-                }
-
-                const manager = a;
-
-                // Attempt to determine a kernel id associated with this
-                // manager. Different manager implementations expose the
-                // session/kernel in different places; probe common paths.
-                let kernelId = '';
+            console.debug('ggblab: calling registerCommTarget on KernelConnection', kid, defaultCommTarget);
+            kernel.registerCommTarget(
+              defaultCommTarget,
+              (commOp: any, msg: any) => {
+                console.debug('ggblab: registerCommTarget handler invoked', { kernelId: kid, msgSummary: msg && msg.content ? Object.keys(msg.content) : null });
                 try {
-                  kernelId = (
-                    (manager.context && manager.context.session && manager.context.session.kernel && manager.context.session.kernel.id) ||
-                    (manager.kernel && manager.kernel.id) ||
-                    ''
-                  );
-                } catch (e) {
-                  kernelId = '';
-                }
+                  store[kid] = commOp;
+                  // Ensure by-id and queue stores exist
+                  (window as any).__ggblab_comm_by_id =
+                    (window as any).__ggblab_comm_by_id || {};
+                  (window as any).__ggblab_comm_queue =
+                    (window as any).__ggblab_comm_queue || {};
 
-                // If we have a kernel id, call the registrar immediately.
-                if (kernelId && (window as any).__ggblab_register_widget_manager) {
+                  // Attempt to determine comm id from the incoming message or comm object
+                  let commId: string | null = null;
                   try {
-                    (window as any).__ggblab_register_widget_manager(kernelId, manager);
-                    console.debug('ggblab: auto-registered widgetManager for kernel', kernelId);
-                  } catch (e) {
-                    console.warn('ggblab: failed to auto-register widgetManager', e);
+                    commId = (msg && msg.content && msg.content.comm_id) ||
+                      (commOp && (commOp.comm_id || commOp.commId || commOp.commId)) ||
+                      null;
+                  } catch (ee) {
+                    commId = null;
                   }
-                } else if (manager && manager.context && manager.context.session) {
-                  // Otherwise, listen for kernel changes and register when
-                  // the kernel becomes available or changes.
+
+                  if (commId) {
+                    try {
+                      (window as any).__ggblab_comm_by_id[commId] = commOp;
+                      try {
+                        (window as any).__ggblab_comm_by_id[commId].__ggblab_meta = {
+                          source: 'pre-registered',
+                          kernelId: kid,
+                          when: new Date().toISOString()
+                        };
+                      } catch (ee) {
+                        /* ignore metadata attach errors */
+                      }
+                      console.debug('[ggblab] pre-registered frontend comm by id', kid, commId);
+                    } catch (ee) {
+                      console.warn('ggblab: failed to store comm by id', ee);
+                    }
+                  } else {
+                    // If no comm id yet, push the open message into a queue keyed by kernel id
+                    try {
+                      (window as any).__ggblab_comm_queue = (window as any).__ggblab_comm_queue || {};
+                      (window as any).__ggblab_comm_queue[kid] = (window as any).__ggblab_comm_queue[kid] || [];
+                      (window as any).__ggblab_comm_queue[kid].push(msg || {});
+                      console.debug('[ggblab] queued comm open message for kernel', kid);
+                    } catch (ee) {
+                      console.warn('ggblab: failed to queue comm open message', ee);
+                    }
+                  }
+
+                  // Attach logging handlers to commOp for debugging
                   try {
-                    const sess = manager.context.session;
-                    // Some session implementations expose a `kernelChanged` signal
-                    // or similar. Try to connect if present.
-                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                    // @ts-ignore - may not exist on all implementations
-                    if (sess.kernelChanged && typeof sess.kernelChanged.connect === 'function') {
-                      // Connect once to register when kernel is set.
-                      const handler = (_sender: any, kernel: any) => {
+                    const prevOnMsg = (commOp as any).onMsg;
+                    (commOp as any).onMsg = (m: any) => {
+                      try {
+                        const now = new Date().toISOString();
+                        const mid = (m && m.content && m.content.comm_id) || commId || (commOp && (commOp.comm_id || commOp.commId)) || null;
+                        console.debug('[ggblab] comm.onMsg', { when: now, kernelId: kid, commId: mid, msg: m });
+                      } catch (ee) {
+                        console.debug('[ggblab] comm.onMsg (logging failed)', ee);
+                      }
+                      try {
+                        if (typeof prevOnMsg === 'function') prevOnMsg(m);
+                      } catch (ee) {
+                        /* ignore handler errors */
+                      }
+                    };
+                  } catch (ee) {
+                    /* ignore */
+                  }
+
+                  try {
+                    const prevOnClose = (commOp as any).onClose;
+                    (commOp as any).onClose = (m: any) => {
+                      try {
+                        const now = new Date().toISOString();
+                        const closedId = (m && m.content && m.content.comm_id) || commId || (commOp && (commOp.comm_id || commOp.commId)) || null;
+                        console.debug('[ggblab] comm.onClose', { when: now, kernelId: kid, commId: closedId, msg: m });
+                      } catch (ee) {
+                        console.debug('[ggblab] comm.onClose (logging failed)', ee);
+                      }
+                      try {
+                        if (typeof prevOnClose === 'function') prevOnClose(m);
+                      } catch (ee) {
+                        /* ignore */
+                      }
+                    };
+                  } catch (ee) {
+                    /* ignore */
+                  }
+
+                  console.debug('[ggblab] pre-registered frontend comm', kid);
+                  try {
+                    // mark the per-kernel store comm with metadata for widget lookup
+                    try {
+                      store[kid].__ggblab_meta = {
+                        source: 'pre-registered',
+                        kernelId: kid,
+                        when: new Date().toISOString()
+                      };
+                    } catch (ee) {
+                      /* ignore */
+                    }
+                  } catch (ee) {
+                    /* ignore */
+                  }
+                } catch (e) {
+                  console.warn('ggblab: failed to store pre-registered comm', e);
+                }
+              }
+            );
+              registered.add(kid);
+              console.debug('ggblab: registerKernel - registered', kid);
+              console.debug('ggblab: currently registered (after add)', Array.from(registered));
+              try {
+                // Attempt to create a frontend-originated "pre-warm" comm
+                // so widgets mounting shortly after kernel registration
+                // can reuse an already-open comm instead of recreating one.
+                if (typeof kernel.createComm === 'function') {
+                  try {
+                    const preComm: any = kernel.createComm(defaultCommTarget);
+                    try {
+                      const prevOnMsg = preComm.onMsg;
+                      preComm.onMsg = (m: any) => {
                         try {
-                          const kid = kernel ? kernel.id : '';
-                          if (kid && (window as any).__ggblab_register_widget_manager) {
-                            (window as any).__ggblab_register_widget_manager(kid, manager);
-                            console.debug('ggblab: auto-registered widgetManager on kernelChanged for', kid);
-                            // disconnect handler if possible
-                            try {
-                              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                              // @ts-ignore
-                              sess.kernelChanged.disconnect(handler);
-                            } catch (e) {
-                              /* ignore */
-                            }
-                          }
+                          console.debug('[ggblab] pre-warm comm.onMsg', { kernelId: kid, msg: m });
+                        } catch (ee) {
+                          /* ignore */
+                        }
+                        try {
+                          if (typeof prevOnMsg === 'function') prevOnMsg(m);
                         } catch (ee) {
                           /* ignore */
                         }
                       };
-                      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                      // @ts-ignore
-                      sess.kernelChanged.connect(handler);
+                    } catch (ee) {
+                      /* ignore */
                     }
-                  } catch (e) {
-                    /* ignore */
+                    try {
+                      const prevOnClose = preComm.onClose;
+                      preComm.onClose = (m: any) => {
+                        try {
+                          console.debug('[ggblab] pre-warm comm.onClose', { kernelId: kid, msg: m });
+                        } catch (ee) {
+                          /* ignore */
+                        }
+                        try {
+                          if (typeof prevOnClose === 'function') prevOnClose(m);
+                        } catch (ee) {
+                          /* ignore */
+                        }
+                      };
+                    } catch (ee) {
+                      /* ignore */
+                    }
+                    try {
+                      preComm.open && preComm.open('pre-warm from ggblab');
+                    } catch (ee) {
+                      /* ignore open errors */
+                    }
+                    try {
+                      (window as any).__ggblab_comm_store = (window as any).__ggblab_comm_store || {};
+                      (window as any).__ggblab_comm_store[kid] = preComm;
+                    } catch (ee) {
+                      /* ignore store errors */
+                    }
+                    try {
+                      (window as any).__ggblab_comm_by_id = (window as any).__ggblab_comm_by_id || {};
+                      const mid = preComm && (preComm.comm_id || preComm.commId || null);
+                      if (mid) {
+                        (window as any).__ggblab_comm_by_id[mid] = preComm;
+                        try {
+                          (window as any).__ggblab_comm_by_id[mid].__ggblab_meta = {
+                            source: 'pre-warmed',
+                            kernelId: kid,
+                            when: new Date().toISOString()
+                          };
+                        } catch (ee) {
+                          /* ignore */
+                        }
+                        console.debug('[ggblab] pre-warmed frontend comm by id', kid, mid);
+                      } else {
+                        console.debug('[ggblab] pre-warmed frontend comm (no id yet)', kid);
+                      }
+                    } catch (ee) {
+                      console.warn('ggblab: failed to publish pre-warmed comm', ee);
+                    }
+                  } catch (ee) {
+                    console.warn('ggblab: failed to create pre-warm comm', kid, ee);
+                  }
+                }
+              } catch (ee) {
+                /* ignore pre-warm pathway errors */
+              }
+          } catch (e) {
+            console.warn('ggblab: failed to register comm target for kernel', kid, e);
+          }
+        };
+
+        const km = new KernelManager({ serverSettings });
+        const kmAny = km as any;
+        if (typeof kmAny.listRunning === 'function') {
+          const list = await kmAny.listRunning();
+          console.debug('ggblab: KernelManager.listRunning returned', Array.isArray(list) ? list.length : 'non-array');
+          if (Array.isArray(list)) {
+            for (const k of list) {
+              const kid = (k && k.id) || '';
+              await registerKernel(kid, k);
+            }
+          }
+        } else if (kmAny.running && typeof kmAny.running === 'function') {
+          console.debug('ggblab: using KernelManager.running async iterator');
+          for await (const k of kmAny.running()) {
+            try {
+              const kid = (k && (k.id as string)) || '';
+              await registerKernel(kid, k);
+            } catch (e) {
+              /* ignore individual kernel errors */
+            }
+          }
+        }
+        // Additionally, if a serviceManager.sessions API is available use
+        // session listings to detect kernels that may not yet be visible
+        // through the KernelManager running list immediately after start.
+        try {
+          const svc = (app as any).serviceManager;
+          const sessAny = svc && svc.sessions as any;
+          if (sessAny) {
+            console.debug('ggblab: serviceManager.sessions available - scanning sessions');
+            if (typeof sessAny.listRunning === 'function') {
+              const sl = await sessAny.listRunning();
+              console.debug('ggblab: sessions.listRunning returned', Array.isArray(sl) ? sl.length : 'non-array');
+              if (Array.isArray(sl)) {
+                for (const s of sl) {
+                  try {
+                    const kmod = (s && (s.kernel as any)) || null;
+                    const kid = (kmod && (kmod.id as string)) || '';
+                    console.debug('ggblab: session entry kernel id', kid);
+                    if (kid) {
+                      await registerKernel(kid, kmod);
+                    }
+                  } catch (ee) {
+                    /* ignore per-session errors */
                   }
                 }
               }
-            } catch (e) {
-              console.warn('ggblab: error while probing widget-manager activate args', e);
+            } else if (sessAny.running && typeof sessAny.running === 'function') {
+              console.debug('ggblab: using sessions.running async iterator');
+              for await (const s of sessAny.running()) {
+                try {
+                  const kmod = (s && (s.kernel as any)) || null;
+                  const kid = (kmod && (kmod.id as string)) || '';
+                  console.debug('ggblab: session stream kernel id', kid);
+                  if (kid) {
+                    await registerKernel(kid, kmod);
+                  }
+                } catch (ee) {
+                  /* ignore per-session errors */
+                }
+              }
             }
-
-            return result;
-          };
+          }
+        } catch (ee) {
+          /* ignore serviceManager.session listing errors */
         }
+        console.debug('ggblab: scanAndRegisterKernels complete');
+        console.debug('ggblab: currently registered (end)', Array.from(registered));
       } catch (e) {
-        console.debug('ggblab: jupyter-widgets manager not available', e);
+        console.warn('ggblab: KernelManager scan failed', e);
       }
-    })();
+    };
+
+    // Run initial scan
+    void scanAndRegisterKernels();
+
+    // If the app exposes a serviceManager.sessions signal, re-scan when
+    // running sessions change so newly-started kernels get pre-registered.
+    try {
+      const svc = (app as any).serviceManager;
+      if (svc) {
+        // sessions.runningChanged
+        if (svc.sessions && svc.sessions.runningChanged) {
+          try {
+            svc.sessions.runningChanged.connect(() => {
+              console.debug('ggblab: sessions.runningChanged — rescanning kernels');
+              void scanAndRegisterKernels();
+            });
+            console.debug('ggblab: connected sessions.runningChanged');
+          } catch (e) {
+            console.warn('ggblab: failed to connect sessions.runningChanged', e);
+          }
+        }
+
+        // kernels.runningChanged (catch kernel start/stop/restart events)
+        try {
+          const kv = svc.kernels as any;
+          if (kv && kv.runningChanged) {
+            try {
+              kv.runningChanged.connect(() => {
+                console.debug('ggblab: kernels.runningChanged — rescanning kernels');
+                void scanAndRegisterKernels();
+              });
+              console.debug('ggblab: connected kernels.runningChanged');
+            } catch (e) {
+              console.warn('ggblab: failed to connect kernels.runningChanged', e);
+            }
+          }
+        } catch (e) {
+          /* ignore kernels signal hookup errors */
+        }
+      }
+    } catch (e) {
+      /* non-fatal if serviceManager is absent */
+    }
+
+    // Auto-detection and wrapping of the jupyter-widgets manager removed.
+    // The `widgetManager` must be supplied explicitly when creating widgets
+    // (passed in `args.widgetManager`), if available in the host.
 
     if (settingRegistry) {
       settingRegistry
@@ -236,21 +479,35 @@ const plugin: JupyterFrontEndPlugin<void> = {
         try {
           const baseUrl = PageConfig.getBaseUrl();
           const token = PageConfig.getToken();
-          const settings = ServerConnection.makeSettings({ baseUrl, token, appendToken: true });
+          const settings = ServerConnection.makeSettings({
+            baseUrl,
+            token,
+            appendToken: true
+          });
           const model = { name: 'python3', id: args['kernelId'] || '' };
-          const earlyConn = new KernelConnection({ model, serverSettings: settings });
+          const earlyConn = new KernelConnection({
+            model,
+            serverSettings: settings
+          });
           // create global store if missing
-          (window as any).__ggblab_comm_store = (window as any).__ggblab_comm_store || {};
+          (window as any).__ggblab_comm_store =
+            (window as any).__ggblab_comm_store || {};
           const store: any = (window as any).__ggblab_comm_store;
           // Register a no-op handler that saves the comm object for later use
-          earlyConn.registerCommTarget(args['commTarget'] || 'ggblab-comm', (commOp: any, msg: any) => {
-            try {
-              store[args['kernelId']] = commOp;
-              console.debug('Registered early frontend comm for kernel', args['kernelId']);
-            } catch (e) {
-              console.warn('Failed to store early frontend comm', e);
+          earlyConn.registerCommTarget(
+            args['commTarget'] || 'ggblab-comm',
+            (commOp: any, msg: any) => {
+              try {
+                store[args['kernelId']] = commOp;
+                console.debug(
+                  'Registered early frontend comm for kernel',
+                  args['kernelId']
+                );
+              } catch (e) {
+                console.warn('Failed to store early frontend comm', e);
+              }
             }
-          });
+          );
         } catch (e) {
           console.warn('Failed to register early frontend comm target', e);
         }
