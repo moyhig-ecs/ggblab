@@ -187,11 +187,35 @@ class GeoGebra:
             self.app = JupyterFrontEnd()
             self.app.commands.execute('ggblab:create', {
                 'kernelId': self.kernel_id,
-                'commTarget': 'ggblab-comm',
+                'commTarget': 'jupyter.widget',
                 'insertMode': 'split-right',
                 'socketPath': self.comm.socketPath,
                 # 'wsPort': self.comm.wsPort,
             })
+
+            # Best-effort: wait briefly for an out-of-band client to connect.
+            # This improves same-cell reliability by giving the frontend a short
+            # window to start its helper kernel and connect to the socket.
+            try:
+                waited = 0.0
+                while waited < 3.0:
+                    stat = None
+                    try:
+                        stat = self.comm.status()
+                    except Exception:
+                        stat = None
+                    if stat and stat.get('has_oob_clients'):
+                        break
+                    await asyncio.sleep(0.05)
+                    waited += 0.05
+                if waited >= 3.0:
+                    # not a fatal error; continue but log for diagnostics
+                    try:
+                        print('ggblab: warning - no out-of-band client connected after wait')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             # Skipping comm-stability wait: removed as it can trigger
             # kernel-side comm introspection that creates transient comms
             # and leads to "No such comm" errors during initialization.

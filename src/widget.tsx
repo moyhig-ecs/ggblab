@@ -190,6 +190,19 @@ with connect("${wsUrl}") as ws:
             dbg("Started new kernel:", kernel2, kernelId);
             await kernel2.requestExecute({ code: `from websockets.sync.client import unix_connect, connect` }).done;
 
+            // Send an early probe via the helper kernel to ensure the out-of-band
+            // socket server receives a client connection as soon as possible.
+            // This increases the chance that kernel-side send_recv will find
+            // an active OOB client when called from the same notebook cell.
+            try {
+                const probeMsg = JSON.stringify({ type: 'probe', payload: 'ready' });
+                // fire-and-forget the probe so we don't block the widget mount
+                callRemoteSocketSend(kernel2, probeMsg, socketPath, wsUrl).catch((e: any) => dbg('probe send failed', e));
+                dbg('Sent early OOB probe via helper kernel');
+            } catch (e) {
+                dbg('Failed to schedule early OOB probe', e);
+            }
+
             const wsUrl = `ws://localhost:${props.wsPort}/`;
             const socketPath = props.socketPath || null;
 
