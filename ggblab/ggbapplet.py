@@ -118,20 +118,20 @@ class GeoGebra:
   
     async def init(self):
         """Initialize the GeoGebra widget and communication channels.
-        
+
         This method:
         1. Starts the out-of-band socket server (Unix socket on POSIX, TCP WebSocket on Windows)
         2. Registers the IPython Comm target ('ggblab-comm')
         3. Opens the GeoGebra widget panel via ipylab with communication settings
         4. Initializes the object cache
-        
+
         The widget is launched programmatically to pass kernel-specific settings
         (Comm target, socket path) before initialization, avoiding the limitations
         of fixed arguments from Launcher/Command Palette.
-        
+
         Returns:
             GeoGebra: Self reference for method chaining.
-            
+
         Example:
             >>> ggb = await GeoGebra().init()
             >>> # GeoGebra panel opens in split-right position
@@ -183,18 +183,15 @@ class GeoGebra:
 
             _connection_file = ipykernel.connect.get_connection_file()
             self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
-            
+
             self.app = JupyterFrontEnd()
-                        # Use the communication instance's target name so the frontend
-                        # and kernel agree on the exact Comm target rather than relying
-                        # on a hardcoded string.
-                        self.app.commands.execute('ggblab:create', {
-                                'kernelId': self.kernel_id,
-                                'commTarget': getattr(self.comm, 'target_name', 'ggblab-comm'),
-                                'insertMode': 'split-right',
-                                'socketPath': self.comm.socketPath,
-                            # 'wsPort': self.comm.wsPort,
-                        })
+            self.app.commands.execute('ggblab:create', {
+                'kernelId': self.kernel_id,
+                'commTarget': 'ggblab-comm',
+                'insertMode': 'split-right',
+                'socketPath': self.comm.socketPath,
+                # 'wsPort': self.comm.wsPort,
+            })
             # Skipping comm-stability wait: removed as it can trigger
             # kernel-side comm introspection that creates transient comms
             # and leads to "No such comm" errors during initialization.
@@ -202,11 +199,11 @@ class GeoGebra:
             # Widget-manager probing removed: unnecessary and causes hidden
             # kernel-side Comm creation during init which can lead to "No such
             # comm" errors. Skipping probing and continuing initialization.
-            
+
             # Initialize object cache
             # await self.refresh_object_cache()
             self._applet_objects = set()
-            
+
             self.initialized = True
             # After initialization, perform a final best-effort repoint of any
             # existing `ggb` variable to the registered module-level
