@@ -37,6 +37,43 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ) => {
     console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
+    // Expose a global registration helper so other extensions (for example
+    // the jupyter-widgets manager) can notify us when a per-kernel
+    // WidgetManager becomes available. This enables automatic integration
+    // without patching third-party code: the widget manager can call
+    // `window.__ggblab_register_widget_manager(kernelId, manager)` when ready.
+    try {
+      (window as any).__ggblab_widget_manager = (window as any).__ggblab_widget_manager || {};
+      (window as any).__ggblab_register_widget_manager = (kernelId: string, manager: any) => {
+        try {
+          (window as any).__ggblab_widget_manager[kernelId] = manager;
+          console.debug('ggblab: registered widgetManager for kernel', kernelId);
+        } catch (e) {
+          console.warn('ggblab: failed to register widgetManager', e);
+        }
+      };
+    } catch (e) {
+      console.warn('ggblab: unable to install widgetManager global registration', e);
+    }
+
+    // Best-effort attempt to detect if the official jupyter-widgets
+    // extension is available in the host. If it is, log that fact. We do
+    // not assume a specific API here; the preferred integration is for the
+    // widget manager plugin to call the global registrar above when it has
+    // created a manager for a kernel.
+    (async () => {
+      try {
+        const mod = await import('@jupyter-widgets/jupyterlab-manager');
+        console.debug('ggblab: jupyter-widgets manager module is present');
+        // If desired, we could attempt deeper integration here, but doing so
+        // risks coupling to internals of that package; prefer cooperative
+        // registration via the global function instead.
+      } catch (e) {
+        // Not critical; many environments won't have the manager installed.
+        console.debug('ggblab: jupyter-widgets manager not available');
+      }
+    })();
+
     if (settingRegistry) {
       settingRegistry
         .load(plugin.id)
