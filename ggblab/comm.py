@@ -115,6 +115,19 @@ class ggb_comm:
         # Debug flag: when False, suppress non-actionable diagnostic log entries
         self.debug = False
 
+        # Whether a comm target registration has been performed.
+        # This is False until `register_target` installs a handler and
+        # `register_target_cb` is invoked by the IPython kernel on comm_open.
+        self._registered = False
+
+        # NOTE: Do NOT automatically register the IPython Comm target here.
+        # Registration must be requested explicitly by callers via
+        # `ggb_comm.register_target()` (or by the frontend executing a
+        # kernel-side registration snippet) so that target installation and
+        # comm_open ordering can be coordinated by the frontend. Eager
+        # registration caused transient targets and race conditions during
+        # same-cell initialization.
+
     # oob websocket (unix_domain socket in posix)
     def start(self):
         """Start the out-of-band socket server in a background thread.
@@ -304,13 +317,18 @@ class ggb_comm:
                     pass
 
     # comm
-    def register_target(self):
+    def register_target(self, name: str = None):
         """Register the IPython Comm target for frontend messages.
 
-        Note: IPython Comm registration is disabled by default (see
-        `self.use_ipython_comm`). Callers may enable it by setting that
-        attribute to True before calling this method.
+        If `name` is provided, update `self.target_name` to the requested
+        target before registering. Registration is a best-effort operation
+        and respects `self.use_ipython_comm` and `self.enable_widget_bridge`.
         """
+        if name:
+            try:
+                self.target_name = name
+            except Exception:
+                pass
         if not getattr(self, 'use_ipython_comm', False):
             # If widget-bridge creation is disabled, return early.
             if not getattr(self, 'enable_widget_bridge', False):
@@ -377,23 +395,36 @@ class ggb_comm:
             get_ipython().kernel.comm_manager.register_target(
                 self.target_name,
                 self.register_target_cb)
+            # indicate registration attempt succeeded (handler installed)
+            try:
+                with self.thread_lock:
+                    self._registered = True
+            except Exception:
+                pass
         except Exception:
             try:
                 with self.thread_lock:
                     self.logs.append('Failed to register IPython Comm target')
             except Exception:
                 pass
+            return False
+
         # Ensure we have a post-execute hook to flush any queued events
         try:
             self.register_post_execute()
         except Exception:
             pass
+        return True
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
         # IPython Comm is not thread-aware; protect assignment anyway
         with self.thread_lock:
             self.target_comm = comm
+            try:
+                self._registered = True
+            except Exception:
+                pass
             try:
                 if getattr(self, 'debug', False):
                     self.logs.append(f"register_target_cb: {self.target_comm}")
@@ -407,6 +438,10 @@ class ggb_comm:
         @comm.on_close
         def _close():
             self.target_comm = None
+            try:
+                self._registered = False
+            except Exception:
+                pass
 
     def unregister_target_cb(self):
         """Unregister and close the IPython Comm connection."""
@@ -556,26 +591,50 @@ class ggb_comm:
 
     def send(self, msg):
         """Send a message via the IPython Comm channel."""
+        # Check current comm and registered state under lock
         with self.thread_lock:
             tc = self.target_comm
-        if tc:
-            # Prefer scheduling the send on the kernel I/O loop if available
-            try:
-                kernel = get_ipython().kernel
-                io_loop = getattr(kernel, 'io_loop', None)
-                if io_loop is not None and hasattr(io_loop, 'add_callback'):
-                    try:
-                        io_loop.add_callback(lambda: tc.send(msg))
-                        return
-                    except Exception:
-                        # fall through to direct send
-                        pass
-            except Exception:
-                pass
-            return tc.send(msg)
+            registered = getattr(self, '_registered', False)
 
-        # No widget-bridge fallback supported; require active IPython Comm
-        raise RuntimeError("No active Comm: GeoGebra().init() must be called in a notebook cell before sending commands.")
+        # If no active comm but the target registration was performed,
+        # wait briefly for the comm_open to arrive (frontend may be racing).
+        if not tc and registered:
+            waited = 0.0
+            while waited < 2.0:
+                with self.thread_lock:
+                    tc = self.target_comm
+                if tc:
+                    break
+                time.sleep(0.05)
+                waited += 0.05
+
+        # If still no comm, raise a clearer error depending on registration state
+        if not tc:
+            if registered:
+                raise RuntimeError(
+                    "No active Comm: target registered but comm_open not received yet. "
+                    "Ensure the frontend has created the Comm for the requested target and retry."
+                )
+            else:
+                raise RuntimeError(
+                    "No active Comm: Comm target not registered. "
+                    "Call ggb_comm_instance.register_target(<name>) in the kernel or ensure the frontend requests registration before sending."
+                )
+
+        # Prefer scheduling the send on the kernel I/O loop if available
+        try:
+            kernel = get_ipython().kernel
+            io_loop = getattr(kernel, 'io_loop', None)
+            if io_loop is not None and hasattr(io_loop, 'add_callback'):
+                try:
+                    io_loop.add_callback(lambda: tc.send(msg))
+                    return
+                except Exception:
+                    # fall through to direct send
+                    pass
+        except Exception:
+            pass
+        return tc.send(msg)
 
     # Widget-bridge fallback removed: rely on IPython Comm target only.
 

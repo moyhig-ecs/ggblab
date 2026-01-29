@@ -101,6 +101,20 @@ class GeoGebra:
         self.check_syntax = False
         self.check_semantics = False
         self._applet_objects = set()  # Cache of known objects
+        # If a notebook-level `ggb_comm_instance` exists in the IPython
+        # user namespace (created by the frontend's kernel snippet), reuse
+        # it so newly-created GeoGebra instances immediately share the
+        # same communication object and avoid transient mismatches.
+        try:
+            ip = get_ipython()
+            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+            inst = user_ns.get('ggb_comm_instance') or globals().get('ggb_comm_instance', None)
+            if inst and getattr(self, 'comm', None) is not inst:
+                self.comm = inst
+                print('Repointed ggb.comm -> ggb_comm_instance (constructor)')
+        except Exception:
+            # Non-fatal; this is a best-effort alignment only.
+            pass
   
     async def init(self):
         """Initialize the GeoGebra widget and communication channels.
@@ -123,11 +137,49 @@ class GeoGebra:
             >>> # GeoGebra panel opens in split-right position
         """
         if not self.initialized:
-            self.comm = ggb_comm()
-            self.comm.start()
+            # Reuse a notebook-level or module-level singleton ggb_comm_instance
+            # if present. The frontend typically executes a kernel snippet that
+            # creates `ggb_comm_instance` in the IPython user namespace, so
+            # check that first before creating a new instance here.
+            ip = get_ipython()
+            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+            comm_instance = user_ns.get('ggb_comm_instance') or globals().get('ggb_comm_instance')
+            if comm_instance is None:
+                comm_instance = ggb_comm()
+                globals()['ggb_comm_instance'] = comm_instance
+                try:
+                    # Also expose the instance into the IPython user namespace
+                    # so interactive snippets and debugging code can find it.
+                    if user_ns is not None:
+                        user_ns['ggb_comm_instance'] = comm_instance
+                except Exception:
+                    pass
+                # If an existing GeoGebra controller is present in this
+                # kernel (e.g. a previously-created `ggb`), repoint its
+                # `comm` attribute to the newly created/registered
+                # `ggb_comm_instance` so both sides share the same
+                # communication instance and avoid transient mismatches.
+                try:
+                    ggb_obj = user_ns.get('ggb') or globals().get('ggb') or getattr(GeoGebra, '_instance', None)
+                    if comm_instance and ggb_obj and getattr(ggb_obj, 'comm', None) is not comm_instance:
+                        ggb_obj.comm = comm_instance
+                        print("Repointed ggb.comm -> ggb_comm_instance")
+                except Exception:
+                    # Best-effort only; don't fail init on repointing issues
+                    pass
+            self.comm = comm_instance
+            # Ensure OOB server is started on the instance we reuse/create
+            try:
+                self.comm.start()
+            except Exception:
+                pass
             while self.comm.socketPath is None:
                 await asyncio.sleep(.01)
-            self.comm.register_target()
+            # Ensure the kernel-side target registration is requested on this instance
+            try:
+                self.comm.register_target()
+            except Exception:
+                pass
 
             _connection_file = ipykernel.connect.get_connection_file()
             self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
@@ -152,7 +204,26 @@ class GeoGebra:
             # await self.refresh_object_cache()
             self._applet_objects = set()
             
-            self._initialized = True
+            self.initialized = True
+            # After initialization, perform a final best-effort repoint of any
+            # existing `ggb` variable to the registered module-level
+            # `ggb_comm_instance`. This mirrors the interactive debugging
+            # snippet and ensures `ggb.comm` and the registered instance
+            # are the same object even if the global was created elsewhere.
+            try:
+                ip = get_ipython()
+                user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+                inst = user_ns.get('ggb_comm_instance') or globals().get('ggb_comm_instance', None)
+                ggb_obj = user_ns.get('ggb') or globals().get('ggb', None)
+
+                # If inst and ggb exist and are different, make ggb use the registered instance:
+                if inst and ggb_obj and getattr(ggb_obj, "comm", None) is not inst:
+                    ggb_obj.comm = inst
+                    print("Repointed ggb.comm -> ggb_comm_instance")
+            except Exception:
+                # best-effort only; do not raise from repoint attempts
+                pass
+
         return self
     
     def _is_literal(self, token):
@@ -422,3 +493,8 @@ class GeoGebra:
             self._applet_objects.add(result['label'])
         
         return result
+
+
+# Module-level repoint is no longer necessary; constructor/init handle
+# alignment between `ggb` and the `ggb_comm_instance` created by the
+# frontend. Leaving this file-level snippet would be redundant.

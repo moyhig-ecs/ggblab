@@ -382,6 +382,44 @@ with connect("${wsUrl}") as ws:
                 window.addEventListener('resize', resizeHandler);
                 resizeHandler();
 
+                // Create kernel-side Comm now that the applet is initialized.
+                // Use the shared helper `ensureKernelComm()` so we reuse the
+                // same creation / attach logic (and avoid duplicating open/handler setup).
+                if (props.commTarget) {
+                    try {
+                        // Request the main kernel to register the requested comm target
+                        // into a persistent instance so the kernel will accept the
+                        // frontend's `createComm` open. Use a module-level
+                        // `ggb_comm_instance` to keep the instance alive.
+                        try {
+                            const regCode = `from ggblab.comm import ggb_comm\nif 'ggb_comm_instance' not in globals():\n    ggb_comm_instance = ggb_comm()\nggb_comm_instance.register_target("${props.commTarget}")\n`;
+                            await kernelConn.requestExecute({ code: regCode }).done;
+                        } catch (e) {
+                            dbg('Failed to request kernel to register comm target', e);
+                        }
+
+                        const maybeComm = await ensureKernelComm();
+                        if (maybeComm) {
+                            comm = maybeComm;
+                            try {
+                                const maybeId = (comm as any)?.comm_id || (comm as any)?.commId || (comm as any)?.id || null;
+                                dbg('Created kernel comm via ensureKernelComm', { target: props.commTarget, commObject: comm, commId: maybeId });
+                            } catch (e) {
+                                dbg('Created kernel comm via ensureKernelComm (unable to read id)', props.commTarget, comm);
+                            }
+                        } else {
+                            comm = null;
+                            dbg('ensureKernelComm returned null; skipping kernel comm creation');
+                        }
+                    } catch (e) {
+                        comm = null;
+                        dbg('ensureKernelComm failed; skipping kernel comm creation', e);
+                    }
+                } else {
+                    comm = null;
+                    dbg('No commTarget provided; skipping kernel comm creation');
+                }
+
                 // // Observe size changes of the widget's DOM element
                 // // but not working as expected in Lumino
                 // const widgetElemnt = window.document.querySelector('div.lm-DockPanel-widget');
@@ -396,38 +434,9 @@ with connect("${wsUrl}") as ws:
                 //     resizeObserver.observe(widgetRef.current); //widgetElemnt);
                 // }
 
-                if (props.commTarget) {
-                    comm = kernelConn.createComm(props.commTarget);
-                    try {
-                        // Log comm creation details for debugging 'Comm not found' issues
-                        try {
-                            const maybeId = (comm as any)?.comm_id || (comm as any)?.commId || (comm as any)?.id || null;
-                            dbg('Created kernel comm', { target: props.commTarget, commObject: comm, commId: maybeId });
-                        } catch (e) {
-                            dbg('Created kernel comm (unable to read id)', props.commTarget, comm);
-                        }
-                        comm.open('HELO from GGB').done;
-                    } catch (e) {
-                        dbg('Failed to open kernel comm for', props.commTarget, e);
-                    }
-                    // Attach close handler to surface unexpected closes
-                    try {
-                        comm.onClose = (m: any) => {
-                            try {
-                                const closedId = (m && m.content && m.content.comm_id) || (comm as any)?.comm_id || (comm as any)?.commId || null;
-                                dbg('Kernel comm closed', { target: props.commTarget, commId: closedId, message: m });
-                            } catch (e) {
-                                dbg('Kernel comm closed (no id available)', props.commTarget, m);
-                            }
-                        };
-                    } catch (e) {
-                        dbg('Unable to attach onClose to kernel comm', e);
-                    }
-                } else {
-                    // No kernel-level comm target provided: rely on remote socket
-                    comm = null;
-                    dbg('No commTarget provided; skipping kernel comm creation');
-                }
+                // Defer kernel-side Comm creation until the applet is loaded.
+                // The comm will be created inside `ggbOnLoad` to ensure the
+                // applet exists before we attempt to wire kernel↔frontend comms.
              // comm.send('HELO2').done
 
              // kernel.registerCommTarget('test', (comm, commMsg) => {
