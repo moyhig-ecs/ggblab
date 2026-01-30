@@ -40,7 +40,7 @@ except ImportError:
     warnings.warn("Importing 'ggblab' outside a proper installation.")
     __version__ = "dev"
 
-from .comm import ggb_comm
+from .comm import ggb_comm, ggb_comm_instance
 from .file import ggb_file
 from .ggbapplet import GeoGebra, GeoGebraSyntaxError, GeoGebraSemanticsError
 
@@ -128,3 +128,29 @@ def _jupyter_labextension_paths():
         "src": "labextension",
         "dest": "ggblab"
     }]
+
+
+def load_ipython_extension(ipython):
+    """Register the ggblab comm target when the kernel extension loads.
+
+    This function registers the comm handler provided by `ggb_comm_instance`.
+    It is idempotent and safe to call multiple times.
+    """
+    try:
+        km = getattr(ipython, "kernel", None)
+        if km is None:
+            return
+        cm = getattr(km, "comm_manager", None)
+        if cm is None:
+            return
+        if not globals().get("_jupyter_ggblab_registered"):
+            try:
+                # Use the module-level singleton to perform registration
+                ggb_comm_instance.register_target()
+                globals()["_jupyter_ggblab_registered"] = True
+                print("ggblab: comm target registered (jupyter.ggblab)")
+            except Exception as e:
+                print("ggblab: comm registration failed:", e)
+    except Exception:
+        # Defensive: never raise from load_ipython_extension
+        pass

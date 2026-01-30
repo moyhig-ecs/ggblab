@@ -43,8 +43,10 @@ class ggb_comm:
         - IPython Comm: Command dispatch, event notifications, heartbeat
         - Out-of-band socket: Response delivery during cell execution
     
-    Comm target is fixed at 'ggblab-comm' because multiplexing via multiple
-    targets would not solve the IPython Comm receive limitation.
+    Comm target is fixed at 'jupyter.ggblab' because multiplexing via multiple
+    targets would not solve the IPython Comm receive limitation. The
+    dotted name follows the ipywidgets-style naming convention and is also
+    used by `load_ipython_extension` to register the handler at runtime.
     
     Attributes:
         target_comm: IPython Comm object
@@ -79,7 +81,7 @@ class ggb_comm:
     def __init__(self):
         """Initialize communication state and defaults."""
         self.target_comm = None
-        self.target_name = 'ggblab-comm'
+        self.target_name = 'jupyter.ggblab'
         self.server_handle = None
         self.server_thread = None
         self.clients = set()
@@ -696,3 +698,12 @@ class ggb_comm:
             # On timeout, raise the error
             print(f"TimeoutError in send_recv {msg}")
             raise
+
+
+# Module-level singleton used by kernel extension loader and examples.
+# Creating the instance is cheap; the out-of-band server only starts when
+# `start()` is called by consumers.
+try:
+    ggb_comm_instance
+except NameError:
+    ggb_comm_instance = ggb_comm()
