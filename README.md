@@ -134,6 +134,19 @@ Tips:
 - Run `await ggb.init()` in its own cell and wait for completion before sending commands.
 - Each GeoGebra panel shows the kernel id (first 8 chars) to help match notebooks↔applets.
 
+Note on kernel registration:
+- To ensure reliable Comm registration in classroom environments, load the kernel extension before creating the widget using the IPython magic or the helper below:
+
+```python
+%load_ext ggblab
+# or
+from IPython import get_ipython
+import ggblab
+ggblab.load_ipython_extension(get_ipython())
+```
+
+This guarantees the kernel-side Comm target (`jupyter.ggblab`) is registered before the frontend probes for it.
+
 ## Examples
 
 - See [examples/example.ipynb](examples/example.ipynb) for a basic demo.
