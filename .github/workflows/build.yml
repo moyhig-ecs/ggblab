@@ -26,6 +26,16 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install -U "jupyterlab>=4.0.0,<5"
 
+    - name: Debug node/yarn
+      run: |
+        set -eux
+        node --version || true
+        npm --version || true
+        jlpm --version || true
+        which yarn || true
+        # Try a verbose install to capture the failing step in CI logs
+        jlpm install --verbose || true
+
     - name: Lint the extension
       run: |
         set -eux
