@@ -9,6 +9,8 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    env:
+      YARN_ENABLE_IMMUTABLE_INSTALLS: '0'
     permissions:
       id-token: write
       contents: read
