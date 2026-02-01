@@ -1,0 +1,51 @@
+name: Update lockfiles
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-lockfiles:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install tooling
+        run: |
+          npm install -g yarn
+          python -m pip install --upgrade pip
+          pip install jupyterlab
+
+      - name: Update lockfiles (root)
+        run: |
+          jlpm install
+        shell: bash
+
+      - name: Update lockfiles (ggblab)
+        run: |
+          if [ -d ggblab ]; then jlpm install --cwd ggblab; fi
+        shell: bash
+
+      - name: Commit and create PR
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: chore: update lockfiles
+          branch: chore/update-lockfiles
+          title: "chore: update lockfiles"
+          body: |
+            Automated lockfile update (jlpm install).
+          base: main
