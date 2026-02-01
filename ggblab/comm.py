@@ -699,6 +699,50 @@ class ggb_comm:
             print(f"TimeoutError in send_recv {msg}")
             raise
 
+    @classmethod
+    def kernel_comm_summary(cls):
+        """Return a summary of kernel Comm targets and open comms.
+
+        This helper inspects the running IPython kernel's CommManager and
+        returns a serializable dict with:
+          - targets: mapping of target_name -> callback name/type
+          - comms: mapping of comm_id -> basic info (target_name, metadata)
+
+        Useful for debugging from the kernel side to see which comm targets
+        are registered and which comms are currently open.
+        """
+        ip = get_ipython()
+        kernel = getattr(ip, 'kernel', None)
+        cm = getattr(kernel, 'comm_manager', None)
+        result = {'targets': {}, 'comms': {}}
+        if cm is None:
+            return result
+
+        try:
+            targets = getattr(cm, 'targets', {}) or {}
+            for tname, cb in targets.items():
+                try:
+                    result['targets'][tname] = getattr(cb, '__name__', type(cb).__name__)
+                except Exception:
+                    result['targets'][tname] = str(cb)
+        except Exception:
+            pass
+
+        try:
+            comms = getattr(cm, 'comms', {}) or {}
+            for cid, comm in comms.items():
+                try:
+                    result['comms'][cid] = {
+                        'target_name': getattr(comm, 'target_name', None),
+                        'target_module': getattr(comm, 'target_module', None),
+                        'metadata': getattr(comm, 'metadata', None)
+                    }
+                except Exception:
+                    result['comms'][cid] = str(comm)
+        except Exception:
+            pass
+
+        return result
 
 # Module-level singleton used by kernel extension loader and examples.
 # Creating the instance is cheap; the out-of-band server only starts when
@@ -707,3 +751,14 @@ try:
     ggb_comm_instance
 except NameError:
     ggb_comm_instance = ggb_comm()
+
+
+def kernel_comm_summary():
+    """Convenience wrapper returning kernel comm summary.
+
+    Returns the same dict as `ggb_comm.kernel_comm_summary()`.
+    """
+    try:
+        return ggb_comm.kernel_comm_summary()
+    except Exception:
+        return {'targets': {}, 'comms': {}}

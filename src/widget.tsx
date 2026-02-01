@@ -11,6 +11,8 @@ import {
 import { PageConfig } from '@jupyterlab/coreutils';
 import { DockLayout, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
+import type { WidgetManagerType } from './widgetManager';
+import { registerWidgetCommTargets } from './widgetManager';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -165,6 +167,7 @@ with connect("${wsUrl}") as ws:
     // the GeoGebra instance without using the remote socket.
     let widgetComm: any = null;
     let appletApi: any = null;
+    let _unregisterWidgetComms: (() => void) | null = null;
     let observer: MutationObserver | null = null;
     let resizeHandler: (() => void) | null = null;
     let closeHandler: (() => void) | null = null;
@@ -381,95 +384,23 @@ with connect("${wsUrl}") as ws:
         }
       };
 
-      // Register handlers to accept widget-model comms created by the kernel's
-      // ipywidgets machinery. When the kernel creates a widget (e.g. IntSlider)
-      // it will open a comm to the frontend with target 'jupyter.widget'
-      // (and sometimes 'jupyter.widget.control'). We register a simple
-      // passthrough handler only when no widgetManager is present; if a
-      // widgetManager is available we must not intercept those comms.
+      // Register simple passthrough handlers for jupyter.widget when no
+      // widgetManager is present. The helper returns a cleanup function.
       try {
         if (props.widgetManager) {
           dbg(
             'widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens'
           );
         } else {
-          const simpleHandler = (commOp: any, msg: any) => {
-            dbg('widget comm opened (jupyter.widget)', commOp, msg);
-            try {
-              commOp.onMsg = async (m: any) => {
-                const content = m?.content?.data || m;
-                try {
-                  const command =
-                    typeof content === 'string' ? JSON.parse(content) : content;
-                  let rmsg: any = null;
-                  if (command.type === 'command' && appletApi) {
-                    const label = appletApi.evalCommandGetLabels(
-                      command.payload
-                    );
-                    rmsg = JSON.stringify({
-                      type: 'created',
-                      id: command.id,
-                      payload: label
-                    });
-                  } else if (command.type === 'function' && appletApi) {
-                    const apiName = command.payload.name;
-                    const args = command.payload.args;
-                    let value: any[] = [];
-                    (Array.isArray(apiName) ? apiName : [apiName]).forEach(
-                      (f: string) => {
-                        if (isArrayOfArrays(args)) {
-                          const v2: any[] = [];
-                          args.forEach((a: any[]) => {
-                            v2.push(appletApi[f](...a) || null);
-                          });
-                          value.push(v2);
-                        } else {
-                          value.push(
-                            args
-                              ? appletApi[f](...args) || null
-                              : appletApi[f]() || null
-                          );
-                        }
-                      }
-                    );
-                    value = Array.isArray(apiName) ? value : value[0];
-                    rmsg = JSON.stringify({
-                      type: 'value',
-                      id: command.id,
-                      payload: { value }
-                    });
-                  }
-                  if (rmsg) {
-                    try {
-                      commOp.send(rmsg);
-                    } catch (e) {
-                      dbg('commOp.send failed', e);
-                    }
-                    try {
-                      await callRemoteSocketSend(
-                        kernel2,
-                        rmsg,
-                        socketPath,
-                        wsUrl
-                      );
-                    } catch (e) {
-                      dbg('callRemoteSocketSend failed', e);
-                    }
-                  }
-                } catch (e) {
-                  dbg('Error handling widget comm message', e);
-                }
-              };
-            } catch (e) {
-              dbg('Failed to attach onMsg to widget comm', e);
-            }
-          };
-
-          kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
-          kernelConn.registerCommTarget(
-            'jupyter.widget.control',
-            simpleHandler
-          );
+          _unregisterWidgetComms = registerWidgetCommTargets(kernelConn, {
+            callRemoteSocketSend,
+            kernel2,
+            socketPath,
+            wsUrl,
+            getAppletApi: () => appletApi,
+            isArrayOfArrays,
+            dbg
+          });
         }
       } catch (e) {
         dbg('Widget comm target registration skipped or failed', e);
@@ -821,6 +752,13 @@ with connect("${wsUrl}") as ws:
         }
         observer = null;
       }
+      // Unregister widget comm handlers if we registered them
+      try {
+        _unregisterWidgetComms?.();
+        _unregisterWidgetComms = null;
+      } catch (e) {
+        dbg('Error unregistering widget comm targets', e);
+      }
       // Remove injected meta tag
       if (metaViewport && metaViewport.parentNode) {
         metaViewport.parentNode.removeChild(metaViewport);
@@ -910,7 +848,7 @@ interface IGGAWidgetProps {
   wsPort?: number;
   socketPath?: string;
   // Optional WidgetManager module or instance provided by the plugin activation
-  widgetManager?: any;
+  widgetManager?: WidgetManagerType;
 }
 
 /**

@@ -4,7 +4,7 @@ on:
   push:
     branches: main
   pull_request:
-    branches: '*'
+    branches: ['*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -22,7 +22,9 @@ jobs:
       uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
 
     - name: Install dependencies
-      run: python -m pip install -U "jupyterlab>=4.0.0,<5"
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -U "jupyterlab>=4.0.0,<5"
 
     - name: Lint the extension
       run: |
@@ -75,9 +77,13 @@ jobs:
     - name: Install and Test
       run: |
         set -eux
-        # Remove NodeJS, twice to take care of system and locally installed node versions.
-        sudo rm -rf $(which node)
-        sudo rm -rf $(which node)
+        # Remove NodeJS carefully (if present) to take care of system and locally installed node versions.
+        if command -v node >/dev/null 2>&1; then
+          sudo rm -rf "$(which node)" || true
+        fi
+        if command -v node >/dev/null 2>&1; then
+          sudo rm -rf "$(which node)" || true
+        fi
 
         pip install "jupyterlab>=4.0.0,<5" ggblab*.whl
 

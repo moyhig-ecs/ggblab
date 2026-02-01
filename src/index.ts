@@ -10,6 +10,25 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
+import {
+  createWidgetManager,
+  registerGlobalGGBlabCommTargets
+} from './widgetManager';
+
+/**
+ * Legacy/compatibility note:
+ * Historically the plugin created a `widgetManager` inline in this
+ * module during activation. The implementation has been moved to
+ * `src/widgetManager.ts` to centralize widget-manager logic and to
+ * allow different manager implementations (or `undefined`) to be
+ * swapped in. We keep a tiny forwarding helper here as a documented
+ * placeholder so future maintainers can see the original intent and
+ * have a single place to adapt call-sites if needed.
+ */
+export function createWidgetManagerLegacy() {
+  // Forward to the real factory in widgetManager.ts for now.
+  return createWidgetManager();
+}
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
@@ -34,6 +53,29 @@ const plugin: JupyterFrontEndPlugin<void> = {
     restorer: ILayoutRestorer | null
   ) => {
     console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
+
+    // Pragmatic global registration (option B): register a `jupyter.ggblab`
+    // comm target on all currently running kernels so kernels that open
+    // comms to that target will be delivered to the front-end. Keep the
+    // returned unregister function so we can clean up on unload.
+    let _unregisterGlobalGGBlab: (() => void) | null = null;
+    registerGlobalGGBlabCommTargets(app)
+      .then(unreg => {
+        _unregisterGlobalGGBlab = unreg;
+      })
+      .catch(e =>
+        console.warn('Failed to register global ggblab comm targets', e)
+      );
+
+    // Ensure we clean up registrations when the page unloads to avoid
+    // leaving dangling front-end KernelConnection objects.
+    window.addEventListener('beforeunload', () => {
+      try {
+        _unregisterGlobalGGBlab?.();
+      } catch (e) {
+        /* ignore */
+      }
+    });
 
     if (settingRegistry) {
       settingRegistry
@@ -86,9 +128,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
           // If tracker API differs, ignore and continue
         }
 
-        // Do not pass a WidgetManager here to avoid interfering with ipywidgets.
-        // Force use of kernel-level Comm for ggblab to avoid widget-protocol conflicts.
-        const widgetManager: any = undefined;
+        // Centralized widget-manager factory (currently returns `undefined`)
+        // to avoid interfering with ipywidgets. See src/widgetManager.ts
+        // for future changes to this behavior.
+        const widgetManager = createWidgetManager();
 
         const content = new GeoGebraWidget({
           kernelId: args['kernelId'] || '',
