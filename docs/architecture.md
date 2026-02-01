@@ -770,7 +770,7 @@ The out-of-band socket server uses `async with` context managers:
 
 ### Integration Tests (GitHub Actions)
 
-**CI/CD Pipeline** ([.github/workflows/tests.yml](.github/workflows/tests.yml)):
+**CI/CD Pipeline** ([.github/workflows/tests.yml](../.github/workflows/tests.yml)):
 
 - **Automated on every push** to `main`/`dev` branches
 - **Automated on all pull requests**

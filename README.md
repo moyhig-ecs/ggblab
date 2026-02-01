@@ -5,7 +5,7 @@ Summary: ggblab embeds a GeoGebra applet into JupyterLab and exposes an asynchro
 🚀 Quick links:
 
 - **Binder (Demo)**: Hosted demo and instructions to launch the examples in JupyterLab — see [binder/README.md](binder/README.md).
-- **Blog**: Project news and writeups — published site: https://moyhig-ecs.github.io/ggblab/ (source / local preview: [blog/README.md](blog/README.md)).
+- **Blog**: Project news and writeups — see [blog/README.md](blog/README.md) (local preview).
 
 
 [![PyPI](https://img.shields.io/pypi/v/ggblab.svg)](https://pypi.org/project/ggblab/)
@@ -153,7 +153,8 @@ This guarantees the kernel-side Comm target (`jupyter.ggblab`) is registered bef
 
 - See [examples/example.ipynb](examples/example.ipynb) for a basic demo.
 - `ggblab_extra` contains advanced parsing and scene-development tools: see
-   [ggblab_extra/README.md](./ggblab_extra/README.md).
+   [ggblab_extra docs index](docs/ggblab_extra_index.md) for how to access the
+   optional extras and their documentation.
 
 ### Plotting: Matplotlib vs GeoGebra
 
@@ -260,8 +261,7 @@ Which should I do next?
 
 | Document | Primary Audience | Key Insight |
 |----------|-----------------|-------------|
-| **[ggblab_extra: SCENE_DEVELOPMENT_QUICK_START.md](./ggblab_extra/docs/SCENE_DEVELOPMENT_QUICK_START.md)** | **Educators, textbook authors** | **How to use ggblab with textbook-2025** |
-| **[ggblab_extra: geometric_scene_development_guide.md](./ggblab_extra/docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
+| **[ggblab_extra docs (index)](docs/ggblab_extra_index.md)** | **Educators, textbook authors** | **Optional advanced guides: scene development, SymPy integration, and examples** |
 | **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
 | **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
 | **[SymPy Integration](docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export (core overview; advanced guides in optional `ggblab_extra`) |
@@ -402,9 +402,8 @@ c.save()              # next available filename based on source_file
 ### Object Dependency Analysis (ggblab_extra)
 
 Advanced parsing, dependency graphs, and subgraph extraction now live in
-**ggblab_extra**. See [ggblab_extra/README.md](./ggblab_extra/README.md) and the
-
-scene development docs in `ggblab_extra/docs/` for full usage and examples.
+**ggblab_extra**. See [ggblab_extra docs index](docs/ggblab_extra_index.md)
+for how to access the optional extras and their full documentation.
 
 ### Architecture
 
