@@ -264,7 +264,7 @@ Which should I do next?
 | **[ggblab_extra: geometric_scene_development_guide.md](./ggblab_extra/docs/geometric_scene_development_guide.md)** | **Educators, textbook authors** | **Complete framework for 15-chapter curriculum** |
 | **[docs/scoping.md](docs/scoping.md)** | Educators, Students | Geometric construction teaches programming scoping |
 | **[docs/philosophy.md](docs/philosophy.md)** | Contributors, Researchers | ggblab = GeoGebra → Timeline → Manim → Video pipeline |
-| **[ggblab_extra/docs/sympy_integration.md](./ggblab_extra/docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export |
+| **[SymPy Integration](docs/sympy_integration.md)** | Math/CS Instructors | Symbolic proof + code generation + manim export (core overview; advanced guides in optional `ggblab_extra`) |
 | **[docs/architecture.md](docs/architecture.md)** | Developers | Dual-channel communication (core) |
 | **[TODO.md](TODO.md)** | Contributors | Concrete next steps prioritized by learning value |
 | **[API Reference](https://ggblab.readthedocs.io/en/latest/api.html)** | Developers | Complete Python API documentation |
