@@ -1,0 +1,430 @@
+// Minimal widget-manager adapter extracted from plugin/widget code.
+// This module centralizes how a frontend WidgetManager (ipywidgets bridge)
+// would be created or provided. For now we intentionally return `undefined`
+// to preserve the previous behavior (avoiding ipywidgets interference).
+
+/**
+ * Opaque WidgetManager type used by the widget code when present.
+ */
+export type WidgetManagerType = any;
+
+/**
+ * Create or obtain a WidgetManager instance.
+ *
+ * Note: The ggblab extension currently avoids providing a WidgetManager
+ * to GeoGebra widgets by default to prevent stealing comms from
+ * ipywidgets. Keep the factory here so the decision and implementation
+ * can be changed in one place in future.
+ */
+export function createWidgetManager(): WidgetManagerType {
+  // Intentionally return undefined to match previous behavior in
+  // `src/index.ts` where `widgetManager` was left as `undefined`.
+  return undefined as any;
+}
+
+/**
+ * Options required for registering widget comm targets.
+ */
+export interface IRegisterWidgetCommOptions {
+  callRemoteSocketSend: (
+    kernel2: any,
+    message: string,
+    socketPath: string | null,
+    wsUrl: string
+  ) => Promise<void>;
+  kernel2: any;
+  socketPath: string | null;
+  wsUrl: string;
+  getAppletApi: () => any;
+  isArrayOfArrays: (v: any) => boolean;
+  dbg?: (...args: any[]) => void;
+}
+
+/**
+ * Register simple passthrough handlers for `jupyter.widget` and
+ * `jupyter.widget.control` on the given `kernelConn` when no
+ * `widgetManager` is present.
+ *
+ * Returns a cleanup function that will attempt to unregister the
+ * comm targets when called.
+ */
+export function registerWidgetCommTargets(
+  kernelConn: any,
+  opts: IRegisterWidgetCommOptions
+): () => void {
+  // Feature flag: enable/disable the raw `jupyter.widget` passthrough
+  // registration. When false (default) we skip registering handlers to
+  // avoid stealing comm targets from a proper ipywidgets manager which
+  // would otherwise render widget models (avoids "widget model not found").
+  const ENABLE_WIDGET_COMM_PASSTHROUGH = false;
+
+  if (!ENABLE_WIDGET_COMM_PASSTHROUGH) {
+    opts.dbg && opts.dbg('Widget comm passthrough disabled by flag');
+    return () => {
+      /* noop unregister */
+    };
+  }
+  const dbg = opts.dbg || (() => {});
+
+  const simpleHandler = (commOp: any, msg: any) => {
+    dbg('widget comm opened (jupyter.widget)', commOp, msg);
+    try {
+      commOp.onMsg = async (m: any) => {
+        const content = m?.content?.data || m;
+        try {
+          const command =
+            typeof content === 'string' ? JSON.parse(content) : content;
+          let rmsg: any = null;
+          const appletApi = opts.getAppletApi();
+          if (command.type === 'command' && appletApi) {
+            const label = appletApi.evalCommandGetLabels(command.payload);
+            rmsg = JSON.stringify({
+              type: 'created',
+              id: command.id,
+              payload: label
+            });
+          } else if (command.type === 'function' && appletApi) {
+            const apiName = command.payload.name;
+            const args = command.payload.args;
+            let value: any[] = [];
+            (Array.isArray(apiName) ? apiName : [apiName]).forEach(
+              (f: string) => {
+                if (opts.isArrayOfArrays(args)) {
+                  const v2: any[] = [];
+                  args.forEach((a: any[]) => {
+                    v2.push(appletApi[f](...a) || null);
+                  });
+                  value.push(v2);
+                } else {
+                  value.push(
+                    args
+                      ? appletApi[f](...args) || null
+                      : appletApi[f]() || null
+                  );
+                }
+              }
+            );
+            value = Array.isArray(apiName) ? value : value[0];
+            rmsg = JSON.stringify({
+              type: 'value',
+              id: command.id,
+              payload: { value }
+            });
+          }
+          if (rmsg) {
+            try {
+              commOp.send(rmsg);
+            } catch (e) {
+              dbg('commOp.send failed', e);
+            }
+            try {
+              await opts.callRemoteSocketSend(
+                opts.kernel2,
+                rmsg,
+                opts.socketPath,
+                opts.wsUrl
+              );
+            } catch (e) {
+              dbg('callRemoteSocketSend failed', e);
+            }
+          }
+        } catch (e) {
+          dbg('Error handling widget comm message', e);
+        }
+      };
+    } catch (e) {
+      dbg('Failed to attach onMsg to widget comm', e);
+    }
+  };
+
+  try {
+    kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
+    kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
+  } catch (e) {
+    dbg('Widget comm target registration failed', e);
+  }
+
+  return () => {
+    try {
+      if (typeof kernelConn.unregisterCommTarget === 'function') {
+        try {
+          kernelConn.unregisterCommTarget('jupyter.widget');
+        } catch (e) {
+          /* ignore */
+        }
+        try {
+          kernelConn.unregisterCommTarget('jupyter.widget.control');
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    } catch (e) {
+      dbg('Error during widget comm cleanup', e);
+    }
+  };
+}
+
+// -- Global registration helper ------------------------------------------------
+import { KernelAPI, KernelConnection } from '@jupyterlab/services';
+import { ServerConnection } from '@jupyterlab/services';
+import { PageConfig } from '@jupyterlab/coreutils';
+
+/**
+ * Toggle whether the frontend should attach to `KernelAPI.runningChanged`
+ * (or use polling) to detect new/removed kernels. Set to `false` to
+ * disable dynamic detection; initial registration still runs.
+ */
+export const ENABLE_RUNNING_CHANGED = false;
+
+/**
+ * Register a global comm target `jupyter.ggblab` on all currently
+ * running kernels by creating lightweight KernelConnection instances
+ * and registering a simple handler. Returns an unregister function.
+ *
+ * Note: This is a pragmatic approach (B). It creates front-end KernelConnection
+ * objects for each running kernel so the front-end can listen for comm opens
+ * from kernels that target `jupyter.ggblab`.
+ */
+export async function registerGlobalGGBlabCommTargets(
+  app?: any
+): Promise<() => void> {
+  const baseUrl = PageConfig.getBaseUrl();
+  const token = PageConfig.getToken();
+  const settings = ServerConnection.makeSettings({
+    baseUrl: baseUrl,
+    token: token,
+    appendToken: true
+  });
+
+  // Map kernelId -> unregister function
+  const registry = new Map<string, () => void>();
+
+  const dbg = (..._args: any[]) => {
+    // Only emit debug logs when dynamic detection is enabled to avoid
+    // noisy 'Already registered' messages during normal startup.
+    if (!ENABLE_RUNNING_CHANGED) {
+      return;
+    }
+    try {
+      console.debug(..._args);
+    } catch (e) {
+      /* ignore */
+    }
+  };
+
+  const registerKernel = (k: any) => {
+    const id = k.id || k.kernelId || (k.model && k.model.id) || null;
+    if (!id) {
+      return;
+    }
+    if (registry.has(id)) {
+      dbg('Already registered jupyter.ggblab for kernel', id);
+      return;
+    }
+    try {
+      // If a widget manager is available and implements a GGBlab comm
+      // registration API, delegate the handler registration to it so that
+      // message routing can be handled by the manager (DOM lifecycle etc.).
+      const manager = createWidgetManager();
+      if (manager && typeof manager.registerGGBlabHandler === 'function') {
+        try {
+          const unregisterFromManager = manager.registerGGBlabHandler(
+            id,
+            (commOp: any, msg: any) => {
+              try {
+                // Delegate to manager for message routing.
+                // Manager may handle commOp and msg directly.
+                // If it does not, manager implementors should call commOp.onMsg themselves.
+              } catch (e) {
+                console.warn('Error delegating jupyter.ggblab to manager', e);
+              }
+            }
+          );
+          registry.set(id, () => {
+            try {
+              unregisterFromManager && unregisterFromManager();
+            } catch (e) {
+              /* ignore */
+            }
+          });
+          return;
+        } catch (e) {
+          console.warn(
+            'Widget manager failed to register jupyter.ggblab',
+            id,
+            e
+          );
+        }
+      }
+
+      // Fallback: register a lightweight KernelConnection-based handler
+      const kc = new KernelConnection({
+        model: { name: 'python3', id },
+        serverSettings: settings
+      });
+      try {
+        kc.registerCommTarget('jupyter.ggblab', (commOp: any, msg: any) => {
+          try {
+            dbg('jupyter.ggblab comm opened', { kernelId: id, msg });
+            try {
+              commOp.onMsg = (m: any) => {
+                dbg('jupyter.ggblab message', { kernelId: id, m });
+              };
+            } catch (e) {
+              /* ignore */
+            }
+          } catch (e) {
+            console.warn('Error in jupyter.ggblab handler', e);
+          }
+        });
+      } catch (e) {
+        console.warn('Failed to register jupyter.ggblab on kernel', id, e);
+      }
+
+      const unregister = () => {
+        try {
+          if (typeof (kc as any).unregisterCommTarget === 'function') {
+            try {
+              (kc as any).unregisterCommTarget('jupyter.ggblab');
+            } catch (e) {
+              /* ignore */
+            }
+          }
+        } catch (e) {
+          console.warn('Error while unregistering jupyter.ggblab', e);
+        }
+      };
+      registry.set(id, unregister);
+    } catch (e) {
+      console.warn('Failed to create KernelConnection for kernel', id, e);
+    }
+  };
+
+  const unregisterKernel = (id: string) => {
+    const fn = registry.get(id);
+    if (fn) {
+      try {
+        fn();
+      } catch (e) {
+        console.warn('Error during unregister for kernel', id, e);
+      }
+      registry.delete(id);
+    }
+  };
+
+  // Initial registration for running kernels
+  try {
+    const kernels = await KernelAPI.listRunning();
+    (kernels || []).forEach(registerKernel);
+  } catch (e) {
+    console.warn('Failed to list running kernels for ggblab registration', e);
+  }
+
+  // Watch for changes in running kernels and keep registry in sync.
+  const onRunningChanged = async () => {
+    try {
+      const current = await KernelAPI.listRunning();
+      const currentIds = new Set((current || []).map((k: any) => k.id));
+      // register new
+      (current || []).forEach(k => registerKernel(k));
+      // unregister removed
+      Array.from(registry.keys()).forEach(id => {
+        if (!currentIds.has(id)) {
+          unregisterKernel(id);
+        }
+      });
+    } catch (e) {
+      console.warn('Error handling runningChanged for ggblab', e);
+    }
+  };
+
+  try {
+    // Optionally attach to runningChanged or poll; respect global flag.
+    if (ENABLE_RUNNING_CHANGED) {
+      // Prefer JupyterLab's session manager signal when `app` is provided.
+      try {
+        if (
+          app &&
+          app.serviceManager &&
+          app.serviceManager.sessions &&
+          typeof app.serviceManager.sessions.runningChanged === 'object' &&
+          typeof app.serviceManager.sessions.runningChanged.connect ===
+            'function'
+        ) {
+          app.serviceManager.sessions.runningChanged.connect(onRunningChanged);
+        } else if (
+          (KernelAPI as any).runningChanged &&
+          typeof (KernelAPI as any).runningChanged.connect === 'function'
+        ) {
+          (KernelAPI as any).runningChanged.connect(onRunningChanged);
+        } else {
+          // Fallback: poll periodically (conservative) — safe but less efficient.
+          const pollInterval = 5000;
+          const timer = setInterval(onRunningChanged, pollInterval);
+          // store a dummy unregister that clears timer
+          registry.set('__poll_timer__', () => clearInterval(timer));
+        }
+      } catch (e) {
+        console.warn('Failed to attach runningChanged listener', e);
+      }
+    } else {
+      // Dynamic detection disabled by flag; do nothing here.
+      dbg(
+        'Kernel runningChanged detection is disabled (ENABLE_RUNNING_CHANGED=false)'
+      );
+    }
+  } catch (e) {
+    console.warn('Failed to attach runningChanged listener', e);
+  }
+
+  // Return an unregister-all function
+  return () => {
+    try {
+      try {
+        if (
+          app &&
+          app.serviceManager &&
+          app.serviceManager.sessions &&
+          typeof app.serviceManager.sessions.runningChanged === 'object' &&
+          typeof app.serviceManager.sessions.runningChanged.disconnect ===
+            'function'
+        ) {
+          try {
+            app.serviceManager.sessions.runningChanged.disconnect(
+              onRunningChanged as any
+            );
+          } catch (e) {
+            /* ignore */
+          }
+        } else if (
+          (KernelAPI as any).runningChanged &&
+          typeof (KernelAPI as any).runningChanged.disconnect === 'function'
+        ) {
+          try {
+            (KernelAPI as any).runningChanged.disconnect(
+              onRunningChanged as any
+            );
+          } catch (e) {
+            /* ignore */
+          }
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      // Call all unregister functions
+      Array.from(registry.keys()).forEach(k => {
+        try {
+          const fn = registry.get(k);
+          if (fn) {
+            fn();
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      });
+      registry.clear();
+    } catch (e) {
+      console.warn('Error during global ggblab unregister-all', e);
+    }
+  };
+}

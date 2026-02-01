@@ -11,6 +11,8 @@ import {
 import { PageConfig } from '@jupyterlab/coreutils';
 import { DockLayout, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
+import type { WidgetManagerType } from './widgetManager';
+import { registerWidgetCommTargets } from './widgetManager';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -52,27 +54,19 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
   //     });
   //   }, []);
 
-  // Normalize kernelId early to avoid undefined issues when props are missing
-  const kernelId = props?.kernelId || '';
   dbg(
     'Component props: ',
-    kernelId,
+    props.kernelId,
     props.commTarget,
     props.socketPath,
     props.wsPort
   );
+  // window.dispatchEvent(new Event('resize'));
 
-  const elementId = 'ggb-element-' + kernelId.substring(0, 8);
+  const elementId = 'ggb-element-' + (props?.kernelId || '').substring(0, 8);
   dbg('Element ID:', elementId);
 
   let applet: any = null;
-
-  // Prefer a widget manager explicitly passed via props. Global manager
-  // registration has been removed; do not attempt to read `window.__ggblab_widget_manager`.
-  const effectiveWidgetManager = (props as any).widgetManager;
-  dbg('effectiveWidgetManager resolved:', !!effectiveWidgetManager, {
-    kernelId
-  });
 
   function isArrayOfArrays(value: any): boolean {
     return (
@@ -134,6 +128,8 @@ with connect("${wsUrl}") as ws:
           }).done;
         }
 
+        // small delay to give the helper kernel a moment to tear down
+        // and to avoid immediate back-to-back requestExecute calls.
         await new Promise(resolve => setTimeout(resolve, 30));
       };
 
@@ -160,7 +156,6 @@ with connect("${wsUrl}") as ws:
   }
 
   useEffect(() => {
-    // No global widget-manager events are used now.
     // Track resources created during effect so we can clean them up precisely
     let kernel2: any = null;
     let kernelManager: any = null;
@@ -171,9 +166,8 @@ with connect("${wsUrl}") as ws:
     // widget comm to allow in-kernel widgets to be routed directly to
     // the GeoGebra instance without using the remote socket.
     let widgetComm: any = null;
-    let managerAdopted = false;
-    const registeredKernelTargets: string[] = [];
     let appletApi: any = null;
+    let _unregisterWidgetComms: (() => void) | null = null;
     let observer: MutationObserver | null = null;
     let resizeHandler: (() => void) | null = null;
     let closeHandler: (() => void) | null = null;
@@ -198,7 +192,7 @@ with connect("${wsUrl}") as ws:
 
       kernelManager = new KernelManager({ serverSettings: settings });
       kernel2 = await kernelManager.startNew({ name: 'python3' });
-      dbg('Started new kernel:', kernel2, kernelId);
+      dbg('Started new kernel:', kernel2, props.kernelId);
       await kernel2.requestExecute({
         code: 'from websockets.sync.client import unix_connect, connect'
       }).done;
@@ -206,36 +200,8 @@ with connect("${wsUrl}") as ws:
       const wsUrl = `ws://localhost:${props.wsPort}/`;
       const socketPath = props.socketPath || null;
 
-      // Try an early out-of-band probe so the kernel may mark the
-      // helper-server channel as ready for same-cell replies. This is
-      // a fire-and-forget probe executed on the helper kernel (`kernel2`).
-      try {
-        const probeMsg = JSON.stringify({ type: 'probe', payload: 'ready' });
-        // fire-and-forget the probe so we don't block the widget mount
-        callRemoteSocketSend(kernel2, probeMsg, socketPath, wsUrl).catch(
-          (e: any) => dbg('probe send failed', e)
-        );
-        dbg('Sent early OOB probe via helper kernel');
-        // Also send an explicit oob_ready signal so the kernel can
-        // mark the out-of-band channel as ready for same-cell replies.
-        try {
-          const readyMsg = JSON.stringify({
-            type: 'oob_ready',
-            payload: 'frontend'
-          });
-          callRemoteSocketSend(kernel2, readyMsg, socketPath, wsUrl).catch(
-            (e: any) => dbg('oob_ready send failed', e)
-          );
-          dbg('Sent explicit oob_ready via helper kernel');
-        } catch (e) {
-          dbg('Failed to schedule oob_ready send', e);
-        }
-      } catch (e) {
-        dbg('Failed to schedule early OOB probe', e);
-      }
-
       kernelConn = new KernelConnection({
-        model: { name: 'python3', id: kernelId || kernels[0]['id'] },
+        model: { name: 'python3', id: props.kernelId || kernels[0]['id'] },
         serverSettings: settings
       });
       dbg('Connected to kernel:', kernelConn);
@@ -260,61 +226,29 @@ with connect("${wsUrl}") as ws:
             } catch (e) {
               dbg('Kernel comm closed (no id available)', props.commTarget, m);
             }
-              try {
-                // cleanup global stores when this comm closes
-                let cid: string | null = null;
-                try {
-                  cid = (m && m.content && m.content.comm_id) || (c as any)?.comm_id || (c as any)?.commId || null;
-                  if (cid && (window as any).__ggblab_comm_by_id) {
-                    try {
-                      delete (window as any).__ggblab_comm_by_id[cid];
-                    } catch (ee) {
-                      /* ignore */
-                    }
-                  }
-                } catch (ee) {
-                  /* ignore */
-                }
-              try {
-                const sk = kernelId || (kernelConn as any)?.id || null;
-                if (sk && (window as any).__ggblab_comm_store) {
-                  try {
-                    const cur = (window as any).__ggblab_comm_store[sk];
-                    if (cur === c) {
-                      delete (window as any).__ggblab_comm_store[sk];
-                      dbg('Removed comm from __ggblab_comm_store on close', sk, cid);
-                    }
-                  } catch (ee) {
-                    /* ignore */
-                  }
-                }
-              } catch (ee) {
-                /* ignore */
-              }
-            } catch (ee) {
-              /* ignore cleanup errors */
-            }
           };
         } catch (e) {
           dbg('Unable to attach onClose to kernel comm', e);
         }
       };
 
-      // Centralized processing of a parsed command and sending replies.
-      // `sourceComm` is optional and, when provided, will be used to
-      // send the reply. Otherwise we fall back to the kernel-side `comm`
-      // or the remote socket.
-      const processCommand = async (command: any, sourceComm?: any) => {
+      // Handler for incoming messages on the kernel-created comm; defined
+      // once so it can be reattached if we recreate the comm.
+      const handleIncomingCommMessage = async (msg: any) => {
+        dbg('handleIncomingCommMessage:', msg);
         try {
-          dbg('processCommand:', command?.type, command?.payload);
-          let rmsg: any = null;
-          if (!appletApi) {
-            dbg('Applet API not ready; cannot service command');
-            return;
-          }
+          dbg('Kernel comm onMsg received', {
+            commTarget: props.commTarget,
+            msg
+          });
 
+          const command = JSON.parse(msg.content.data as any);
+          dbg('Parsed command:', command.type, command.payload);
+
+          let rmsg: any = null;
           if (command.type === 'command') {
             const label = appletApi.evalCommandGetLabels(command.payload);
+
             rmsg = JSON.stringify({
               type: 'created',
               id: command.id,
@@ -322,159 +256,80 @@ with connect("${wsUrl}") as ws:
             });
           } else if (command.type === 'function') {
             const apiName = command.payload.name;
-            const args = command.payload.args;
+            dbg('apiName:', apiName);
             let value: any[] = [];
-            (Array.isArray(apiName) ? apiName : [apiName]).forEach(
-              (f: string) => {
-                if (isArrayOfArrays(args)) {
-                  const v2: any[] = [];
-                  args.forEach((a: any[]) => {
-                    v2.push(appletApi[f](...a) || null);
-                  });
-                  value.push(v2);
-                } else {
-                  value.push(
-                    args
-                      ? appletApi[f](...args) || null
-                      : appletApi[f]() || null
-                  );
+
+            {
+              const args = command.payload.args;
+              value = [];
+              (Array.isArray(apiName) ? apiName : [apiName]).forEach(
+                (f: string) => {
+                  dbg('call', f, args);
+                  if (isArrayOfArrays(args)) {
+                    const value2: any[] = [];
+                    args.forEach((arg2: any[]) => {
+                      if (args) {
+                        value2.push(appletApi[f](...arg2) || null);
+                      } else {
+                        value2.push(appletApi[f]() || null);
+                      }
+                    });
+                    value.push(value2);
+                  } else {
+                    if (args) {
+                      value.push(appletApi[f](...args) || null);
+                    } else {
+                      value.push(appletApi[f]() || null);
+                    }
+                  }
                 }
-              }
-            );
-            value = Array.isArray(apiName) ? value : value[0];
+              );
+              value = Array.isArray(apiName) ? value : value[0];
+              dbg('Function value:', value);
+            }
             rmsg = JSON.stringify({
               type: 'value',
               id: command.id,
-              payload: { value }
+              payload: { value: value }
             });
           }
 
-          if (!rmsg) {
-            return;
-          }
-
-          // Prefer replying on the source comm (widget-manager comm)
-          // if provided. Next prefer the kernel-created comm. Fallback
-          // to callRemoteSocketSend.
+          // Try to send via kernel comm; if that fails, mirror to remote socket.
           try {
-            if (sourceComm && typeof sourceComm.send === 'function') {
-              try {
-                sourceComm.send(rmsg);
-                dbg('Replied via sourceComm');
-              } catch (e) {
-                dbg('sourceComm.send failed', e);
-                throw e;
-              }
-              return;
+            try {
+              const cId =
+                (comm as any)?.comm_id || (comm as any)?.commId || null;
+              dbg('Sending via kernel comm', {
+                commTarget: props.commTarget,
+                commId: cId,
+                preview: (rmsg || '').slice(0, 200)
+              });
+            } catch (e) {
+              /* ignore */
             }
-          } catch (e) {
-            dbg('Error sending via sourceComm', e);
-          }
-
-          try {
+            // If comm is closed or missing, attempt to recreate before send
             if (!comm || commClosed) {
-              await ensureKernelComm();
-            }
-            if (comm && typeof comm.send === 'function') {
               try {
-                comm.send(rmsg);
-                dbg('Replied via kernel comm');
-                return;
+                await ensureKernelComm();
               } catch (e) {
-                dbg('kernel comm.send failed', e);
-                try {
-                  dbg('Fallback: send failed, forwarding to remote socket');
-                  await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
-                  dbg('Fallback: forwarded to remote socket');
-                } catch (ee) {
-                  dbg('Fallback remote socket send failed', ee);
-                }
-
-                // Attempt to re-warm a frontend comm on failure and retry
-                try {
-                  if (kernelConn && typeof (kernelConn as any).createComm === 'function') {
-                    try {
-                      const newComm: any = (kernelConn as any).createComm(props.commTarget);
-                      try {
-                        newComm.onMsg = handleIncomingCommMessage;
-                      } catch (ee) {
-                        /* ignore */
-                      }
-                      attachCommCloseHandler(newComm);
-                      try {
-                        newComm.open && newComm.open('re-warm from ggblab');
-                      } catch (ee) {
-                        /* ignore */
-                      }
-                      try {
-                        (window as any).__ggblab_comm_store = (window as any).__ggblab_comm_store || {};
-                        const sk = kernelId || (kernelConn as any)?.id || null;
-                        if (sk) (window as any).__ggblab_comm_store[sk] = newComm;
-                      } catch (ee) {
-                        /* ignore */
-                      }
-                      try {
-                        (window as any).__ggblab_comm_by_id = (window as any).__ggblab_comm_by_id || {};
-                        const mid = newComm && (newComm.comm_id || newComm.commId || null);
-                        if (mid) {
-                          (window as any).__ggblab_comm_by_id[mid] = newComm;
-                          try {
-                            (window as any).__ggblab_comm_by_id[mid].__ggblab_meta = {
-                              source: 're-warmed',
-                              kernelId: kernelId || (kernelConn as any)?.id || null,
-                              when: new Date().toISOString()
-                            };
-                          } catch (ee) {
-                            /* ignore */
-                          }
-                        }
-                      } catch (ee) {
-                        /* ignore */
-                      }
-                      // replace comm reference and retry send
-                      comm = newComm;
-                      commClosed = false;
-                      try {
-                        comm.send(rmsg);
-                        dbg('Replied via re-warmed comm');
-                        return;
-                      } catch (ee) {
-                        dbg('re-warmed comm send failed', ee);
-                      }
-                    } catch (ee) {
-                      dbg('Failed to re-warm comm', ee);
-                    }
-                  }
-                } catch (ee) {
-                  dbg('Re-warm attempt failed', ee);
-                }
+                dbg('ensureKernelComm failed before sending reply', e);
               }
             }
+            if (comm) {
+              comm.send(rmsg);
+            } else {
+              dbg(
+                'No kernel comm available to send reply; will mirror via remote socket'
+              );
+            }
           } catch (e) {
-            dbg('Error sending via kernel comm', e);
+            dbg(
+              'Failed to send via kernel comm, will still attempt remote socket send',
+              e,
+              { rmsgPreview: (rmsg || '').slice(0, 200) }
+            );
           }
-
-          // Last resort: mirror to remote socket
-          try {
-            await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
-            dbg('Replied via remote socket');
-          } catch (e) {
-            dbg('Failed to reply via remote socket', e);
-          }
-        } catch (e) {
-          dbg('processCommand error', e);
-        }
-      };
-
-      // Handler for incoming messages on the kernel-created comm; defined
-      // once so it can be reattached if we recreate the comm. This assumes
-      // kernel comm messages place the command JSON in `msg.content.data`.
-      const handleIncomingCommMessage = async (msg: any) => {
-        dbg('handleIncomingCommMessage:', msg);
-        try {
-          const data = msg?.content?.data || msg;
-          const command = typeof data === 'string' ? JSON.parse(data) : data;
-          await processCommand(command, /* sourceComm */ comm);
+          await callRemoteSocketSend(kernel2, rmsg, socketPath, wsUrl);
         } catch (e) {
           dbg('Error in handleIncomingCommMessage', e);
         }
@@ -486,560 +341,87 @@ with connect("${wsUrl}") as ws:
           return comm;
         }
         try {
-          // If an early frontend-side comm was registered (plugin activation)
-          // reuse it. This allows comm_open from the kernel to be accepted
-          // before the widget fully mounts.
-          let pre: any = null;
+          if (!kernelConn) {
+            throw new Error('No kernelConn available to create comm');
+          }
+          comm = kernelConn.createComm(props.commTarget);
           try {
-            const store = (window as any).__ggblab_comm_store || {};
-            // Prefer any comm in the by-id map that was tagged for this kernelId
-            try {
-              const byId = (window as any).__ggblab_comm_by_id || {};
-              const lookupKeyForById = kernelId || (kernelConn as any)?.id || '';
-              let firstNoMeta: any = null;
-              const byIdKeys = Object.keys(byId || {});
-              if (lookupKeyForById) {
-                for (const k in byId) {
-                  try {
-                    const candidate = (byId as any)[k];
-                    const meta = candidate && (candidate.__ggblab_meta || {});
-                    if (meta && meta.kernelId) {
-                      const mid = meta.kernelId;
-                      const matches =
-                        mid === lookupKeyForById ||
-                        (lookupKeyForById && mid.startsWith(lookupKeyForById)) ||
-                        (mid && lookupKeyForById && lookupKeyForById.startsWith(mid));
-                      if (matches) {
-                        pre = candidate;
-                        dbg('Found pre-registered comm by by_id map', k, lookupKeyForById, meta && meta.source, 'meta.kernelId=', mid);
-                        break;
-                      }
-                    }
-                    // remember first candidate that lacks meta for fallback
-                    if (!meta && !firstNoMeta) {
-                      firstNoMeta = candidate;
-                    }
-                  } catch (ee) {
-                    /* ignore per-entry errors */
-                  }
-                }
-              }
-              // Fallback: if no meta-based match found but there is exactly
-              // one by-id entry, accept it as the pre-registered comm. This
-              // is a pragmatic fallback for older builds that didn't attach
-              // meta; prefer explicit meta matches when available.
-              try {
-                if (!pre && !firstNoMeta && byIdKeys.length === 1) {
-                  firstNoMeta = (byId as any)[byIdKeys[0]];
-                }
-                if (!pre && firstNoMeta && byIdKeys.length === 1) {
-                  pre = firstNoMeta;
-                  dbg('Using sole by-id candidate without meta as fallback', byIdKeys[0]);
-                }
-              } catch (ee) {
-                /* ignore fallback errors */
-              }
-            } catch (ee) {
-              /* ignore by-id lookup errors */
-            }
-            // Prefer an explicit kernelId passed via props. If missing,
-            // fallback to the id exposed by the connected kernelConn so
-            // that widgets that omitted `kernelId` still reuse pre-registered
-            // comms created during plugin activation.
-            const lookupKey = kernelId || (kernelConn as any)?.id || '';
-            // Try exact key first; if not found, allow prefix matches so
-            // short kernelId values (e.g. "269127d0") match full UUID keys.
-            let storeKey = lookupKey;
-            if (lookupKey && !store[lookupKey]) {
-              for (const sk in store) {
-                try {
-                  if (sk.startsWith(lookupKey) || lookupKey.startsWith(sk)) {
-                    storeKey = sk;
-                    dbg('Mapped lookupKey to store key', lookupKey, '->', sk);
-                    break;
-                  }
-                } catch (ee) {
-                  /* ignore */
-                }
-              }
-            }
-            if (storeKey && store[storeKey]) {
-              pre = store[storeKey];
-            } else if (lookupKey) {
-              // If no direct store entry, check for queued comm-open messages
-              try {
-                const qstore = (window as any).__ggblab_comm_queue || {};
-                const q = qstore[lookupKey] || [];
-                if (q && q.length) {
-                  // Attempt to extract a comm id from the queued message
-                  const m0 = q.shift();
-                  try {
-                    const maybeCommId =
-                      (m0 && m0.content && m0.content.comm_id) ||
-                      (m0 && m0.comm_id) ||
-                      null;
-                    if (maybeCommId) {
-                      const byId = (window as any).__ggblab_comm_by_id || {};
-                      if (byId[maybeCommId]) {
-                        pre = byId[maybeCommId];
-                        dbg(
-                          'Found pre-registered comm by commId from queue',
-                          maybeCommId
-                        );
-                        // update the queue store after shifting
-                        (window as any).__ggblab_comm_queue[lookupKey] = q;
-                      }
-                    }
-                  } catch (ee) {
-                    /* ignore parsing errors */
-                  }
-                }
-              } catch (ee) {
-                /* ignore queue errors */
-              }
-            }
-            if (pre) {
-              comm = pre;
-              try {
-                comm.onMsg = handleIncomingCommMessage;
-              } catch (e) {
-                dbg('Failed to attach onMsg to pre-registered comm', e);
-              }
-              attachCommCloseHandler(comm);
-              commClosed = false;
-              dbg(
-                'Using pre-registered frontend comm for kernel',
-                kernelId || (kernelConn as any).id
-              );
-              try {
-                (window as any).__ggblab_comm_by_id = (window as any).__ggblab_comm_by_id || {};
-                const maybeId = (comm as any)?.comm_id || (comm as any)?.commId || null;
-                if (maybeId) {
-                  (window as any).__ggblab_comm_by_id[maybeId] = comm;
-                  (window as any).__ggblab_comm_by_id[maybeId].__ggblab_meta = {
-                    source: 'pre-registered',
-                    kernelId: kernelId || (kernelConn as any)?.id || null,
-                    when: new Date().toISOString()
-                  };
-                  dbg('Marked comm as pre-registered', maybeId);
-                }
-              } catch (e) {
-                dbg('Failed to mark pre-registered comm by id', e);
-              }
-              try {
-                // Visible, persistent console output for timing/debugging
-                // eslint-disable-next-line no-console
-                console.log('[ggblab] using pre-registered comm', {
-                  when: new Date().toISOString(),
-                  lookupKey: kernelId || (kernelConn as any).id,
-                  commId:
-                    (comm as any)?.comm_id || (comm as any)?.commId || null
-                });
-              } catch (e) {
-                /* ignore logging errors */
-              }
-              return comm;
-            }
+            const maybeId =
+              (comm as any)?.comm_id ||
+              (comm as any)?.commId ||
+              (comm as any)?.id ||
+              null;
+            dbg('Recreated kernel comm', {
+              target: props.commTarget,
+              commObject: comm,
+              commId: maybeId
+            });
           } catch (e) {
-            dbg('Error checking pre-registered comm store', e);
+            dbg(
+              'Recreated kernel comm (unable to read id)',
+              props.commTarget,
+              comm
+            );
           }
-          // If no pre-registered comm found yet, wait briefly for one to arrive
-          // (mitigates race where comm_open arrives just after we check).
-          if (!pre) {
-            try {
-              dbg('No pre-registered comm found — waiting briefly for arrival');
-              const waitForPre = async (timeout = 2000, interval = 50) => {
-                const end = Date.now() + timeout;
-                const lookupKey = kernelId || (kernelConn as any)?.id || '';
-                while (Date.now() < end) {
-                  // check by-id map
-                  try {
-                    const byId = (window as any).__ggblab_comm_by_id || {};
-                    if (lookupKey) {
-                      for (const k in byId) {
-                        try {
-                          const candidate = (byId as any)[k];
-                          const meta = candidate && (candidate.__ggblab_meta || {});
-                                  if (meta && meta.kernelId) {
-                                    const mid = meta.kernelId;
-                                    const matches =
-                                      mid === lookupKey ||
-                                      (lookupKey && mid.startsWith(lookupKey)) ||
-                                      (mid && lookupKey && lookupKey.startsWith(mid));
-                                    if (matches) {
-                                      dbg('waitForPre: found by-id', k, 'meta.kernelId=', mid);
-                                      return (byId as any)[k];
-                                    }
-                                  }
-                        } catch (ee) {
-                          /* ignore */
-                        }
-                      }
-                    }
-                  } catch (ee) {
-                    /* ignore */
-                  }
-                  // check store
-                  try {
-                    const store2 = (window as any).__ggblab_comm_store || {};
-                    if (lookupKey && store2[lookupKey]) {
-                      dbg('waitForPre: found in store', lookupKey);
-                      return store2[lookupKey];
-                    }
-                    // allow prefix matches for short kernel ids
-                    if (lookupKey) {
-                      for (const sk in store2) {
-                        try {
-                          if (sk.startsWith(lookupKey) || lookupKey.startsWith(sk)) {
-                            dbg('waitForPre: found in store by prefix', lookupKey, '->', sk);
-                            return store2[sk];
-                          }
-                        } catch (ee) {
-                          /* ignore */
-                        }
-                      }
-                    }
-                  } catch (ee) {
-                    /* ignore */
-                  }
-                  // check queue
-                  try {
-                    const qstore = (window as any).__ggblab_comm_queue || {};
-                    const q = lookupKey ? qstore[lookupKey] || [] : [];
-                    if (q && q.length) {
-                      const m0 = q[0];
-                      const maybeCommId = (m0 && m0.content && m0.content.comm_id) || (m0 && m0.comm_id) || null;
-                      if (maybeCommId) {
-                        const byId2 = (window as any).__ggblab_comm_by_id || {};
-                        if (byId2[maybeCommId]) {
-                          dbg('waitForPre: found byId from queue', maybeCommId);
-                          return byId2[maybeCommId];
-                        }
-                      }
-                    }
-                  } catch (ee) {
-                    /* ignore */
-                  }
-                  await new Promise(r => setTimeout(r, interval));
-                }
-                return null;
-              };
-              const arrived = await waitForPre(2000, 50);
-              if (arrived) {
-                pre = arrived;
-                dbg('Pre-registered comm arrived during wait');
-              } else {
-                dbg('No pre-registered comm arrived within wait period');
-                try {
-                  if ((window as any).ggblabDebugMessages) {
-                    // Verbose dump for debugging old/new frontend mismatch
-                    try {
-                      // eslint-disable-next-line no-console
-                      console.log('[ggblab] debug dump: __ggblab_comm_store keys', Object.keys((window as any).__ggblab_comm_store || {}));
-                      // eslint-disable-next-line no-console
-                      console.log('[ggblab] debug dump: __ggblab_comm_by_id keys', Object.keys((window as any).__ggblab_comm_by_id || {}));
-                      const byId = (window as any).__ggblab_comm_by_id || {};
-                      for (const k of Object.keys(byId)) {
-                        try {
-                          // eslint-disable-next-line no-console
-                          console.log('[ggblab] debug dump: by_id entry', k, byId[k] && byId[k].__ggblab_meta);
-                        } catch (ee) {
-                          /* ignore */
-                        }
-                      }
-                    } catch (ee) {
-                      /* ignore debug dump errors */
-                    }
-                  }
-                } catch (ee) {
-                  /* ignore */
-                }
-              }
-            } catch (ee) {
-              /* ignore wait errors */
-            }
+          // attach handlers
+          try {
+            comm.onMsg = handleIncomingCommMessage;
+          } catch (e) {
+            dbg('Failed to attach onMsg to recreated comm', e);
           }
-          // If no pre-registered comm arrived, do not create a fallback
-          // comm here. Removing the recreate fallback simplifies reasoning
-          // and ensures widgets only reuse frontend-accepted comms.
-          if (!pre) {
-            dbg('No pre-registered comm available; skipping recreate fallback');
-            return null;
+          attachCommCloseHandler(comm);
+          // open the comm
+          try {
+            comm.open('REOPEN from GGB').done;
+          } catch (e) {
+            dbg('Failed to open recreated comm', e);
           }
+          commClosed = false;
+          return comm;
         } catch (e) {
           dbg('ensureKernelComm failed', e);
           return null;
         }
       };
 
-      // Register handlers to accept widget-model comms created by the kernel's
-      // ipywidgets machinery. When the kernel creates a widget (e.g. IntSlider)
-      // it will open a comm to the frontend with target 'jupyter.widget'
-      // (and sometimes 'jupyter.widget.control'). We register a simple
-      // passthrough handler only when no widgetManager is present; if a
-      // widgetManager is available we must not intercept those comms.
+      // Register simple passthrough handlers for jupyter.widget when no
+      // widgetManager is present. The helper returns a cleanup function.
       try {
-        // Small delay to give any late-arriving manager passed via props
-        await new Promise(res => setTimeout(res, 120));
-        const lateMgr = (props as any).widgetManager;
-        if (lateMgr) {
+        if (props.widgetManager) {
           dbg(
-            'Widget manager provided via props; skipping passthrough registration'
+            'widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens'
           );
         } else {
-          dbg(
-            'No widget manager provided; registering passthrough comm targets'
-          );
-          const registerTarget = (target: string) => {
-            try {
-              if (registeredKernelTargets.includes(target)) {
-                dbg('Skipping duplicate registration for target', target);
-                return;
-              }
-              kernelConn.registerCommTarget(target, (c: any, msg: any) => {
-                try {
-                  dbg('Accepted comm open for target', target, { msg });
-                  try {
-                    c.onMsg = handleIncomingCommMessage;
-                  } catch (e) {
-                    dbg('Failed to attach onMsg to incoming comm', e);
-                  }
-                  attachCommCloseHandler(c);
-                  comm = c;
-                  try {
-                    (window as any).__ggblab_comm_by_id = (window as any).__ggblab_comm_by_id || {};
-                    const cid = (c && (c.comm_id || c.commId)) || null;
-                    if (cid) {
-                      (window as any).__ggblab_comm_by_id[cid] = c;
-                      (window as any).__ggblab_comm_by_id[cid].__ggblab_meta = {
-                        source: 'accepted-target',
-                        target,
-                        kernelId: props?.kernelId || (kernelConn as any)?.id || null,
-                        when: new Date().toISOString()
-                      };
-                      dbg('Marked accepted incoming comm', cid, target);
-                    }
-                  } catch (e) {
-                    dbg('Failed to mark accepted incoming comm', e);
-                  }
-                  try {
-                    // eslint-disable-next-line no-console
-                    console.log('[ggblab] accepted comm open', {
-                      when: new Date().toISOString(),
-                      target,
-                      kernelId: props?.kernelId || kernelConn?.id || null,
-                      msg
-                    });
-                  } catch (e) {
-                    /* ignore */
-                  }
-                } catch (e) {
-                  dbg('Error handling incoming comm open', e);
-                }
-              });
-              registeredKernelTargets.push(target);
-              dbg('Registered comm target', target);
-            } catch (e) {
-              dbg('Failed to register comm target', target, e);
-            }
-          };
-
-          // Register common widget manager targets and the ggblab-specific target
-          // try { registerTarget('jupyter.widget.control'); } catch (e) { /* ignore */ }
-          try {
-            registerTarget(props.commTarget || 'ggblab-comm');
-          } catch (e) {
-            /* ignore */
-          }
+          _unregisterWidgetComms = registerWidgetCommTargets(kernelConn, {
+            callRemoteSocketSend,
+            kernel2,
+            socketPath,
+            wsUrl,
+            getAppletApi: () => appletApi,
+            isArrayOfArrays,
+            dbg
+          });
         }
       } catch (e) {
         dbg('Widget comm target registration skipped or failed', e);
-      }
-
-      // Adopt a WidgetManager if/when it appears at runtime.
-      const adoptWidgetManager = (mgr: any) => {
-        try {
-          if (!mgr) {
-            return;
-          }
-          if (managerAdopted) {
-            return;
-          }
-          const commManager =
-            mgr?.comm_manager ||
-            mgr?.commManager ||
-            mgr?._commManager ||
-            mgr?._manager?.comm_manager ||
-            mgr?._kernel?.comm_manager ||
-            null;
-          if (
-            !commManager ||
-            typeof commManager.register_target !== 'function'
-          ) {
-            dbg(
-              'adoptWidgetManager: no comm_manager available on manager',
-              !!commManager
-            );
-            return;
-          }
-          managerAdopted = true;
-          dbg('Adopting widget manager; registering targets on commManager');
-
-          const attachHandler = (commOp: any, msg: any, sourceName: string) => {
-            dbg('manager adapter: comm opened', sourceName, commOp, msg);
-            try {
-              widgetComm = commOp;
-              const handler = async (m: any) => {
-                const data = m?.content?.data || m;
-                const command =
-                  typeof data === 'string' ? JSON.parse(data) : data;
-                await processCommand(command, widgetComm);
-              };
-              try {
-                if (typeof commOp.on_msg === 'function') {
-                  commOp.on_msg(handler);
-                } else if (typeof commOp.onMsg === 'function') {
-                  commOp.onMsg = handler;
-                } else if (typeof commOp.on === 'function') {
-                  commOp.on('msg', handler);
-                } else if ('on_msg' in commOp) {
-                  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                  // @ts-ignore
-                  commOp.on_msg = handler;
-                } else {
-                  try {
-                    commOp.onMsg = handler;
-                  } catch (e) {
-                    dbg('Unable to attach handler to commOp', e);
-                  }
-                }
-              } catch (e) {
-                dbg(
-                  'Failed to attach message handler to manager-provided comm',
-                  e
-                );
-              }
-            } catch (e) {
-              dbg('Error in manager adapter comm handler', e);
-            }
-          };
-
-          const tryRegister = (mgr: any, t: string) => {
-            try {
-              if (typeof mgr.register_target === 'function') {
-                mgr.register_target(t, (commOp: any, msg: any) =>
-                  attachHandler(commOp, msg, t)
-                );
-                dbg('commManager.register_target succeeded for', t);
-                return true;
-              }
-              if (typeof mgr.registerTarget === 'function') {
-                mgr.registerTarget(t, (commOp: any, msg: any) =>
-                  attachHandler(commOp, msg, t)
-                );
-                dbg('commManager.registerTarget succeeded for', t);
-                return true;
-              }
-              if (typeof mgr.register === 'function') {
-                mgr.register(t, (commOp: any, msg: any) =>
-                  attachHandler(commOp, msg, t)
-                );
-                dbg('commManager.register succeeded for', t);
-                return true;
-              }
-              dbg('commManager has no known register API for target', t);
-              return false;
-            } catch (e) {
-              dbg('Failed to register target on commManager', t, e);
-              return false;
-            }
-          };
-
-          const targetsToRegister = [props.commTarget || 'ggblab-comm', 'jupyter.widget', 'jupyter.widget.control'];
-          for (const t of targetsToRegister) {
-            tryRegister(commManager, t);
-          }
-
-          // Publish the adopted manager to a global store so other mounts
-          // can adopt the same manager if they mount later.
-          try {
-            (window as any).__ggblab_widget_manager = (window as any).__ggblab_widget_manager || {};
-            const key = props?.kernelId || ((kernelConn as any)?.id) || 'last';
-            (window as any).__ggblab_widget_manager[key] = mgr;
-            (window as any).__ggblab_widget_manager['last'] = mgr;
-            try {
-              window.dispatchEvent(new CustomEvent('ggblab:widget-manager-registered'));
-              dbg('Dispatched ggblab:widget-manager-registered');
-            } catch (ee) {
-              dbg('Failed to dispatch ggblab:widget-manager-registered', ee);
-            }
-          } catch (ee) {
-            dbg('Failed to publish widget manager to global store', ee);
-          }
-
-          // Attempt to remove kernelConn passthrough targets if possible
-          try {
-            if (kernelConn && (kernelConn as any).removeCommTarget) {
-              registeredKernelTargets.forEach(t => {
-                try {
-                  (kernelConn as any).removeCommTarget(t);
-                  dbg('Removed kernelConn target', t);
-                } catch (e) {
-                  /* ignore */
-                }
-              });
-            }
-          } catch (e) {
-            dbg('Error while removing kernelConn targets', e);
-          }
-        } catch (e) {
-          dbg('adoptWidgetManager error', e);
-        }
-      };
-
-      const onGlobalManager = () => {
-        try {
-          // If a specific comm target was provided by the kernel, do
-          // not adopt a manager from the global store — the kernel
-          // explicitly requested the comm target and we should avoid
-          // overriding that decision.
-          if (props?.commTarget) {
-            dbg('props.commTarget present; skipping adoptWidgetManager');
-            return;
-          }
-          const store = (window as any).__ggblab_widget_manager || {};
-          if (props?.kernelId && store[props.kernelId]) {
-            return adoptWidgetManager(store[props.kernelId]);
-          }
-          const keys = Object.keys(store || {});
-          if (keys.length) {
-            return adoptWidgetManager(store['last'] || store[keys[0]]);
-          }
-        } catch (e) {
-          dbg('onGlobalManager error', e);
-        }
-      };
-      window.addEventListener(
-        'ggblab:widget-manager-registered',
-        onGlobalManager as EventListener
-      );
-
-      // If a manager was already present at mount, adopt immediately
-      try {
-        if (effectiveWidgetManager) {
-          adoptWidgetManager(effectiveWidgetManager);
-        }
-      } catch (e) {
-        dbg('Immediate adopt failed', e);
       }
 
       async function ggbOnLoad(api: any) {
         dbg('GeoGebra applet loaded:', api);
         // expose applet API to other handlers (widgetComm etc.)
         appletApi = api;
-        // "start" is unnecessary because the frontend emits an
-        // explicit "oob_ready" when the applet loads; kernel-side
-        // logic should treat that as the readiness/start signal.
+        (async function () {
+          const msg = {
+            type: 'start',
+            payload: {}
+          };
+          await callRemoteSocketSend(
+            kernel2,
+            JSON.stringify(msg),
+            socketPath,
+            wsUrl
+          );
+        })();
 
         resizeHandler = function () {
           const wrapperDiv = document.getElementById(elementId);
@@ -1051,58 +433,6 @@ with connect("${wsUrl}") as ws:
         };
         window.addEventListener('resize', resizeHandler);
         resizeHandler();
-
-        // Create kernel-side Comm now that the applet is initialized.
-        // Use the shared helper `ensureKernelComm()` so we reuse the
-        // same creation / attach logic (and avoid duplicating open/handler setup).
-        if (props.commTarget) {
-          try {
-            // Request the main kernel to register the requested comm target
-            // into a persistent instance so the kernel will accept the
-            // frontend's `createComm` open. Use a module-level
-            // `ggb_comm_instance` to keep the instance alive.
-            try {
-              const regCode = `from ggblab.comm import ggb_comm\nif 'ggb_comm_instance' not in globals():\n    ggb_comm_instance = ggb_comm()\nggb_comm_instance.register_target("${props.commTarget}")\n`;
-              await kernelConn.requestExecute({ code: regCode }).done;
-            } catch (e) {
-              dbg('Failed to request kernel to register comm target', e);
-            }
-
-            const maybeComm = await ensureKernelComm();
-            if (maybeComm) {
-              comm = maybeComm;
-              try {
-                const maybeId =
-                  (comm as any)?.comm_id ||
-                  (comm as any)?.commId ||
-                  (comm as any)?.id ||
-                  null;
-                dbg('Created kernel comm via ensureKernelComm', {
-                  target: props.commTarget,
-                  commObject: comm,
-                  commId: maybeId
-                });
-              } catch (e) {
-                dbg(
-                  'Created kernel comm via ensureKernelComm (unable to read id)',
-                  props.commTarget,
-                  comm
-                );
-              }
-            } else {
-              comm = null;
-              dbg(
-                'ensureKernelComm returned null; skipping kernel comm creation'
-              );
-            }
-          } catch (e) {
-            comm = null;
-            dbg('ensureKernelComm failed; skipping kernel comm creation', e);
-          }
-        } else {
-          comm = null;
-          dbg('No commTarget provided; skipping kernel comm creation');
-        }
 
         // // Observe size changes of the widget's DOM element
         // // but not working as expected in Lumino
@@ -1118,9 +448,62 @@ with connect("${wsUrl}") as ws:
         //     resizeObserver.observe(widgetRef.current); //widgetElemnt);
         // }
 
-        // Defer kernel-side Comm creation until the applet is loaded.
-        // The comm will be created inside `ggbOnLoad` to ensure the
-        // applet exists before we attempt to wire kernel↔frontend comms.
+        if (props.commTarget) {
+          comm = kernelConn.createComm(props.commTarget);
+          try {
+            // Log comm creation details for debugging 'Comm not found' issues
+            try {
+              const maybeId =
+                (comm as any)?.comm_id ||
+                (comm as any)?.commId ||
+                (comm as any)?.id ||
+                null;
+              dbg('Created kernel comm', {
+                target: props.commTarget,
+                commObject: comm,
+                commId: maybeId
+              });
+            } catch (e) {
+              dbg(
+                'Created kernel comm (unable to read id)',
+                props.commTarget,
+                comm
+              );
+            }
+            comm.open('HELO from GGB').done;
+          } catch (e) {
+            dbg('Failed to open kernel comm for', props.commTarget, e);
+          }
+          // Attach close handler to surface unexpected closes
+          try {
+            comm.onClose = (m: any) => {
+              try {
+                const closedId =
+                  (m && m.content && m.content.comm_id) ||
+                  (comm as any)?.comm_id ||
+                  (comm as any)?.commId ||
+                  null;
+                dbg('Kernel comm closed', {
+                  target: props.commTarget,
+                  commId: closedId,
+                  message: m
+                });
+              } catch (e) {
+                dbg(
+                  'Kernel comm closed (no id available)',
+                  props.commTarget,
+                  m
+                );
+              }
+            };
+          } catch (e) {
+            dbg('Unable to attach onClose to kernel comm', e);
+          }
+        } else {
+          // No kernel-level comm target provided: rely on remote socket
+          comm = null;
+          dbg('No commTarget provided; skipping kernel comm creation');
+        }
         // comm.send('HELO2').done
 
         // kernel.registerCommTarget('test', (comm, commMsg) => {
@@ -1369,6 +752,13 @@ with connect("${wsUrl}") as ws:
         }
         observer = null;
       }
+      // Unregister widget comm handlers if we registered them
+      try {
+        _unregisterWidgetComms?.();
+        _unregisterWidgetComms = null;
+      } catch (e) {
+        dbg('Error unregistering widget comm targets', e);
+      }
       // Remove injected meta tag
       if (metaViewport && metaViewport.parentNode) {
         metaViewport.parentNode.removeChild(metaViewport);
@@ -1397,7 +787,7 @@ with connect("${wsUrl}") as ws:
         try {
           delete (window as any).ggbApplet;
         } catch (e) {
-          console.debug('ggblab: ignored', e);
+          /* ignore */
         }
       }
 
@@ -1458,7 +848,7 @@ interface IGGAWidgetProps {
   wsPort?: number;
   socketPath?: string;
   // Optional WidgetManager module or instance provided by the plugin activation
-  widgetManager?: any;
+  widgetManager?: WidgetManagerType;
 }
 
 /**
@@ -1473,10 +863,7 @@ export class GeoGebraWidget extends ReactWidget {
   constructor(props?: IGGAWidgetProps) {
     super();
     this.addClass('jp-ggblabWidget');
-    this.props = props || {};
-    // Ensure a sensible default comm target so frontend and kernel
-    // consistently use the same channel when callers omit it.
-    this.props.commTarget = this.props.commTarget || 'ggblab-comm';
+    this.props = props;
   }
 
   render(): JSX.Element {
