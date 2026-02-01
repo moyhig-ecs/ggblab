@@ -237,6 +237,30 @@ class GeoGebra:
         })
         return r['value']
 
+    async def listen(self, name, enabled=True):
+        """Register or unregister an object update listener in the frontend.
+
+        Args:
+            name (str): Object name to listen for updates on.
+            enabled (bool): If True, register listener; if False, unregister.
+
+        Returns:
+            Any: The frontend's registration result (may be a token or status dict).
+
+        Example:
+            >>> result = await ggb.listen('A', True)
+            >>> await ggb.listen('A', False)
+        """
+        payload = [name, bool(enabled)]
+        r = await self.comm.send_recv({
+            "type": "listen",
+            "payload": payload,
+        })
+        # Frontend returns { result: ... } inside payload; normalize return value
+        if isinstance(r, dict) and 'result' in r:
+            return r['result']
+        return r
+
     @asynccontextmanager
     async def preserve(self):
         """Snapshot the current construction and restore it on exit.

@@ -43,7 +43,7 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: chore: update lockfiles
+          commit-message: "chore: update lockfiles"
           branch: chore/update-lockfiles
           title: "chore: update lockfiles"
           body: |

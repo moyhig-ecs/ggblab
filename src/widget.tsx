@@ -232,6 +232,206 @@ with connect("${wsUrl}") as ws:
         }
       };
 
+      // Process a parsed command and return the reply message string.
+      // This function lives in the same `useEffect` scope so it can be
+      // called from multiple places (including outside
+      // `handleIncomingCommMessage`). It captures `appletApi` and other
+      // surrounding variables as needed.
+      const processCommandMessage = async (command: any): Promise<string> => {
+        let rmsg: any = null;
+
+        // Handler dictionary for command types. Keep each handler focused
+        // on producing the reply payload; the common send/mirroring logic
+        // is handled by the caller.
+        const handlers: { [k: string]: (cmd: any) => Promise<any> } = {
+          command: async (cmd: any) => {
+            const label = appletApi.evalCommandGetLabels(cmd.payload);
+            return JSON.stringify({
+              type: 'created',
+              id: cmd.id,
+              payload: label
+            });
+          },
+          function: async (cmd: any) => {
+            const apiName = cmd.payload.name;
+            dbg('apiName:', apiName);
+            let value: any[] = [];
+            const args = cmd.payload.args;
+            value = [];
+            (Array.isArray(apiName) ? apiName : [apiName]).forEach(
+              (f: string) => {
+                dbg('call', f, args);
+                if (isArrayOfArrays(args)) {
+                  const value2: any[] = [];
+                  args.forEach((arg2: any[]) => {
+                    if (args) {
+                      value2.push(appletApi[f](...arg2) || null);
+                    } else {
+                      value2.push(appletApi[f]() || null);
+                    }
+                  });
+                  value.push(value2);
+                } else {
+                  if (args) {
+                    value.push(appletApi[f](...args) || null);
+                  } else {
+                    value.push(appletApi[f]() || null);
+                  }
+                }
+              }
+            );
+            value = Array.isArray(apiName) ? value : value[0];
+            dbg('Function value:', value);
+            return JSON.stringify({
+              type: 'value',
+              id: cmd.id,
+              payload: { value: value }
+            });
+          },
+          // Lightweight listen handler: acknowledge subscription. More
+          // elaborate listener registration can be added later if needed.
+          listen: async (cmd: any) => {
+            dbg('Register listen request:', cmd.payload);
+            try {
+              // Accept multiple payload shapes: [name, enabled],
+              // {name, enabled}, or a simple string (enabled=true).
+              let name: string | null = null;
+              let enabled = true;
+              const p = cmd.payload;
+              if (Array.isArray(p)) {
+                name = p[0];
+                enabled = !!p[1];
+              } else if (p && typeof p === 'object') {
+                if (typeof p.name === 'string') {
+                  name = p.name;
+                }
+                if (p.enabled !== undefined) {
+                  enabled = !!p.enabled;
+                } else if (p.enable !== undefined) {
+                  enabled = !!p.enable;
+                }
+              } else if (typeof p === 'string') {
+                name = p;
+                enabled = true;
+              }
+
+              if (!name) {
+                throw new Error('listen payload must include object name');
+              }
+
+              let result: any = null;
+              if (enabled) {
+                if (
+                  typeof appletApi.registerObjectUpdateListener === 'function'
+                ) {
+                  try {
+                    // Provide a callback that forwards updates to the
+                    // remote socket; keep it lightweight and non-blocking.
+                    // Listener callback: no update argument is provided by the
+                    // applet runtime. Instead, call `appletApi.getValueString`
+                    // to obtain a serializable representation of the object's
+                    // current value and forward it as the event payload.
+                    const cb = () => {
+                      try {
+                        let value: any = null;
+                        try {
+                          value = (appletApi.getValueString as any)(name);
+                        } catch (e) {
+                          dbg('getValueString failed', e);
+                          value = null;
+                        }
+                        const msg = JSON.stringify({
+                          type: 'object_update',
+                          // id: cmd.id, // intentionally omitted: object_update events are
+                          // queued as asynchronous events and should not carry a
+                          // request/response id.
+                          payload: { name, value }
+                        });
+                        // fire-and-forget
+                        callRemoteSocketSend(
+                          kernel2,
+                          msg,
+                          socketPath,
+                          wsUrl
+                        ).catch(e => dbg('object_update send failed', e));
+                      } catch (e) {
+                        dbg('Error in object update callback', e);
+                      }
+                    };
+                    // Some implementations may return a listener token.
+                    result = await Promise.resolve(
+                      (appletApi.registerObjectUpdateListener as any)(name, cb)
+                    );
+                  } catch (e) {
+                    dbg('registerObjectUpdateListener failed', e);
+                    result = { ok: false, error: String(e) };
+                  }
+                } else {
+                  result = {
+                    ok: false,
+                    error: 'registerObjectUpdateListener not available'
+                  };
+                }
+              } else {
+                if (
+                  typeof appletApi.unregisterObjectUpdateListener === 'function'
+                ) {
+                  try {
+                    result = await Promise.resolve(
+                      (appletApi.unregisterObjectUpdateListener as any)(name)
+                    );
+                  } catch (e) {
+                    dbg('unregisterObjectUpdateListener failed', e);
+                    result = { ok: false, error: String(e) };
+                  }
+                } else {
+                  result = {
+                    ok: false,
+                    error: 'unregisterObjectUpdateListener not available'
+                  };
+                }
+              }
+
+              return JSON.stringify({
+                type: 'listen',
+                id: cmd.id,
+                payload: { result }
+              });
+            } catch (e) {
+              dbg('Error in listen handler', e);
+              return JSON.stringify({
+                type: 'error',
+                id: cmd.id,
+                payload: { message: String(e) }
+              });
+            }
+          }
+        };
+
+        try {
+          const h = handlers[command.type];
+          if (h) {
+            rmsg = await h(command);
+          } else {
+            dbg('No handler for command type', command.type);
+            rmsg = JSON.stringify({
+              type: 'error',
+              id: command.id,
+              payload: { message: 'Unsupported command type' }
+            });
+          }
+        } catch (e) {
+          dbg('Handler error for command type', command.type, e);
+          rmsg = JSON.stringify({
+            type: 'error',
+            id: command.id,
+            payload: { message: 'Handler execution failed' }
+          });
+        }
+
+        return rmsg;
+      };
+
       // Handler for incoming messages on the kernel-created comm; defined
       // once so it can be reattached if we recreate the comm.
       const handleIncomingCommMessage = async (msg: any) => {
@@ -246,51 +446,14 @@ with connect("${wsUrl}") as ws:
           dbg('Parsed command:', command.type, command.payload);
 
           let rmsg: any = null;
-          if (command.type === 'command') {
-            const label = appletApi.evalCommandGetLabels(command.payload);
-
+          try {
+            rmsg = await processCommandMessage(command);
+          } catch (e) {
+            dbg('Error processing command', e);
             rmsg = JSON.stringify({
-              type: 'created',
-              id: command.id,
-              payload: label
-            });
-          } else if (command.type === 'function') {
-            const apiName = command.payload.name;
-            dbg('apiName:', apiName);
-            let value: any[] = [];
-
-            {
-              const args = command.payload.args;
-              value = [];
-              (Array.isArray(apiName) ? apiName : [apiName]).forEach(
-                (f: string) => {
-                  dbg('call', f, args);
-                  if (isArrayOfArrays(args)) {
-                    const value2: any[] = [];
-                    args.forEach((arg2: any[]) => {
-                      if (args) {
-                        value2.push(appletApi[f](...arg2) || null);
-                      } else {
-                        value2.push(appletApi[f]() || null);
-                      }
-                    });
-                    value.push(value2);
-                  } else {
-                    if (args) {
-                      value.push(appletApi[f](...args) || null);
-                    } else {
-                      value.push(appletApi[f]() || null);
-                    }
-                  }
-                }
-              );
-              value = Array.isArray(apiName) ? value : value[0];
-              dbg('Function value:', value);
-            }
-            rmsg = JSON.stringify({
-              type: 'value',
-              id: command.id,
-              payload: { value: value }
+              type: 'error',
+              id: command?.id || null,
+              payload: { message: 'Processing failed' }
             });
           }
 
