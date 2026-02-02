@@ -15,6 +15,7 @@ import { DockLayout, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 import type { WidgetManagerType } from './widgetManager';
 import { registerWidgetCommTargets } from './widgetManager';
+import type { IAppletApi, IResources } from './types';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -26,6 +27,10 @@ function dbg(...args: any[]) {
     // eslint-disable-next-line no-console
     console.log(...args);
   }
+}
+
+export function isArrayOfArrays(value: any): boolean {
+  return Array.isArray(value) && value.every((subArray: any) => Array.isArray(subArray));
 }
 
 /**
@@ -69,12 +74,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
   dbg('Element ID:', elementId);
 
   let applet: any = null;
-
-  function isArrayOfArrays(value: any): boolean {
-    return (
-      Array.isArray(value) && value.every(subArray => Array.isArray(subArray))
-    );
-  }
+  // use exported `isArrayOfArrays`
 
   /**
    * Calls a remote procedure on kernel2 to send a message via remote socket between kernel2 to kernel.
@@ -101,7 +101,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 
     // Resource bag: consolidate disposable resources into a single
     // object with a `dispose()` helper so teardown is consistent.
-    class Resources {
+    class Resources implements IResources {
       kernelId: string;
       commTarget: string;
       socketPath: string | null;
@@ -111,8 +111,9 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
       kernelConn: any = null;
       comm: any = null;
       widgetComm: any = null;
-      appletApi: any = null;
-      _unregisterWidgetComms: (() => void) | null = null;
+      appletApi: IAppletApi | null = null;
+      // unregister function returned by `registerWidgetCommTargets`
+      unregisterWidgetCommTargets: (() => void) | null = null;
       observer: MutationObserver | null = null;
       resizeHandler: (() => void) | null = null;
       closeHandler: (() => void) | null = null;
@@ -196,8 +197,9 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
           }
 
           try {
-            this._unregisterWidgetComms?.();
-            this._unregisterWidgetComms = null;
+            // call the unregister function if present
+            this.unregisterWidgetCommTargets?.();
+            this.unregisterWidgetCommTargets = null;
           } catch (err) {
             dbg('Error unregistering widget comm targets', err);
           }
@@ -207,7 +209,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
       }
     }
 
-    const res = new Resources(props.kernelId || '', props.commTarget || '', props.socketPath || null, props.wsPort || 8888);
+    const res: IResources = new Resources(props.kernelId || '', props.commTarget || '', props.socketPath || null, props.wsPort || 8888);
 
     (async () => {
       return await KernelAPI.listRunning();
@@ -257,11 +259,18 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
         // is handled by the caller.
         const handlers: { [k: string]: (cmd: any) => Promise<any> } = {
           command: async (cmd: any) => {
-            const label = res.appletApi.evalCommandGetLabels(cmd.payload);
+            if (res.appletApi && typeof res.appletApi.evalCommandGetLabels === 'function') {
+              const label = res.appletApi.evalCommandGetLabels(cmd.payload);
+              return JSON.stringify({
+                type: 'created',
+                id: cmd.id,
+                payload: label
+              });
+            }
             return JSON.stringify({
-              type: 'created',
+              type: 'error',
               id: cmd.id,
-              payload: label
+              payload: { message: 'applet API not available' }
             });
           },
           function: async (cmd: any) => {
@@ -275,19 +284,27 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
                 dbg('call', f, args);
                 if (isArrayOfArrays(args)) {
                   const value2: any[] = [];
-                          args.forEach((arg2: any[]) => {
-                    if (args) {
+                  args.forEach((arg2: any[]) => {
+                    if (res.appletApi && typeof res.appletApi[f] === 'function') {
                       value2.push(res.appletApi[f](...arg2) || null);
                     } else {
-                      value2.push(res.appletApi[f]() || null);
+                      value2.push(null);
                     }
                   });
                   value.push(value2);
                 } else {
-                    if (args) {
-                    value.push(res.appletApi[f](...args) || null);
+                  if (args) {
+                    value.push(
+                      res.appletApi && typeof res.appletApi[f] === 'function'
+                        ? res.appletApi[f](...args) || null
+                        : null
+                    );
                   } else {
-                    value.push(res.appletApi[f]() || null);
+                    value.push(
+                      res.appletApi && typeof res.appletApi[f] === 'function'
+                        ? res.appletApi[f]() || null
+                        : null
+                    );
                   }
                 }
               }
@@ -334,7 +351,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
               let result: any = null;
               if (enabled) {
                 if (
-                    typeof res.appletApi.registerObjectUpdateListener === 'function'
+                  res.appletApi && typeof res.appletApi.registerObjectUpdateListener === 'function'
                 ) {
                   try {
                     // Provide a callback that forwards updates to the
@@ -346,12 +363,16 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
                     const cb = () => {
                       try {
                         let value: any = null;
-                        try {
-                          value = (res.appletApi.getValueString as any)(name);
-                        } catch (e) {
-                          dbg('getValueString failed', e);
-                          value = null;
-                        }
+                          try {
+                            if (res.appletApi && typeof res.appletApi.getValueString === 'function') {
+                              value = (res.appletApi.getValueString as any)(name);
+                            } else {
+                              value = null;
+                            }
+                          } catch (e) {
+                            dbg('getValueString failed', e);
+                            value = null;
+                          }
                         const msg = JSON.stringify({
                           type: 'object_update',
                           // id: cmd.id, // intentionally omitted: object_update events are
@@ -381,7 +402,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
                 }
               } else {
                 if (
-                  typeof res.appletApi.unregisterObjectUpdateListener === 'function'
+                  res.appletApi && typeof res.appletApi.unregisterObjectUpdateListener === 'function'
                 ) {
                   try {
                     result = await Promise.resolve(
@@ -467,8 +488,10 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
           };
 
           // registerWidgetCommTargets returns an unregister function
-          // which we store on the resource bag for cleanup.
-          res._unregisterWidgetComms = registerWidgetCommTargets(res.kernelConn, opts as any);
+          // which we store on the resource bag for cleanup. Use a clear
+          // field name so intent is obvious at call sites.
+          const unregisterFn = registerWidgetCommTargets(res.kernelConn, opts as any);
+          res.unregisterWidgetCommTargets = unregisterFn;
         }
       } catch (e) {
         dbg('Widget comm target registration skipped or failed', e);
@@ -797,8 +820,8 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
       }
       // Unregister widget comm handlers if we registered them
       try {
-        res._unregisterWidgetComms?.();
-        res._unregisterWidgetComms = null;
+        res.unregisterWidgetCommTargets?.();
+        res.unregisterWidgetCommTargets = null;
       } catch (e) {
         dbg('Error unregistering widget comm targets', e);
       }

@@ -4,6 +4,8 @@ from scipy.optimize import linear_sum_assignment
 import pprint
 pp = pprint.PrettyPrinter(indent=2)
 import sympy as sp
+import logging
+logger = logging.getLogger(__name__)
 
 def normalize_label(name: str) -> str:
     if name is None:
@@ -64,7 +66,7 @@ def collapse_scc(G: nx.DiGraph, prefix='S'):
                     xs.append(float(x))
                     ys.append(float(y))
                 except Exception:
-                    pass
+                    logger.exception("Failed to parse coordinates for node %s", n)
         if types:
             attrs['Type'] = '|'.join(sorted(set(types)))
         if names:
@@ -118,11 +120,12 @@ def cost_between(node_a, node_b, Ga, Gb):
                             if float(f1(*vals)) != float(f2(*vals)):
                                 break
                         except Exception:
+                            logger.exception("Numeric sampling failed for symbolic comparison between %s and %s", va, vb)
                             break
                     else:
                         return 0.0
         except Exception:
-            pass
+            logger.exception("Fallback numeric sampling failed for symbolic comparison between %s and %s", va, vb)
 
     # coordinate distance check
     ax = Ga.nodes.get(node_a, {}).get('x')

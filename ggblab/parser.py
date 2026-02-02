@@ -8,6 +8,7 @@ the optional `ggblab_extra` package and import the full implementations from
 """
 
 import re
+import logging
 from ggblab.persistent_counter import PersistentCounter
 
 
@@ -165,7 +166,7 @@ class ggb_parser:
             try:
                 self.command_cache.increment(commands)
             except Exception:
-                pass
+                logging.getLogger(__name__).exception("Failed to increment command_cache with commands")
             return {'tokens': stack[0], 'commands': commands}
 
         return stack[0]

@@ -7,6 +7,7 @@
  * Opaque WidgetManager type used by the widget code when present.
  */
 export type WidgetManagerType = any;
+import type { IRegisterWidgetCommOptions } from './types';
 
 /**
  * Create or obtain a WidgetManager instance.
@@ -22,20 +23,7 @@ export function createWidgetManager(): WidgetManagerType {
   return undefined as any;
 }
 
-/**
- * Options required for registering widget comm targets.
- */
-export interface IRegisterWidgetCommOptions {
-  callRemoteSocketSend: (
-    message: string
-  ) => Promise<void>;
-  kernel2: any;
-  socketPath: string | null;
-  wsUrl: string;
-  getAppletApi: () => any;
-  isArrayOfArrays: (v: any) => boolean;
-  dbg?: (...args: any[]) => void;
-}
+// IRegisterWidgetCommOptions is imported from ./types
 
 /**
  * Register simple passthrough handlers for `jupyter.widget` and
@@ -73,7 +61,7 @@ export function registerWidgetCommTargets(
             typeof content === 'string' ? JSON.parse(content) : content;
           let rmsg: any = null;
           const appletApi = opts.getAppletApi();
-          if (command.type === 'command' && appletApi) {
+          if (command.type === 'command' && appletApi && typeof appletApi.evalCommandGetLabels === 'function') {
             const label = appletApi.evalCommandGetLabels(command.payload);
             rmsg = JSON.stringify({
               type: 'created',
@@ -86,17 +74,19 @@ export function registerWidgetCommTargets(
             let value: any[] = [];
             (Array.isArray(apiName) ? apiName : [apiName]).forEach(
               (f: string) => {
-                if (opts.isArrayOfArrays(args)) {
+                if (typeof (opts as any).isArrayOfArrays === 'function' && (opts as any).isArrayOfArrays(args)) {
                   const v2: any[] = [];
                   args.forEach((a: any[]) => {
-                    v2.push(appletApi[f](...a) || null);
+                    v2.push(
+                      typeof appletApi[f] === 'function' ? appletApi[f](...a) : null
+                    );
                   });
                   value.push(v2);
                 } else {
                   value.push(
                     args
-                      ? appletApi[f](...args) || null
-                      : appletApi[f]() || null
+                      ? (typeof appletApi[f] === 'function' ? appletApi[f](...args) : null)
+                      : (typeof appletApi[f] === 'function' ? appletApi[f]() : null)
                   );
                 }
               }

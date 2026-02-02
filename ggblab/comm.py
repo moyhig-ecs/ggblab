@@ -141,15 +141,17 @@ class ggb_comm:
         try:
             # Signal the server to stop
             self._stop_event.set()
-        except Exception:
-            pass
+        except Exception as e:
+            with self.thread_lock:
+                self.logs.append(f"stop(): error signaling stop_event: {e}")
 
         try:
             # Allow the server coroutine to exit its context and the thread to join
             if self.server_thread is not None:
                 self.server_thread.join(timeout=1.0)
-        except Exception:
-            pass
+        except Exception as e:
+            with self.thread_lock:
+                self.logs.append(f"stop(): error joining server_thread: {e}")
 
         try:
             if self.server_handle is not None:
@@ -157,8 +159,9 @@ class ggb_comm:
                 close = getattr(self.server_handle, 'close', None)
                 if callable(close):
                     close()
-        except Exception:
-            pass
+        except Exception as e:
+            with self.thread_lock:
+                self.logs.append(f"stop(): error closing server_handle: {e}")
 
     async def server(self):
         """Run the out-of-band socket server.
@@ -174,13 +177,10 @@ class ggb_comm:
                 # Wait until stop_event is set in another thread
                 await loop.run_in_executor(None, self._stop_event.wait)
         else:
-               async with serve(self.client_handle, "localhost", 0) as self.server_handle:
+                async with serve(self.client_handle, "localhost", 0) as self.server_handle:
                    with self.thread_lock:
                        self.wsPort = self.server_handle.sockets[0].getsockname()[1]
-                       try:
-                           self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
-                       except Exception:
-                           pass
+                       self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
                    # Wait until stop_event is set in another thread
                    await loop.run_in_executor(None, self._stop_event.wait)
 
@@ -193,7 +193,121 @@ class ggb_comm:
             self.clients.add(client_id)
             self._client_connect_count += 1
             # rate-limit detailed connect logs to once every 5 seconds
-            try:
+            now = time.time()
+            if now - self._last_client_log_time > 5.0:
+                self.logs.append(
+                    f"Clients connected: {len(self.clients)} (connects+={self._client_connect_count}, disconnects+={self._client_disconnect_count})"
+                )
+                self._client_connect_count = 0
+                self._client_disconnect_count = 0
+                self._last_client_log_time = now
+
+        try:
+            async for msg in client_id:
+                # _data = ast.literal_eval(msg)
+                _data = json.loads(msg)
+                # If this is an `object_update` event, update the shared_objects
+                # class-level mapping so other consumers can read the latest
+                # object values. Payloads may be a single pair [name, value]
+                # or a list of pairs.
+                if isinstance(_data, dict) and _data.get('type') == 'object_update':
+                    payload = _data.get('payload')
+                    try:
+                        with self.thread_lock:
+                            cls = self.__class__
+                            # list of pairs [[name, value], ...]
+                            if isinstance(payload, list) and payload and isinstance(payload[0], list):
+                                for pair in payload:
+                                    if isinstance(pair, list) and len(pair) >= 2:
+                                        name = pair[0]
+                                        value = pair[1]
+                                        cls.shared_objects[name] = value
+                            # single pair [name, value]
+                            elif isinstance(payload, list) and len(payload) >= 2 and not any(isinstance(i, list) for i in payload):
+                                name = payload[0]
+                                value = payload[1]
+                                cls.shared_objects[name] = value
+                            # payload may be a dict {name: value, ...}
+                            # or a single object {'name': name, 'value': value}
+                            elif isinstance(payload, dict):
+                                # Handle {'name': ..., 'value': ...} shape
+                                if 'name' in payload and 'value' in payload:
+                                    cls.shared_objects[payload['name']] = payload['value']
+                                else:
+                                    for k, v in payload.items():
+                                        cls.shared_objects[k] = v
+                    except Exception as e:
+                        with self.thread_lock:
+                            self.logs.append(f'Failed to process object_update payload: {e}')
+
+                            # Route event-type messages to recv_events queue
+                            # Messages with 'id' are command responses; messages without 'id' are events.
+                            # This enables:
+                            # - Real-time error capture during cell execution
+                            # - Dynamic scope learning from Applet error events
+                            # - Cross-domain error pattern analysis
+
+            # ensure we have the message id available for routing
+            _id = _data.get('id') if isinstance(_data, dict) else None
+
+            if _id:
+                # Response message: fulfill any waiting Future for this id
+                with self.thread_lock:
+                    fut = self.pending_futures.pop(_id, None)
+                if fut:
+                    try:
+                        import asyncio as _asyncio
+                        is_asyncio = isinstance(fut, _asyncio.Future) if hasattr(_asyncio, 'Future') else False
+                        if is_asyncio:
+                            # Try to obtain the loop associated with the future.
+                            loop = None
+                            try:
+                                get_loop = getattr(fut, 'get_loop', None)
+                                if callable(get_loop):
+                                    loop = get_loop()
+                            except Exception:
+                                loop = getattr(fut, '_loop', None)
+
+                            # If the loop is running, schedule thread-safe set_result.
+                            if loop is not None and getattr(loop, 'is_running', lambda: False)():
+                                loop.call_soon_threadsafe(fut.set_result, _data.get('payload'))
+                            else:
+                                fut.set_result(_data.get('payload'))
+                        else:
+                            fut.set_result(_data.get('payload'))
+                    except Exception as e:
+                        if getattr(self, 'debug', False):
+                            with self.thread_lock:
+                                self.logs.append(f"Error setting result for id {_id}: {e}")
+                else:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append(f"Unexpected response for id {_id}")
+            else:
+                # Event message: queue for event processing
+                # Error handling is deferred to send_recv() for proper exception propagation
+                self.recv_events.put(_data)
+
+            # yield to the event loop so other coroutines can make progress
+            await asyncio.sleep(0)
+        except Exception as e:
+            # record connection errors for diagnostics instead of silently passing
+            with self.thread_lock:
+                # record connection errors but avoid spamming; use same rate-limit
+                now = time.time()
+                if now - self._last_client_log_time > 5.0:
+                    # Connection errors are notable; always record
+                    self.logs.append(f"Connection error: {e}")
+                    self._last_client_log_time = now
+            # self.logs.append(f"Connection closed: {e}")
+        finally:
+            with self.thread_lock:
+                if client_id in self.clients:
+                    try:
+                        self.clients.remove(client_id)
+                    except Exception as e:
+                        self.logs.append(f"Error removing client: {e}")
+                self._client_disconnect_count += 1
                 now = time.time()
                 if now - self._last_client_log_time > 5.0:
                     self.logs.append(
@@ -202,154 +316,6 @@ class ggb_comm:
                     self._client_connect_count = 0
                     self._client_disconnect_count = 0
                     self._last_client_log_time = now
-            except Exception:
-                pass
-
-        try:
-            async for msg in client_id:
-              # _data = ast.literal_eval(msg)
-                _data = json.loads(msg)
-                # If this is an `object_update` event, update the shared_objects
-                # class-level mapping so other consumers can read the latest
-                # object values. Payloads may be a single pair [name, value]
-                # or a list of pairs.
-                try:
-                    if isinstance(_data, dict) and _data.get('type') == 'object_update':
-                        payload = _data.get('payload')
-                        try:
-                            with self.thread_lock:
-                                cls = self.__class__
-                                # list of pairs [[name, value], ...]
-                                if isinstance(payload, list) and payload and isinstance(payload[0], list):
-                                    for pair in payload:
-                                        if isinstance(pair, list) and len(pair) >= 2:
-                                            name = pair[0]
-                                            value = pair[1]
-                                            try:
-                                                cls.shared_objects[name] = value
-                                            except Exception:
-                                                pass
-                                # single pair [name, value]
-                                elif isinstance(payload, list) and len(payload) >= 2 and not any(isinstance(i, list) for i in payload):
-                                    name = payload[0]
-                                    value = payload[1]
-                                    try:
-                                        cls.shared_objects[name] = value
-                                    except Exception:
-                                        pass
-                                # payload may be a dict {name: value, ...}
-                                elif isinstance(payload, dict):
-                                    for k, v in payload.items():
-                                        try:
-                                            cls.shared_objects[k] = v
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            try:
-                                with self.thread_lock:
-                                    self.logs.append('Failed to process object_update payload')
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-                _id = _data.get('id')
-              # self.logs.append(f"Received message from client: {_id}")
-                
-                # Route event-type messages to recv_events queue
-                # Messages with 'id' are command responses; messages without 'id' are events.
-                # This enables:
-                # - Real-time error capture during cell execution
-                # - Dynamic scope learning from Applet error events
-                # - Cross-domain error pattern analysis
-                
-                if _id:
-                    # Response message: fulfill any waiting Future for this id
-                    with self.thread_lock:
-                        fut = self.pending_futures.pop(_id, None)
-                    if fut:
-                        try:
-                            # Safely set the result on the waiting Future.
-                            # Handle both asyncio.Future (must be set on its loop)
-                            # and concurrent.futures.Future (thread-safe set_result).
-                            import asyncio as _asyncio
-                            try:
-                                is_asyncio = isinstance(fut, _asyncio.Future)
-                            except Exception:
-                                is_asyncio = False
-
-                            if is_asyncio:
-                                # Try to obtain the loop associated with the future.
-                                loop = None
-                                try:
-                                    get_loop = getattr(fut, 'get_loop', None)
-                                    if callable(get_loop):
-                                        loop = get_loop()
-                                except Exception:
-                                    loop = getattr(fut, '_loop', None)
-
-                                # If the loop is running, schedule thread-safe set_result.
-                                if loop is not None and getattr(loop, 'is_running', lambda: False)():
-                                    loop.call_soon_threadsafe(fut.set_result, _data['payload'])
-                                else:
-                                    # Fallback: set directly (may raise if not allowed).
-                                    fut.set_result(_data['payload'])
-                            else:
-                                # concurrent.futures.Future is safe to set from other threads
-                                fut.set_result(_data['payload'])
-                        except Exception:
-                            # ignore set_result errors but record for diagnostics when debug
-                            try:
-                                if getattr(self, 'debug', False):
-                                    with self.thread_lock:
-                                        self.logs.append(f"Error setting result for id {_id}")
-                            except Exception:
-                                pass
-                    else:
-                        # No future waiting; quietly ignore unless debugging
-                        try:
-                            if getattr(self, 'debug', False):
-                                with self.thread_lock:
-                                    self.logs.append(f"Unexpected response for id {_id}")
-                        except Exception:
-                            pass
-                else:
-                    # Event message: queue for event processing
-                    # Error handling is deferred to send_recv() for proper exception propagation
-                    self.recv_events.put(_data)
-
-                # yield to the event loop so other coroutines can make progress
-                await asyncio.sleep(0)
-        except Exception as e:
-            # record connection errors for diagnostics instead of silently passing
-            try:
-                with self.thread_lock:
-                    # record connection errors but avoid spamming; use same rate-limit
-                    now = time.time()
-                    if now - self._last_client_log_time > 5.0:
-                        # Connection errors are notable; always record
-                        self.logs.append(f"Connection error: {e}")
-                        self._last_client_log_time = now
-            except Exception:
-                pass
-            # self.logs.append(f"Connection closed: {e}")
-        finally:
-            with self.thread_lock:
-                try:
-                    self.clients.remove(client_id)
-                except Exception:
-                    pass
-                self._client_disconnect_count += 1
-                try:
-                    now = time.time()
-                    if now - self._last_client_log_time > 5.0:
-                        self.logs.append(
-                            f"Clients connected: {len(self.clients)} (connects+={self._client_connect_count}, disconnects+={self._client_disconnect_count})"
-                        )
-                        self._client_connect_count = 0
-                        self._client_disconnect_count = 0
-                        self._last_client_log_time = now
-                except Exception:
-                    pass
 
     # comm
     def register_target(self):
@@ -362,22 +328,16 @@ class ggb_comm:
         if not getattr(self, 'use_ipython_comm', False):
             # If widget-bridge creation is disabled, return early.
             if not getattr(self, 'enable_widget_bridge', False):
-                try:
-                    if getattr(self, 'debug', False):
-                        with self.thread_lock:
-                            self.logs.append('IPython Comm registration skipped (use_ipython_comm=False)')
-                except Exception:
-                    pass
+                if getattr(self, 'debug', False):
+                    with self.thread_lock:
+                        self.logs.append('IPython Comm registration skipped (use_ipython_comm=False)')
                 return
 
             # Otherwise attempt to create a minimal ipywidgets bridge (best-effort).
             if not _WIDGETS_AVAILABLE:
-                try:
-                    if getattr(self, 'debug', False):
-                        with self.thread_lock:
-                            self.logs.append('ipywidgets not available; IPython Comm registration skipped')
-                except Exception:
-                    pass
+                if getattr(self, 'debug', False):
+                    with self.thread_lock:
+                        self.logs.append('ipywidgets not available; IPython Comm registration skipped')
                 return
 
             try:
@@ -393,31 +353,18 @@ class ggb_comm:
                             msg = {'content': {'data': content}}
                             self.handle_recv(msg)
                         except Exception:
-                            try:
-                                with self.thread_lock:
-                                    self.logs.append('Error handling widget bridge message')
-                            except Exception:
-                                pass
+                            with self.thread_lock:
+                                self.logs.append('Error handling widget bridge message')
 
-                    try:
-                        self.widget_bridge.on_msg(_on_msg)
-                    except Exception:
-                        # Older ipywidgets may use different signature; ignore if not supported
-                        pass
+                    self.widget_bridge.on_msg(_on_msg)
 
-                try:
-                    if getattr(self, 'debug', False):
-                        with self.thread_lock:
-                            self.logs.append('Using ipywidgets bridge for comms')
-                except Exception:
-                    pass
+                if getattr(self, 'debug', False):
+                    with self.thread_lock:
+                        self.logs.append('Using ipywidgets bridge for comms')
             except Exception:
-                try:
-                    if getattr(self, 'debug', False):
-                        with self.thread_lock:
-                            self.logs.append('Failed to create ipywidgets bridge')
-                except Exception:
-                    pass
+                if getattr(self, 'debug', False):
+                    with self.thread_lock:
+                        self.logs.append('Failed to create ipywidgets bridge')
             return
 
         # If explicitly requested, perform IPython Comm registration (best-effort)
@@ -426,27 +373,18 @@ class ggb_comm:
                 self.target_name,
                 self.register_target_cb)
         except Exception:
-            try:
-                with self.thread_lock:
-                    self.logs.append('Failed to register IPython Comm target')
-            except Exception:
-                pass
+            with self.thread_lock:
+                self.logs.append('Failed to register IPython Comm target')
         # Ensure we have a post-execute hook to flush any queued events
-        try:
-            self.register_post_execute()
-        except Exception:
-            pass
+        self.register_post_execute()
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
         # IPython Comm is not thread-aware; protect assignment anyway
         with self.thread_lock:
             self.target_comm = comm
-            try:
-                if getattr(self, 'debug', False):
-                    self.logs.append(f"register_target_cb: {self.target_comm}")
-            except Exception:
-                pass
+            if getattr(self, 'debug', False):
+                self.logs.append(f"register_target_cb: {self.target_comm}")
 
         @comm.on_msg
         def _recv(msg):
@@ -459,11 +397,8 @@ class ggb_comm:
     def unregister_target_cb(self):
         """Unregister and close the IPython Comm connection."""
         with self.thread_lock:
-            try:
-                if self.target_comm:
-                    self.target_comm.close()
-            except Exception:
-                pass
+            if self.target_comm:
+                self.target_comm.close()
             self.target_comm = None
 
     def _post_execute_handler(self, *args, **kwargs):
@@ -482,24 +417,15 @@ class ggb_comm:
                 except queue.Empty:
                     break
                 drained += 1
-                try:
-                    with self.thread_lock:
-                        # Keep a compact diagnostic of the event
-                        self.logs.append(f"post_execute: event {ev.get('type', 'unknown')}")
-                except Exception:
-                    pass
-            if drained:
-                try:
-                    with self.thread_lock:
-                        self.logs.append(f"post_execute: flushed {drained} recv_events")
-                except Exception:
-                    pass
-        except Exception as e:
-            try:
                 with self.thread_lock:
-                    self.logs.append(f"post_execute handler error: {e}")
-            except Exception:
-                pass
+                    # Keep a compact diagnostic of the event
+                    self.logs.append(f"post_execute: event {ev.get('type', 'unknown')}")
+            if drained:
+                with self.thread_lock:
+                    self.logs.append(f"post_execute: flushed {drained} recv_events")
+        except Exception as e:
+            with self.thread_lock:
+                self.logs.append(f"post_execute handler error: {e}")
 
     def register_post_execute(self):
         """Register the `_post_execute_handler` with IPython's post_execute event.
@@ -516,15 +442,17 @@ class ggb_comm:
                     if getattr(self, 'debug', False):
                         with self.thread_lock:
                             self.logs.append('Registered post_execute handler for recv_events')
-                except Exception:
-                    pass
+                except Exception as e:
+                    with self.thread_lock:
+                        self.logs.append(f"register_post_execute: logging registration message failed: {e}")
                 return True
             except Exception:
                 try:
                     with self.thread_lock:
                         self.logs.append('Failed to register post_execute handler')
-                except Exception:
-                    pass
+                except Exception as e:
+                    with self.thread_lock:
+                        self.logs.append(f"register_post_execute: failed logging error: {e}")
                 return False
         except Exception:
             return False
@@ -542,11 +470,8 @@ class ggb_comm:
             else:
                 _data = msg['content']['data']
         except Exception:
-            try:
-                with self.thread_lock:
-                    self.logs.append('Malformed comm message received')
-            except Exception:
-                pass
+            with self.thread_lock:
+                self.logs.append('Malformed comm message received')
             return
 
         # If the message contains an 'id' field treat it as a response
@@ -578,28 +503,19 @@ class ggb_comm:
                     else:
                         fut.set_result(_data.get('payload'))
                 except Exception:
-                    try:
-                        with self.thread_lock:
-                            self.logs.append(f"Error setting result for id {_id}")
-                    except Exception:
-                        pass
-            else:
-                try:
+                    with self.thread_lock:
+                        self.logs.append(f"Error setting result for id {_id}")
+                else:
                     with self.thread_lock:
                         self.logs.append(f"Unexpected response for id {_id}")
-                except Exception:
-                    pass
             return
 
         # Otherwise it's an event message: enqueue for consumers
         try:
             self.recv_events.put(_data)
         except Exception:
-            try:
-                with self.thread_lock:
-                    self.logs.append('Failed to enqueue recv event')
-            except Exception:
-                pass
+            with self.thread_lock:
+                self.logs.append('Failed to enqueue recv event')
         return
 
     def send(self, msg):
@@ -616,10 +532,12 @@ class ggb_comm:
                         io_loop.add_callback(lambda: tc.send(msg))
                         return
                     except Exception:
-                        # fall through to direct send
-                        pass
+                        # fall through to direct send but record diagnostic
+                        with self.thread_lock:
+                            self.logs.append('send(): io_loop.add_callback failed; falling back to direct send')
             except Exception:
-                pass
+                with self.thread_lock:
+                    self.logs.append('send(): error obtaining kernel io_loop')
             return tc.send(msg)
 
         # No widget-bridge fallback supported; require active IPython Comm
@@ -678,11 +596,8 @@ class ggb_comm:
                 has_clients = bool(self.clients)
                 has_target = self.target_comm is not None
             if not has_clients and not has_target:
-                try:
-                    with self.thread_lock:
-                        self.logs.append(f"No clients; waiting for client before sending {_id}")
-                except Exception:
-                    pass
+                with self.thread_lock:
+                    self.logs.append(f"No clients; waiting for client before sending {_id}")
                 waited = 0.0
                 while waited < 2.0:
                     with self.thread_lock:
@@ -702,8 +617,9 @@ class ggb_comm:
                 if not fut.done():
                     try:
                         fut.set_exception(asyncio.TimeoutError("oob future timed out"))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        with self.thread_lock:
+                            self.logs.append(f"_watchdog: failed to set exception on future: {e}")
 
             handle = loop.call_later(3.0, _watchdog)
 
@@ -769,10 +685,10 @@ class ggb_comm:
             for tname, cb in targets.items():
                 try:
                     result['targets'][tname] = getattr(cb, '__name__', type(cb).__name__)
-                except Exception:
+                except Exception as e:
                     result['targets'][tname] = str(cb)
-        except Exception:
-            pass
+        except Exception as e:
+            result['targets_error'] = str(e)
 
         try:
             comms = getattr(cm, 'comms', {}) or {}
@@ -783,10 +699,10 @@ class ggb_comm:
                         'target_module': getattr(comm, 'target_module', None),
                         'metadata': getattr(comm, 'metadata', None)
                     }
-                except Exception:
+                except Exception as e:
                     result['comms'][cid] = str(comm)
-        except Exception:
-            pass
+        except Exception as e:
+            result['comms_error'] = str(e)
 
         return result
 

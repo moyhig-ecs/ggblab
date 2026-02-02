@@ -46,21 +46,17 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
             console.info('ggblab: wrapped widget-manager activate called', {
               argsCount: args.length
             });
-            try {
-              const summaries = args.map((a: any) => {
-                try {
-                  return {
-                    type: typeof a,
-                    keys: Object.keys(a || {}).slice(0, 10)
-                  };
-                } catch (e) {
-                  return { type: typeof a };
-                }
-              });
-              console.debug('ggblab: wrapped activate args summary', summaries);
-            } catch (e) {
-              /* ignore */
-            }
+            const summaries = args.map((a: any) => {
+              try {
+                return {
+                  type: typeof a,
+                  keys: Object.keys(a || {}).slice(0, 10)
+                };
+              } catch (e) {
+                return { type: typeof a };
+              }
+            });
+            console.debug('ggblab: wrapped activate args summary', summaries);
             const result = origActivate(appArg, ...args);
             try {
               for (const a of args) {

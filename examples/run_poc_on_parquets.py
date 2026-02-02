@@ -2,6 +2,7 @@ import polars as pl
 from ggblab_extra.construction_parser import ConstructionTreeParser
 from ggblab_extra.construction_parser import build_graph_from_df
 import networkx as nx
+import logging
 from run_poc_ged import hungarian_similarity, build_graph_from_tuples
 from pathlib import Path
 
@@ -27,7 +28,7 @@ print('Reference graph nodes:', len(G_ref.nodes), 'edges:', len(G_ref.edges))
 try:
     parser_ref._validate_ft(out_path=f'examples/ft_anomalies_{ref_path.stem}.json')
 except Exception:
-    pass
+    logging.getLogger(__name__).exception("_validate_ft failed for reference")
 
 for f in files[1:]:
     print('\nComparing to', f)
@@ -43,7 +44,7 @@ for f in files[1:]:
     try:
         parser._validate_ft(out_path=f'examples/ft_anomalies_{f.stem}.json')
     except Exception:
-        pass
+        logging.getLogger(__name__).exception("_validate_ft failed for sample %s", f)
     sim, rpt = hungarian_similarity(G_ref, G_sub)
     print('Similarity:', sim)
     print('Report:')
