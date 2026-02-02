@@ -9,10 +9,12 @@ import {
   KernelConnection,
   KernelManager
 } from '@jupyterlab/services';
+import { initKernelCommHelpers } from './kernel_comm';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { DockLayout, Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
 import type { WidgetManagerType } from './widgetManager';
+import { registerWidgetCommTargets } from './widgetManager';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -92,11 +94,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
    * @param socketPath - Optional unix socket path (if provided, uses unix socket; otherwise uses websocket)
    * @param wsUrl - WebSocket URL (used if socketPath is not provided)
    */
-  // `sendChain` serializes outgoing socket sends from the helper kernel.
-  // The actual send helper is defined inside `useEffect` so it can close
-  // over `kernel2`, `socketPath`, and `wsUrl` which are stable for the
-  // widget instance.
-  let sendChain: Promise<void> = Promise.resolve();
+  // `sendChain` handled inside kernel_comm helpers when initialized.
 
   useEffect(() => {
     // Move frequently-used props into the resource bag for consistency
@@ -233,165 +231,10 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
       await res.kernel2.requestExecute({
         code: 'from websockets.sync.client import unix_connect, connect'
       }).done;
-      const wsUrl = `ws://localhost:${res.wsPort}/`;
-      const socketPath = res.socketPath;
-      // callRemoteSocketSend and comm helpers live here so they can use
-      // local variables (kernel2, socketPath, wsUrl, kernelConn) without
-      // needing cross-file indirection. Interfaces were removed to
-      // reduce complexity; opts are plain objects.
-      async function callRemoteSocketSend(message: string): Promise<void> {
-        try {
-          dbg('callRemoteSocketSend: sending message', {
-            socketPath,
-            wsUrl,
-            messagePreview: message.slice(0, 200)
-          });
-          const doSend = async () => {
-            if (socketPath) {
-              await res.kernel2.requestExecute({
-                code: `
-with unix_connect("${socketPath}") as ws:
-    ws.send(r"""${message}""")
-`
-              }).done;
-            } else {
-              await res.kernel2.requestExecute({
-                code: `
-with connect("${wsUrl}") as ws:
-    ws.send(r"""${message}""")
-`
-              }).done;
-            }
-            await new Promise(resolve => setTimeout(resolve, 30));
-          };
-
-          const next = sendChain.then(() => doSend());
-          // Keep the chain alive but log errors so they are visible during
-          // development rather than silently swallowed.
-          sendChain = next.catch((e) => {
-            dbg && dbg('callRemoteSocketSend chain error', e);
-          });
-          await next;
-          dbg('callRemoteSocketSend: sent', { idPreview: message.slice(0, 40) });
-        } catch (err) {
-          console.error('callRemoteSocketSend: error sending message', err);
-          throw err;
-        }
-      }
-
-      function attachCommCloseHandler(opts: any) {
-        const { c, setClosed, commTarget, dbg } = opts;
-        try {
-          (c as any).onClose = (m: any) => {
-            try {
-              setClosed(true);
-              const closedId = (m && m.content && m.content.comm_id) || (c as any)?.comm_id || (c as any)?.commId || null;
-              dbg && dbg('Kernel comm closed', { target: commTarget, commId: closedId, message: m });
-            } catch (e) {
-              dbg && dbg('Kernel comm closed (no id available)', commTarget, m);
-            }
-          };
-        } catch (e) {
-          dbg && dbg('Unable to attach onClose to kernel comm', e);
-        }
-      }
-
-      async function ensureKernelComm(opts: any): Promise<any | null> {
-        const { kernelConn: kconn, commTarget: ct, handleIncomingCommMessage: h, attachCloseHandler: ach, dbg } = opts;
-        try {
-          if (!kconn) {
-            throw new Error('No kernelConn available to create comm');
-          }
-          res.comm = kconn.createComm(ct);
-          try {
-            const maybeId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || (res.comm as any)?.id || null;
-            dbg && dbg('Recreated kernel comm', { target: ct, commObject: res.comm, commId: maybeId });
-          } catch (err) {
-            dbg && dbg('Recreated kernel comm (unable to read id)', ct, res.comm);
-          }
-          try {
-            (res.comm as any).onMsg = h;
-          } catch (err) {
-            dbg && dbg('Failed to attach onMsg to recreated comm', err);
-          }
-          try {
-            ach && ach(res.comm);
-          } catch (err) {
-            dbg && dbg('Failed to attach close handler to recreated comm', err);
-          }
-          try {
-            (res.comm as any).open && (res.comm as any).open('REOPEN from GGB').done;
-          } catch (err) {
-            dbg && dbg('Failed to open recreated comm', err);
-          }
-          return res.comm;
-        } catch (e) {
-          dbg && dbg('ensureKernelComm failed', e);
-          return null;
-        }
-      }
-
-      function createHandleIncomingCommMessage() {
-        const handler = async (msg: any) => {
-          const _dbg = dbg || (() => {});
-          _dbg('handleIncomingCommMessage:', msg);
-          try {
-            _dbg('Kernel comm onMsg received', { commTarget: props.commTarget || '', msg });
-
-            const command = JSON.parse(msg.content.data as any);
-            _dbg('Parsed command:', command.type, command.payload);
-
-            let rmsg: any = null;
-            try {
-              rmsg = await processCommandMessage(command);
-            } catch (e) {
-              _dbg('Error processing command', e);
-              rmsg = JSON.stringify({
-                type: 'error',
-                id: command?.id || null,
-                payload: { message: 'Processing failed' }
-              });
-            }
-
-            try {
-              const cId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || null;
-              _dbg('Sending via kernel comm', { commTarget: res.commTarget, commId: cId, preview: (rmsg || '').slice(0, 200) });
-              if (!res.comm || commClosed) {
-                try {
-                  const created = await ensureKernelComm({
-                    kernelConn: res.kernelConn,
-                    commTarget: res.commTarget,
-                    handleIncomingCommMessage: handler,
-                    attachCloseHandler: attachCommCloseHandlerLocal,
-                    dbg: _dbg
-                  });
-                  if (created) {
-                    res.comm = created;
-                    commClosed = false;
-                  }
-                } catch (e) {
-                  _dbg('ensureKernelComm failed before sending reply', e);
-                }
-              }
-              if (res.comm) {
-                try {
-                  res.comm.send(rmsg);
-                } catch (e) {
-                  _dbg('Failed to send via kernel comm, will still attempt remote socket send', e, { rmsgPreview: (rmsg || '').slice(0, 200) });
-                }
-              } else {
-                _dbg('No kernel comm available to send reply; will mirror via remote socket');
-              }
-            } catch (e) {
-              _dbg('Failed to send via kernel comm, will still attempt remote socket send', e, { rmsgPreview: (rmsg || '').slice(0, 200) });
-            }
-            await callRemoteSocketSend(rmsg);
-          } catch (e) {
-            (dbg || (() => {}))('Error in handleIncomingCommMessage', e);
-          }
-        };
-        return handler;
-      }
+      // ws/socket values managed inside kernel_comm helpers
+      // Initialize comm helpers from shared module
+      const { callRemoteSocketSend, makeIncomingHandler } =
+        initKernelCommHelpers(res, dbg);
 
       res.kernelConn = new KernelConnection({
         model: { name: 'python3', id: res.kernelId || kernels[0]['id'] },
@@ -399,17 +242,7 @@ with connect("${wsUrl}") as ws:
       });
       dbg('Connected to kernel:', res.kernelConn);
 
-      // Keep comm lifecycle state and helpers for recovery when comms close
-      let commClosed = false;
-      const attachCommCloseHandlerLocal = (c: any) =>
-        attachCommCloseHandler({
-          c,
-          setClosed: (v: boolean) => {
-            commClosed = v;
-          },
-          commTarget: res.commTarget,
-          dbg
-        });
+      // Kernel comm lifecycle is managed inside kernel_comm helpers
 
       // Process a parsed command and return the reply message string.
       // This function lives in the same `useEffect` scope so it can be
@@ -607,8 +440,8 @@ with connect("${wsUrl}") as ws:
       };
 
       // Handler for incoming messages on the kernel-created comm; defined
-      // once so it can be reattached if we recreate the comm.
-      const handleIncomingCommMessage = createHandleIncomingCommMessage();
+      // via kernel_comm helper so it can reuse the shared logic.
+      const handleIncomingCommMessage = makeIncomingHandler(processCommandMessage);
 
       // Kernel comm lifecycle is managed by kernel_comm helpers.
 
@@ -620,89 +453,22 @@ with connect("${wsUrl}") as ws:
             'widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens'
           );
         } else {
-          // Inline lightweight widget comm passthrough to avoid passing
-          // scope-shared arguments around; feature is behind a flag in
-          // the original module but we keep the same behavior here.
-          const registerWidgetCommTargetsLocal = (kconn: any) => {
-            const ENABLE_WIDGET_COMM_PASSTHROUGH = false;
-            if (!ENABLE_WIDGET_COMM_PASSTHROUGH) {
-              dbg && dbg('Widget comm passthrough disabled by flag');
-              return () => {};
-            }
-
-            const _dbg = dbg || (() => {});
-
-            const simpleHandler = (commOp: any, msg: any) => {
-              _dbg('widget comm opened (jupyter.widget)', commOp, msg);
-              try {
-                commOp.onMsg = async (m: any) => {
-                  const content = m?.content?.data || m;
-                  try {
-                    const command = typeof content === 'string' ? JSON.parse(content) : content;
-                    let rmsg: any = null;
-                    const applet = res.appletApi;
-                    if (command.type === 'command' && applet) {
-                      const label = applet.evalCommandGetLabels(command.payload);
-                      rmsg = JSON.stringify({ type: 'created', id: command.id, payload: label });
-                    } else if (command.type === 'function' && applet) {
-                      const apiName = command.payload.name;
-                      const args = command.payload.args;
-                      let value: any[] = [];
-                      (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-                        if (isArrayOfArrays(args)) {
-                          const v2: any[] = [];
-                          args.forEach((a: any[]) => {
-                            v2.push(applet[f](...a) || null);
-                          });
-                          value.push(v2);
-                        } else {
-                          value.push(args ? applet[f](...args) || null : applet[f]() || null);
-                        }
-                      });
-                      value = Array.isArray(apiName) ? value : value[0];
-                      rmsg = JSON.stringify({ type: 'value', id: command.id, payload: { value } });
-                    }
-                    if (rmsg) {
-                      try {
-                        commOp.send(rmsg);
-                      } catch (e) {
-                        _dbg('commOp.send failed', e);
-                      }
-                      try {
-                        await callRemoteSocketSend(rmsg);
-                      } catch (e) {
-                        _dbg('callRemoteSocketSend failed', e);
-                      }
-                    }
-                  } catch (e) {
-                    _dbg('Error handling widget comm message', e);
-                  }
-                };
-              } catch (e) {
-                _dbg('Failed to attach onMsg to widget comm', e);
-              }
-            };
-
-            try {
-              kconn.registerCommTarget('jupyter.widget', simpleHandler);
-              kconn.registerCommTarget('jupyter.widget.control', simpleHandler);
-            } catch (e) {
-              _dbg('Widget comm target registration failed', e);
-            }
-
-            return () => {
-              try {
-                if (typeof kconn.unregisterCommTarget === 'function') {
-                  kconn.unregisterCommTarget('jupyter.widget');
-                  kconn.unregisterCommTarget('jupyter.widget.control');
-                }
-              } catch (e) {
-                _dbg('Error during widget comm cleanup', e);
-              }
-            };
+          // Delegate widget comm passthrough registration to `widgetManager`
+          // module which centralizes that behavior. Provide the minimal
+          // option bag expected by the manager helper.
+          const opts = {
+            callRemoteSocketSend,
+            kernel2: res.kernel2,
+            socketPath: res.socketPath,
+            wsUrl: `ws://localhost:${res.wsPort}/`,
+            getAppletApi: () => res.appletApi,
+            isArrayOfArrays: isArrayOfArrays,
+            dbg
           };
 
-          res._unregisterWidgetComms = registerWidgetCommTargetsLocal(res.kernelConn);
+          // registerWidgetCommTargets returns an unregister function
+          // which we store on the resource bag for cleanup.
+          res._unregisterWidgetComms = registerWidgetCommTargets(res.kernelConn, opts as any);
         }
       } catch (e) {
         dbg('Widget comm target registration skipped or failed', e);

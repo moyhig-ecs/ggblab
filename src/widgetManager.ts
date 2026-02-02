@@ -27,10 +27,7 @@ export function createWidgetManager(): WidgetManagerType {
  */
 export interface IRegisterWidgetCommOptions {
   callRemoteSocketSend: (
-    kernel2: any,
-    message: string,
-    socketPath: string | null,
-    wsUrl: string
+    message: string
   ) => Promise<void>;
   kernel2: any;
   socketPath: string | null;
@@ -118,12 +115,7 @@ export function registerWidgetCommTargets(
               dbg('commOp.send failed', e);
             }
             try {
-              await opts.callRemoteSocketSend(
-                opts.kernel2,
-                rmsg,
-                opts.socketPath,
-                opts.wsUrl
-              );
+              await opts.callRemoteSocketSend(rmsg);
             } catch (e) {
               dbg('callRemoteSocketSend failed', e);
             }
@@ -147,16 +139,8 @@ export function registerWidgetCommTargets(
   return () => {
     try {
       if (typeof kernelConn.unregisterCommTarget === 'function') {
-        try {
-          kernelConn.unregisterCommTarget('jupyter.widget');
-        } catch (e) {
-          /* ignore */
-        }
-        try {
-          kernelConn.unregisterCommTarget('jupyter.widget.control');
-        } catch (e) {
-          /* ignore */
-        }
+        kernelConn.unregisterCommTarget('jupyter.widget');
+        kernelConn.unregisterCommTarget('jupyter.widget.control');
       }
     } catch (e) {
       dbg('Error during widget comm cleanup', e);
@@ -205,11 +189,7 @@ export async function registerGlobalGGBlabCommTargets(
     if (!ENABLE_RUNNING_CHANGED) {
       return;
     }
-    try {
-      console.debug(..._args);
-    } catch (e) {
-      /* ignore */
-    }
+    console.debug(..._args);
   };
 
   const registerKernel = (k: any) => {
@@ -241,11 +221,7 @@ export async function registerGlobalGGBlabCommTargets(
             }
           );
           registry.set(id, () => {
-            try {
-              unregisterFromManager && unregisterFromManager();
-            } catch (e) {
-              /* ignore */
-            }
+            unregisterFromManager && unregisterFromManager();
           });
           return;
         } catch (e) {
@@ -266,13 +242,9 @@ export async function registerGlobalGGBlabCommTargets(
         kc.registerCommTarget('jupyter.ggblab', (commOp: any, msg: any) => {
           try {
             dbg('jupyter.ggblab comm opened', { kernelId: id, msg });
-            try {
-              commOp.onMsg = (m: any) => {
-                dbg('jupyter.ggblab message', { kernelId: id, m });
-              };
-            } catch (e) {
-              /* ignore */
-            }
+            commOp.onMsg = (m: any) => {
+              dbg('jupyter.ggblab message', { kernelId: id, m });
+            };
           } catch (e) {
             console.warn('Error in jupyter.ggblab handler', e);
           }
@@ -284,11 +256,7 @@ export async function registerGlobalGGBlabCommTargets(
       const unregister = () => {
         try {
           if (typeof (kc as any).unregisterCommTarget === 'function') {
-            try {
-              (kc as any).unregisterCommTarget('jupyter.ggblab');
-            } catch (e) {
-              /* ignore */
-            }
+            (kc as any).unregisterCommTarget('jupyter.ggblab');
           }
         } catch (e) {
           console.warn('Error while unregistering jupyter.ggblab', e);
@@ -380,46 +348,30 @@ export async function registerGlobalGGBlabCommTargets(
   // Return an unregister-all function
   return () => {
     try {
-      try {
-        if (
-          app &&
-          app.serviceManager &&
-          app.serviceManager.sessions &&
-          typeof app.serviceManager.sessions.runningChanged === 'object' &&
-          typeof app.serviceManager.sessions.runningChanged.disconnect ===
-            'function'
-        ) {
-          try {
-            app.serviceManager.sessions.runningChanged.disconnect(
-              onRunningChanged as any
-            );
-          } catch (e) {
-            /* ignore */
-          }
-        } else if (
-          (KernelAPI as any).runningChanged &&
-          typeof (KernelAPI as any).runningChanged.disconnect === 'function'
-        ) {
-          try {
-            (KernelAPI as any).runningChanged.disconnect(
-              onRunningChanged as any
-            );
-          } catch (e) {
-            /* ignore */
-          }
-        }
-      } catch (e) {
-        /* ignore */
+      if (
+        app &&
+        app.serviceManager &&
+        app.serviceManager.sessions &&
+        typeof app.serviceManager.sessions.runningChanged === 'object' &&
+        typeof app.serviceManager.sessions.runningChanged.disconnect ===
+          'function'
+      ) {
+        app.serviceManager.sessions.runningChanged.disconnect(
+          onRunningChanged as any
+        );
+      } else if (
+        (KernelAPI as any).runningChanged &&
+        typeof (KernelAPI as any).runningChanged.disconnect === 'function'
+      ) {
+        (KernelAPI as any).runningChanged.disconnect(
+          onRunningChanged as any
+        );
       }
       // Call all unregister functions
       Array.from(registry.keys()).forEach(k => {
-        try {
-          const fn = registry.get(k);
-          if (fn) {
-            fn();
-          }
-        } catch (e) {
-          /* ignore */
+        const fn = registry.get(k);
+        if (fn) {
+          fn();
         }
       });
       registry.clear();
