@@ -10,6 +10,7 @@ import queue
 import concurrent.futures
 import asyncio
 import threading
+import functools
 import tempfile
 import time
 from websockets.asyncio.server import unix_serve, serve
@@ -79,6 +80,7 @@ class ggb_comm:
     # Listeners (callables) invoked when shared_objects are updated.
     # Listener signature: fn(changes: dict) -> None
     _shared_listeners = []
+    # (removed) optional asyncio loop field no longer used
     thread = None
     thread_lock = threading.Lock()
     mid = None
@@ -254,12 +256,27 @@ class ggb_comm:
                                 with self.thread_lock:
                                     self.logs.append('Failed to enqueue shared_objects_update event')
 
-                        # Invoke any registered Python callbacks (best-effort, non-blocking)
+                        # Invoke any registered Python callbacks: await coroutine listeners
+                        # directly (this is inside an async handler) and run sync listeners
+                        # in the event loop's executor.
                         if changes and getattr(cls, '_shared_listeners', None):
+                            loop = asyncio.get_running_loop()
                             for cb in list(cls._shared_listeners):
                                 try:
-                                    # Run callbacks in a separate thread to avoid blocking the ws handler
-                                    threading.Thread(target=lambda fn, ch: fn(ch), args=(cb, changes), daemon=True).start()
+                                    import inspect
+
+                                    if inspect.iscoroutinefunction(cb):
+                                        try:
+                                            await cb(changes)
+                                        except Exception as e:
+                                            with self.thread_lock:
+                                                self.logs.append(f'Error in async shared_objects listener: {e}')
+                                    else:
+                                        try:
+                                            await loop.run_in_executor(None, functools.partial(cb, changes))
+                                        except Exception as e:
+                                            with self.thread_lock:
+                                                self.logs.append(f'Error in sync shared_objects listener: {e}')
                                 except Exception:
                                     with self.thread_lock:
                                         self.logs.append('Error invoking shared_objects listener')
@@ -424,6 +441,9 @@ class ggb_comm:
         except Exception:
             return False
 
+    # set/get_shared_loop removed — listeners are awaited directly in the
+    # async handler and synchronous listeners run in the event loop executor.
+
     @classmethod
     def remove_shared_listener(cls, fn):
         """Remove a previously-registered shared_objects listener."""
@@ -434,6 +454,22 @@ class ggb_comm:
             return True
         except Exception:
             return False
+
+    @classmethod
+    def clear_shared_listeners(cls):
+        """Remove all registered shared_objects listeners and return the count removed."""
+        try:
+            with cls.thread_lock:
+                n = len(cls._shared_listeners)
+                cls._shared_listeners.clear()
+            return n
+        except Exception:
+            return 0
+
+    @classmethod
+    def clear_shared_listner(cls):
+        """Compatibility alias for clear_shared_listeners (typo-friendly)."""
+        return cls.clear_shared_listeners()
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
@@ -492,6 +528,24 @@ class ggb_comm:
         try:
             ip = get_ipython()
             if ip is None:
+                return False
+            try:
+                ip.events.register('post_execute', self._post_execute_handler)
+                try:
+                    if getattr(self, 'debug', False):
+                        with self.thread_lock:
+                            self.logs.append('Registered post_execute handler for recv_events')
+                except Exception as e:
+                    with self.thread_lock:
+                        self.logs.append(f"register_post_execute: logging registration message failed: {e}")
+                return True
+            except Exception:
+                try:
+                    with self.thread_lock:
+                        self.logs.append('Failed to register post_execute handler')
+                except Exception as e:
+                    with self.thread_lock:
+                        self.logs.append(f"register_post_execute: failed logging error: {e}")
                 return False
             try:
                 ip.events.register('post_execute', self._post_execute_handler)
