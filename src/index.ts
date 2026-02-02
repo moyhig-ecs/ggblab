@@ -87,7 +87,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     const { commands } = app;
 
     // Tracker for created GeoGebra widgets so they can be restored after reload
-    // @ts-expect-error cross-package Lumino types may differ in consumers
+    // @ts-ignore: cross-package Lumino types may differ in consumers
     const tracker = new WidgetTracker<MainAreaWidget<GeoGebraWidget>>({
       namespace: 'ggblab-tracker'
     });
@@ -138,7 +138,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           wsPort: args['wsPort'] || 8888,
           widgetManager: widgetManager
         });
-        // @ts-expect-error cross-package Lumino Title/Layout type mismatch
+        // @ts-ignore: cross-package Lumino Title/Layout type mismatch
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
         // make widget id unique so restorer can identify it later
         widget.id = widgetId;
