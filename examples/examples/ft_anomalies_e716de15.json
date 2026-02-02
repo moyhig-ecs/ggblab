@@ -1,0 +1,278 @@
+{
+  "self_refs": [],
+  "unknown_refs": {
+    "B": [
+      "Point",
+      "Line"
+    ],
+    "c": [
+      "Circle"
+    ],
+    "n": [
+      "Line"
+    ],
+    "O'": [
+      "Midpoint"
+    ],
+    "p": [
+      "Circle"
+    ],
+    "j": [
+      "Tangent"
+    ],
+    "l": [
+      "Tangent"
+    ],
+    "q": [
+      "AngleBisector"
+    ],
+    "r": [
+      "AngleBisector"
+    ],
+    "O_{1}": [
+      "Point"
+    ],
+    "t": [
+      "PerpendicularLine"
+    ],
+    "F_{1}": [
+      "Intersect"
+    ],
+    "h_1": [
+      "Circle"
+    ],
+    "p_2": [
+      "Circle",
+      "Radius",
+      "+",
+      "Radius"
+    ],
+    "q_2": [
+      "Tangent"
+    ],
+    "r_2": [
+      "Tangent"
+    ],
+    "M": [
+      "Intersect"
+    ],
+    "b_2": [
+      "Ray"
+    ],
+    "F_{2}": [
+      "Intersect",
+      "1"
+    ],
+    "γ": [
+      "Angle"
+    ],
+    "t2": [
+      "Polygon"
+    ],
+    "a_1": [
+      "Segment"
+    ],
+    "c_2": [
+      "Segment"
+    ],
+    "i_1": [
+      "Segment"
+    ],
+    "m": [
+      "Segment"
+    ],
+    "θ": [
+      "Angle"
+    ],
+    "b": [
+      "Line"
+    ],
+    "P'": [
+      "Intersect"
+    ],
+    "P": [
+      "Intersect"
+    ],
+    "j_1": [
+      "Tangent"
+    ],
+    "k_1": [
+      "Tangent"
+    ],
+    "l_1": [
+      "Tangent"
+    ],
+    "m_1": [
+      "Tangent"
+    ],
+    "O_3": [
+      "Midpoint"
+    ],
+    "p_1": [
+      "Circle"
+    ],
+    "C": [
+      "Intersect",
+      "2"
+    ],
+    "q_1": [
+      "Circle"
+    ],
+    "r_1": [
+      "Circle"
+    ],
+    "Q": [
+      "Intersect"
+    ],
+    "R": [
+      "Intersect"
+    ],
+    "D": [
+      "Point"
+    ],
+    "t3": [
+      "Polygon"
+    ],
+    "d": [
+      "Segment"
+    ],
+    "o": [
+      "Segment"
+    ],
+    "l_2": [
+      "Segment"
+    ],
+    "α": [
+      "Angle"
+    ],
+    "O": [
+      "Midpoint"
+    ],
+    "f": [
+      "PerpendicularLine"
+    ],
+    "i": [
+      "Segment"
+    ],
+    "t4": [
+      "Polygon"
+    ],
+    "c_3": [
+      "Segment"
+    ],
+    "i_2": [
+      "Segment"
+    ],
+    "a_2": [
+      "Segment"
+    ],
+    "h": [
+      "Circle"
+    ],
+    "g": [
+      "Segment"
+    ],
+    "s_1": [
+      "Segment"
+    ],
+    "d_1": [
+      "Segment"
+    ],
+    "e_1": [
+      "PerpendicularLine"
+    ],
+    "E": [
+      "Intersect"
+    ],
+    "F": [
+      "Intersect"
+    ],
+    "f_2": [
+      "Segment"
+    ],
+    "t5": [
+      "Polygon"
+    ],
+    "e_2": [
+      "Segment"
+    ],
+    "o_3": [
+      "Segment"
+    ],
+    "o_{2}": [
+      "Segment"
+    ],
+    "I": [
+      "Intersect",
+      "1"
+    ],
+    "k_2": [
+      "Circle",
+      "Radius",
+      "-",
+      "Radius"
+    ],
+    "m_2": [
+      "Tangent"
+    ],
+    "n_2": [
+      "Tangent"
+    ],
+    "L": [
+      "Intersect"
+    ],
+    "N": [
+      "Intersect"
+    ],
+    "S": [
+      "Intersect"
+    ],
+    "s_2": [
+      "Ray"
+    ],
+    "t_2": [
+      "Ray"
+    ],
+    "d_2": [
+      "Ray"
+    ],
+    "T": [
+      "Intersect"
+    ],
+    "ι": [
+      "Angle"
+    ],
+    "κ": [
+      "Angle"
+    ],
+    "λ": [
+      "Angle"
+    ],
+    "μ": [
+      "Angle"
+    ],
+    "U": [
+      "Intersect"
+    ],
+    "h_3": [
+      "AngleBisector"
+    ],
+    "i_3": [
+      "AngleBisector"
+    ],
+    "ν": [
+      "Angle"
+    ],
+    "η": [
+      "Angle"
+    ],
+    "ζ": [
+      "Angle"
+    ],
+    "ε": [
+      "Angle"
+    ]
+  },
+  "cycles": [],
+  "node_count": 89
+}
