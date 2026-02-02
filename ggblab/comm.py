@@ -76,6 +76,9 @@ class ggb_comm:
     # Shared object state published by incoming `object_update` events.
     # This is a class-level dict intended for cross-instance/global access.
     shared_objects = {}
+    # Listeners (callables) invoked when shared_objects are updated.
+    # Listener signature: fn(changes: dict) -> None
+    _shared_listeners = []
     thread = None
     thread_lock = threading.Lock()
     mid = None
@@ -213,6 +216,7 @@ class ggb_comm:
                 if isinstance(_data, dict) and _data.get('type') == 'object_update':
                     payload = _data.get('payload')
                     try:
+                        changes = {}
                         with self.thread_lock:
                             cls = self.__class__
                             # list of pairs [[name, value], ...]
@@ -222,20 +226,43 @@ class ggb_comm:
                                         name = pair[0]
                                         value = pair[1]
                                         cls.shared_objects[name] = value
+                                        changes[name] = value
                             # single pair [name, value]
                             elif isinstance(payload, list) and len(payload) >= 2 and not any(isinstance(i, list) for i in payload):
                                 name = payload[0]
                                 value = payload[1]
                                 cls.shared_objects[name] = value
+                                changes[name] = value
                             # payload may be a dict {name: value, ...}
                             # or a single object {'name': name, 'value': value}
                             elif isinstance(payload, dict):
                                 # Handle {'name': ..., 'value': ...} shape
                                 if 'name' in payload and 'value' in payload:
                                     cls.shared_objects[payload['name']] = payload['value']
+                                    changes[payload['name']] = payload['value']
                                 else:
                                     for k, v in payload.items():
                                         cls.shared_objects[k] = v
+                                        changes[k] = v
+
+                        # If any changes were applied, enqueue an event for consumers
+                        if changes:
+                            try:
+                                # Event shape: type 'shared_objects_update'
+                                self.recv_events.put({'type': 'shared_objects_update', 'payload': changes})
+                            except Exception:
+                                with self.thread_lock:
+                                    self.logs.append('Failed to enqueue shared_objects_update event')
+
+                        # Invoke any registered Python callbacks (best-effort, non-blocking)
+                        if changes and getattr(cls, '_shared_listeners', None):
+                            for cb in list(cls._shared_listeners):
+                                try:
+                                    # Run callbacks in a separate thread to avoid blocking the ws handler
+                                    threading.Thread(target=lambda fn, ch: fn(ch), args=(cb, changes), daemon=True).start()
+                                except Exception:
+                                    with self.thread_lock:
+                                        self.logs.append('Error invoking shared_objects listener')
                     except Exception as e:
                         with self.thread_lock:
                             self.logs.append(f'Failed to process object_update payload: {e}')
@@ -377,6 +404,36 @@ class ggb_comm:
                 self.logs.append('Failed to register IPython Comm target')
         # Ensure we have a post-execute hook to flush any queued events
         self.register_post_execute()
+
+    # Shared-objects listener registration API
+    @classmethod
+    def add_shared_listener(cls, fn):
+        """Register a callable to be invoked on shared_objects updates.
+
+        The callable will be called with a single argument: a dict of changed
+        name->value pairs. Callbacks are invoked in a daemon thread so they
+        should be thread-safe. Returns True if added.
+        """
+        try:
+            if not callable(fn):
+                return False
+            with cls.thread_lock:
+                if fn not in cls._shared_listeners:
+                    cls._shared_listeners.append(fn)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def remove_shared_listener(cls, fn):
+        """Remove a previously-registered shared_objects listener."""
+        try:
+            with cls.thread_lock:
+                if fn in cls._shared_listeners:
+                    cls._shared_listeners.remove(fn)
+            return True
+        except Exception:
+            return False
 
     def register_target_cb(self, comm, msg):
         """Register the IPython Comm connection callback and install message handlers."""
