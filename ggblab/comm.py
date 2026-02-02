@@ -73,6 +73,9 @@ class ggb_comm:
     pending_futures = {}
     recv_events = queue.Queue()
     logs = []
+    # Shared object state published by incoming `object_update` events.
+    # This is a class-level dict intended for cross-instance/global access.
+    shared_objects = {}
     thread = None
     thread_lock = threading.Lock()
     mid = None
@@ -206,6 +209,49 @@ class ggb_comm:
             async for msg in client_id:
               # _data = ast.literal_eval(msg)
                 _data = json.loads(msg)
+                # If this is an `object_update` event, update the shared_objects
+                # class-level mapping so other consumers can read the latest
+                # object values. Payloads may be a single pair [name, value]
+                # or a list of pairs.
+                try:
+                    if isinstance(_data, dict) and _data.get('type') == 'object_update':
+                        payload = _data.get('payload')
+                        try:
+                            with self.thread_lock:
+                                cls = self.__class__
+                                # list of pairs [[name, value], ...]
+                                if isinstance(payload, list) and payload and isinstance(payload[0], list):
+                                    for pair in payload:
+                                        if isinstance(pair, list) and len(pair) >= 2:
+                                            name = pair[0]
+                                            value = pair[1]
+                                            try:
+                                                cls.shared_objects[name] = value
+                                            except Exception:
+                                                pass
+                                # single pair [name, value]
+                                elif isinstance(payload, list) and len(payload) >= 2 and not any(isinstance(i, list) for i in payload):
+                                    name = payload[0]
+                                    value = payload[1]
+                                    try:
+                                        cls.shared_objects[name] = value
+                                    except Exception:
+                                        pass
+                                # payload may be a dict {name: value, ...}
+                                elif isinstance(payload, dict):
+                                    for k, v in payload.items():
+                                        try:
+                                            cls.shared_objects[k] = v
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            try:
+                                with self.thread_lock:
+                                    self.logs.append('Failed to process object_update payload')
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
                 _id = _data.get('id')
               # self.logs.append(f"Received message from client: {_id}")
                 
