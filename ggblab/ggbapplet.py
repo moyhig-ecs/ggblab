@@ -259,6 +259,15 @@ class GeoGebra:
         # Frontend returns { result: ... } inside payload; normalize return value
         if isinstance(r, dict) and 'result' in r:
             return r['result']
+        # If listener is being disabled, remove any cached value from
+        # the comm's shared_objects so consumers don't see stale values.
+        if not bool(enabled):
+            # Prefer to use the comm instance lock if available
+            if getattr(self, 'comm', None) and getattr(self.comm, 'thread_lock', None):
+                with self.comm.thread_lock:
+                    ggb_comm.shared_objects.pop(name, None)
+            else:
+                ggb_comm.shared_objects.pop(name, None)
         return r
 
     @asynccontextmanager
