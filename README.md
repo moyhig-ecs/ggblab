@@ -191,7 +191,15 @@ layer. Key changes in this workspace:
    churn when many applet listeners fire concurrently.
 - **Reduced noisy logs**: connect/disconnect and socket lifecycle messages are
    now aggregated and rate-limited to reduce log spam during normal operation.
-- **Version bump**: package version updated to `1.2.0`.
+- **Version bump**: package version updated to `1.3.0`.
+- **Assumptions → Conjectures**: Added utilities and frontend hooks to help
+   derive conjectures from GeoGebra construction assumptions. The extension
+   exposes a `listen` facility that allows the frontend to continuously observe
+   object values and notify the kernel when premises change; this makes it
+   convenient to keep derived conjectures in sync from Python-side logic.
+- **Listener observability**: The `listen` mechanism enables kernel-side
+   notebooks to react to object mutations (add/remove/modify) and update
+   derived analysis or conjectures continuously without manual polling.
 - **ipywidgets / ipympl interop**: Improved compatibility with ipywidgets-based backends (e.g. ipympl) so they can asynchronously process Comm messages without conflicting with ggblab's Comm handling. To avoid surprising transient kernel-side Comms during initialization, ggblab yields to frontend widget managers using a `post_execute` drain and keeps the optional ipywidgets bridge disabled by default. Advanced users may review the `enable_widget_bridge` flag in `ggblab/comm.py` if they need a kernel-side widget bridge.
 
 If you need more detail on any bullet, see the corresponding source files:
