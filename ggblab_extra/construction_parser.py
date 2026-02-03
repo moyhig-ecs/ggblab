@@ -405,30 +405,37 @@ class ConstructionTreeParser:
         # Validate token map (self.ft) for anomalies: self-references, missing refs, cycles
         try:
             # determine FT report output path:
-            # precedence: instance attribute `ft_report_dir` -> env `GGBLAB_FT_REPORT_DIR` -> examples/
-            out_dir = getattr(self, 'ft_report_dir', os.environ.get('GGBLAB_FT_REPORT_DIR', 'examples'))
-            out_dir = Path(out_dir)
-            try:
-                out_dir.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                # best-effort: ignore directory creation errors
-                pass
-
-            # allow overriding filename via instance attribute `ft_report_name`
-            fname = getattr(self, 'ft_report_name', None)
-            if not fname:
-                # deterministic default: short sha1 of canonicalized ft content
+            # precedence: instance attribute `ft_report_dir` -> env `GGBLAB_FT_REPORT_DIR`
+            # Default: disabled (do not write reports) unless explicitly set.
+            out_dir = getattr(self, 'ft_report_dir', None) or os.environ.get('GGBLAB_FT_REPORT_DIR')
+            if out_dir:
+                out_dir = Path(out_dir)
                 try:
-                    canonical = [(k, list(self.ft.get(k) or [])) for k in sorted(self.ft.keys())]
-                    canonical_json = _json.dumps(canonical, ensure_ascii=False, sort_keys=True)
-                    digest = hashlib.sha1(canonical_json.encode('utf8')).hexdigest()[:8]
-                    fname = f'ft_anomalies_{digest}.json'
+                    out_dir.mkdir(parents=True, exist_ok=True)
                 except Exception:
-                    # fallback to fixed name if hashing fails
-                    fname = 'ft_anomalies.json'
+                    # best-effort: ignore directory creation errors
+                    pass
 
-            report_path = str(out_dir / fname)
-            self._validate_ft(out_path=report_path)
+                # allow overriding filename via instance attribute `ft_report_name`
+                fname = getattr(self, 'ft_report_name', None)
+                if not fname:
+                    # deterministic default: short sha1 of canonicalized ft content
+                    try:
+                        canonical = [(k, list(self.ft.get(k) or [])) for k in sorted(self.ft.keys())]
+                        canonical_json = _json.dumps(canonical, ensure_ascii=False, sort_keys=True)
+                        digest = hashlib.sha1(canonical_json.encode('utf8')).hexdigest()[:8]
+                        fname = f'ft_anomalies_{digest}.json'
+                    except Exception:
+                        # fallback to fixed name if hashing fails
+                        fname = 'ft_anomalies.json'
+
+                report_path = str(out_dir / fname)
+                self._validate_ft(out_path=report_path)
+            else:
+                # Writing ft anomaly reports is disabled by default. To enable,
+                # set the env `GGBLAB_FT_REPORT_DIR` or assign `ft_report_dir`
+                # on the parser instance.
+                pass
         except Exception:
             # Do not fail parse on logging or I/O errors
             logger.exception('ft validation failed')
