@@ -119,6 +119,8 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
       closeHandler: (() => void) | null = null;
       metaViewport: HTMLMetaElement | null = null;
       scriptTag: HTMLScriptElement | null = null;
+      // store last-seen string values for objects to suppress redundant updates
+      _lastValues: { [name: string]: string | null } = {};
 
       constructor(kernelId: string, commTarget: string, socketPath: string | null, wsPort: number) {
         this.kernelId = kernelId;
@@ -373,6 +375,21 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
                             dbg('getValueString failed', e);
                             value = null;
                           }
+                        // Suppress sending when the string value hasn't changed since last send.
+                        try {
+                          const last = res._lastValues[name] ?? null;
+                          const cur = value == null ? null : String(value);
+                          if (last !== null && last === cur) {
+                            // unchanged, skip notification
+                            dbg('Suppressing unchanged value for', name, ':', cur);
+                            return;
+                          }
+                          // update last seen value
+                          res._lastValues[name] = cur;
+                        } catch (e) {
+                          dbg('value-comparison in object update failed', e);
+                        }
+
                         const msg = JSON.stringify({
                           type: 'object_update',
                           // id: cmd.id, // intentionally omitted: object_update events are
@@ -390,6 +407,12 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
                     result = await Promise.resolve(
                       (res.appletApi.registerObjectUpdateListener as any)(name, cb)
                     );
+                    // Ensure the current value is delivered immediately after registration
+                    try {
+                      cb();
+                    } catch (e) {
+                      dbg('initial object_update send failed', e);
+                    }
                   } catch (e) {
                     dbg('registerObjectUpdateListener failed', e);
                     result = { ok: false, error: String(e) };
@@ -759,7 +782,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
       const createApplet = () => {
         const params = {
           id: 'ggbApplet' + (props?.kernelId || '').substring(0, 8), // applet ID
-          appName: 'suite', // specify GeoGebra Classic smart applet
+          appName: props?.appName || 'suite', // allow overriding appName via props
           width: 800, // applet width
           height: 600, // applet height
           showToolBar: true, // show the toolbar
@@ -879,6 +902,7 @@ interface IGGAWidgetProps {
   insertMode?: DockLayout.InsertMode;
   wsPort?: number;
   socketPath?: string;
+  appName?: string;
   // Optional WidgetManager module or instance provided by the plugin activation
   widgetManager?: WidgetManagerType;
 }
@@ -905,6 +929,7 @@ export class GeoGebraWidget extends ReactWidget {
         commTarget={this.props?.commTarget}
         wsPort={this.props?.wsPort}
         socketPath={this.props?.socketPath}
+        appName={this.props?.appName}
         widgetManager={this.props?.widgetManager}
       />
     );

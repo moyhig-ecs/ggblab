@@ -200,6 +200,27 @@ layer. Key changes in this workspace:
 - **Listener observability**: The `listen` mechanism enables kernel-side
    notebooks to react to object mutations (add/remove/modify) and update
    derived analysis or conjectures continuously without manual polling.
+ - **Immediate listener delivery & suppression**: The frontend now invokes
+    the registered `listen` callback immediately after registration so the
+    kernel receives the current object value without waiting for the next
+    change. To reduce noisy updates, redundant notifications are suppressed
+    when the object's stringified value hasn't changed since the last send.
+ - **Configurable GeoGebra flavor (`appName`)**: The frontend accepts an
+    `appName` parameter (passed via `GeoGebra().init(appName)` in Python or
+    via `args.appName` when opening the widget from the Command Palette)
+    to select the GeoGebra flavor to initialize. Supported values:
+
+    - `graphing` — GeoGebra Graphing Calculator
+    - `geometry` — GeoGebra Geometry
+    - `3d` — GeoGebra 3D Graphing Calculator
+    - `classic` — GeoGebra Classic
+    - `suite` — GeoGebra Calculator Suite (default)
+    - `evaluator` — Equation Editor
+    - `scientific` — Scientific Calculator
+    - `notes` — GeoGebra Notes
+
+    The kernel-side `GeoGebra.init(appName)` validates the value and will
+    raise `ValueError` for unsupported values.
 - **ipywidgets / ipympl interop**: Improved compatibility with ipywidgets-based backends (e.g. ipympl) so they can asynchronously process Comm messages without conflicting with ggblab's Comm handling. To avoid surprising transient kernel-side Comms during initialization, ggblab yields to frontend widget managers using a `post_execute` drain and keeps the optional ipywidgets bridge disabled by default. Advanced users may review the `enable_widget_bridge` flag in `ggblab/comm.py` if they need a kernel-side widget bridge.
 
 If you need more detail on any bullet, see the corresponding source files:

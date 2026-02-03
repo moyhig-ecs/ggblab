@@ -35,7 +35,7 @@ class ConstructionIO:
 	"""
 
 	COLUMNS = ["Type", "Command", "Value", "Caption", "Layer", "ShowObject", "ShowLabel", "Auxiliary"]
-	SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral"]
+	SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral", "curvecartesian"]
 
 	@staticmethod
 	async def _build_df_from_applet(ggb: "GeoGebra", columns: Optional[Sequence[str]] = None) -> Mapping[str, Sequence]:

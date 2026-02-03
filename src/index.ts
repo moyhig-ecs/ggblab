@@ -135,6 +135,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           commTarget: args['commTarget'] || '',
           insertMode: args['insertMode'] || 'split-right',
           socketPath: args['socketPath'] || '',
+          appName: args['appName'] || 'suite',
           wsPort: args['wsPort'] || 8888,
           widgetManager: widgetManager
         });
@@ -188,6 +189,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
             kernelId,
             commTarget: p.commTarget || '',
             socketPath: p.socketPath || '',
+            appName: p.appName || 'suite',
             wsPort: p.wsPort || 8888,
             insertMode: p.insertMode || 'split-right'
           } as any;

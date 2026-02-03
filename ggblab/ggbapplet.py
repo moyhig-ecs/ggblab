@@ -102,7 +102,7 @@ class GeoGebra:
         self.check_semantics = False
         self._applet_objects = set()  # Cache of known objects
   
-    async def init(self):
+    async def init(self, appName: str = 'suite'):
         """Initialize the GeoGebra widget and communication channels.
         
         This method:
@@ -122,6 +122,27 @@ class GeoGebra:
             >>> ggb = await GeoGebra().init()
             >>> # GeoGebra panel opens in split-right position
         """
+        # Validate `appName` against supported GeoGebra flavors.
+        valid_app_names = {
+            'graphing',
+            'geometry',
+            '3d',
+            'classic',
+            'suite',
+            'evaluator',
+            'scientific',
+            'notes'
+        }
+        try:
+            appName_str = str(appName)
+        except Exception:
+            raise ValueError(f"Invalid appName: {appName!r}")
+        appName_norm = appName_str.lower()
+        if appName_norm not in valid_app_names:
+            raise ValueError(
+                f"Invalid appName '{appName}'; allowed values: {', '.join(sorted(valid_app_names))}"
+            )
+
         if not self.initialized:
             self.comm = ggb_comm()
             self.comm.start()
@@ -131,14 +152,17 @@ class GeoGebra:
 
             _connection_file = ipykernel.connect.get_connection_file()
             self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
-            
+
             self.app = JupyterFrontEnd()
+            # Pass `appName` through to the frontend so the widget may
+            # initialize the desired GeoGebra flavor (graphing, geometry, etc.).
             self.app.commands.execute('ggblab:create', {
                 'kernelId': self.kernel_id,
                 'commTarget': 'jupyter.ggblab',
                 'insertMode': 'split-right',
                 'socketPath': self.comm.socketPath,
-              # 'wsPort': self.comm.wsPort,
+                'appName': appName,
+                # 'wsPort': self.comm.wsPort,
             })
             # Skipping comm-stability wait: removed as it can trigger
             # kernel-side comm introspection that creates transient comms
