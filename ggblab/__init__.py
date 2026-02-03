@@ -42,13 +42,13 @@ except ImportError:
 
 from .comm import ggb_comm, ggb_comm_instance
 from .file import ggb_file
-from .ggbapplet import GeoGebra, GeoGebraSyntaxError, GeoGebraSemanticsError
+from .ggbapplet import GeoGebra, GeoGebraSemanticsError, GeoGebraSyntaxError
 
 # Construction I/O was moved from `ggblab_extra` into the core package.
 # Expose `DataFrameIO` / `ConstructionIO` at package level so installs
 # that import these symbols (or the build) will include the module.
 try:
-    from .construction_io import DataFrameIO, ConstructionIO  # noqa: F401
+    from .construction_io import ConstructionIO, DataFrameIO  # noqa: F401
 except Exception:
     # Optional dependencies used by `construction_io` may be missing during
     # some build steps; don't make the entire package import fail.
@@ -61,8 +61,9 @@ ggb_construction = ggb_file
 # These will be removed in ggblab 1.0.0
 # Use 'from ggblab_extra import ggb_parser' instead
 try:
-    from ggblab_extra.construction_parser import ggb_parser
     import warnings
+
+    from ggblab_extra.construction_parser import ggb_parser
     
     def _deprecated_import(name):
         warnings.warn(
@@ -97,8 +98,9 @@ except ImportError:
 
 # Deprecated import shim for PersistentCounter
 try:
-    from ggblab_extra.persistent_counter import PersistentCounter as _PersistentCounter
     import warnings
+
+    from ggblab_extra.persistent_counter import PersistentCounter as _PersistentCounter
 
     class PersistentCounter(_PersistentCounter):
         """Deprecated shim; use ggblab_extra.PersistentCounter instead."""

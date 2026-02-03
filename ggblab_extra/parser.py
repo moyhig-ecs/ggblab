@@ -14,13 +14,14 @@ Notes:
 """
 
 import re
-import polars as pl
+from itertools import chain, combinations
+
 import networkx as nx
-from itertools import combinations, chain
+import polars as pl
+
+from ggblab.parser import tokenize_with_commas
 from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
-from ggblab.parser import tokenize_with_commas
-
 
 # Tokenization is provided by the core package `ggblab.parser` and is
 # imported above; this module delegates to that implementation for

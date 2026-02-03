@@ -8,13 +8,14 @@ or plain XML. For DataFrame-based construction I/O and convenience helpers
 """
 
 import base64
-import zipfile
-import json
-import xml.etree.ElementTree as ET
 import io
+import json
 import os
+import xml.etree.ElementTree as ET
+import zipfile
 
 from .schema import ggb_schema
+
 
 class ggb_file:
     """GeoGebra file (.ggb) loader and saver.

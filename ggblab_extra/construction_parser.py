@@ -16,21 +16,23 @@ Notes:
             to ``ConstructionIO`` in ``ggblab_extra`` when available.
 """
 
-import re
+import hashlib
 import json
-import polars as pl
+import json as _json
+import logging
+import os
+import re
+import time
+from itertools import chain, combinations
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Union
+
 import networkx as nx
-from itertools import combinations, chain
+import polars as pl
+
+from ggblab.parser import ggb_parser
 from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
-from ggblab.parser import ggb_parser
-import logging
-import time
-import os
-from pathlib import Path
-import hashlib
-import json as _json
-from typing import Optional, Mapping, Sequence, Dict, Any, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
 	from ggblab.ggbapplet import GeoGebra
@@ -903,8 +905,9 @@ class ConstructionTreeParser:
 
     def initialize_dataframe(self, df=None, file=None):
         """Initialize the parser from `df` or delegate to ConstructionIO when given a file."""
-        import warnings
         import asyncio
+        import warnings
+
         import ggblab.construction_io as _cio
 
         warnings.warn(
@@ -930,8 +933,9 @@ class ConstructionTreeParser:
 
     def write_parquet(self, file=None):
         """Write the parser's DataFrame by delegating to ConstructionIO.save_dataframe."""
-        import warnings
         import asyncio
+        import warnings
+
         import ggblab.construction_io as _cio
 
         warnings.warn(

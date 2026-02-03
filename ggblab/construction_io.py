@@ -17,7 +17,8 @@ import warnings
 
 def _import_impl():
     try:
-        from ggblab_extra.construction_io import ConstructionIO as _C, DataFrameIO as _D
+        from ggblab_extra.construction_io import ConstructionIO as _C
+        from ggblab_extra.construction_io import DataFrameIO as _D
     except Exception as e:
         raise ImportError(
             "ggblab_extra is not available. Install the project in editable mode (pip install -e .) or install ggblab_extra so ConstructionIO is available."

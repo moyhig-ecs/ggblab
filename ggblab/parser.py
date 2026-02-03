@@ -7,8 +7,9 @@ the optional `ggblab_extra` package and import the full implementations from
 `ggblab_extra.parser` or `ggblab_extra.construction_parser`.
 """
 
-import re
 import logging
+import re
+
 from ggblab.persistent_counter import PersistentCounter
 
 

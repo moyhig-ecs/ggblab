@@ -4,19 +4,19 @@ This module implements a dual-channel communication layer combining
 IPython Comm with an out-of-band socket (Unix domain socket or WebSocket)
 to ensure reliable message delivery while notebook cells execute.
 """
-import uuid
-import json
-import queue
-import concurrent.futures
 import asyncio
-import threading
+import concurrent.futures
 import functools
-import tempfile
-import time
-from websockets.asyncio.server import unix_serve, serve
+import json
 import os
+import queue
+import tempfile
+import threading
+import time
+import uuid
 
 from IPython import get_ipython
+from websockets.asyncio.server import serve, unix_serve
 
 from .errors import GeoGebraAppletError
 

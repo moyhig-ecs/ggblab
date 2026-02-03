@@ -5,10 +5,12 @@ provides a small helper class, `ggb_schema`, which loads and exposes a
 compiled `xmlschema.XMLSchema` object for validating GeoGebra construction XML.
 """
 
-import requests
-import os
-import xmlschema
 import io
+import os
+
+import requests
+import xmlschema
+
 # from pprint import pprint
 
 class ggb_schema:

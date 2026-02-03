@@ -7,29 +7,30 @@ analysis tools live in the optional `ggblab_extra` package.
 """
 
 import asyncio
-import re
-import ipykernel.connect
+import hashlib
 import logging
+import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-import hashlib
 from typing import Optional
 
-from IPython.core.getipython import get_ipython
+import ipykernel.connect
 from ipylab import JupyterFrontEnd
+from IPython.core.getipython import get_ipython
+
+from ggblab.utils import flatten
 
 from .comm import ggb_comm
+from .errors import (
+    GeoGebraAppletError,
+    GeoGebraCommandError,
+    GeoGebraError,
+    GeoGebraSemanticsError,
+    GeoGebraSyntaxError,
+)
 from .file import ggb_file
 from .parser import ggb_parser
-from .errors import (
-    GeoGebraError,
-    GeoGebraCommandError,
-    GeoGebraSyntaxError,
-    GeoGebraSemanticsError,
-    GeoGebraAppletError,
-)
-from ggblab.utils import flatten
 
 
 # Exception hierarchy is defined in errors.py and imported above
