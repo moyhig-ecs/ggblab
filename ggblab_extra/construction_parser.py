@@ -35,7 +35,7 @@ from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
 
 if TYPE_CHECKING:
-	from ggblab.ggbapplet import GeoGebra
+    from ggblab.ggbapplet import GeoGebra
 
 # module logger
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
     G = nx.DiGraph()
     try:
         names = df["Name"].to_list()
-    except Exception:
+    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
         # fallback for dict-like or pandas
         names = list(df["Name"])
 
@@ -72,11 +72,11 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
         if "Type" in df.columns:
             try:
                 types_list = df["Type"].to_list()
-            except Exception:
+            except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                 types_list = list(df["Type"])
             type_map = {name: t for name, t in zip(names, types_list)}
             nx.set_node_attributes(G, type_map, "Type")
-    except Exception:
+    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
         pass
 
     # obtain raw dependency column values
@@ -85,7 +85,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
 
     try:
         raw = df[col].to_list()
-    except Exception:
+    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
         raw = list(df[col])
 
     for name, v in zip(names, raw):
@@ -95,7 +95,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
         if isinstance(v, str):
             try:
                 deps = json.loads(v)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 # treat as a single-name dependency string
                 deps = [v]
         if not isinstance(deps, (list, tuple)):
@@ -106,7 +106,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
             try:
                 G.add_node(d)
                 G.add_edge(d, name)
-            except Exception:
+            except (TypeError, ValueError, nx.NetworkXError):
                 # ignore malformed dependency entries
                 continue
 
@@ -119,7 +119,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
                     from networkx.algorithms.dag import transitive_reduction
 
                     G = transitive_reduction(G)
-                except Exception:
+                except (ImportError, nx.NetworkXError):
                     # Fallback: remove edges (u,v) if there exists an alternate path u->...->v
                     to_remove = set()
                     for u, v in list(G.edges()):
@@ -129,7 +129,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
                                 if len(path) > 2:
                                     to_remove.add((u, v))
                                     break
-                        except Exception:
+                        except nx.NetworkXError:
                             # if path enumeration fails, skip
                             pass
                     G.remove_edges_from(to_remove)
@@ -142,10 +142,10 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
                             if len(path) > 2:
                                 to_remove.add((u, v))
                                 break
-                    except Exception:
+                    except nx.NetworkXError:
                         pass
                 G.remove_edges_from(to_remove)
-        except Exception:
+        except (AttributeError, TypeError, nx.NetworkXError, ValueError):
             # best-effort: if reduction fails, return original graph
             pass
 
@@ -158,7 +158,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
             anc_map = {}
             try:
                 raw_col = df[col].to_list()
-            except Exception:
+            except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                 raw_col = list(df[col])
 
             for name, v in zip(names, raw_col):
@@ -168,7 +168,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
                 if isinstance(v, str):
                     try:
                         deps = json.loads(v)
-                    except Exception:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         deps = [v]
                 else:
                     deps = v
@@ -185,42 +185,42 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
                     # if d is an ancestor of any other dep in this row, skip it
                     is_transitive = False
                     for other in deps:
-                        if other == d:
-                            continue
-                        # if d appears in other's ancestor list, d is transitive
-                        if d in anc_map.get(other, set()):
-                            is_transitive = True
-                            break
-                    if not is_transitive:
-                        minimal.add(d)
-                minimal_map[name] = minimal
+                        try:
+                            if nx.is_directed_acyclic_graph(G):
+                                try:
+                                    from networkx.algorithms.dag import transitive_reduction
 
-            # rebuild graph from minimal_map
-            G_min = nx.DiGraph()
-            G_min.add_nodes_from(names)
-            # preserve Type attributes on the reduced graph where available
-            try:
-                if "Type" in df.columns:
-                    try:
-                        types_list = df["Type"].to_list()
-                    except Exception:
-                        types_list = list(df["Type"])
-                    type_map = {name: t for name, t in zip(names, types_list)}
-                    nx.set_node_attributes(G_min, type_map, "Type")
-            except Exception:
-                pass
-            for name, deps in minimal_map.items():
-                for d in deps:
-                    try:
-                        G_min.add_node(d)
-                        G_min.add_edge(d, name)
-                    except Exception:
-                        continue
-
-            # use reduced graph if it has fewer edges
-            if G_min.number_of_edges() < G.number_of_edges():
-                G = G_min
-        except Exception:
+                                    G = transitive_reduction(G)
+                                except (ImportError, nx.NetworkXError):
+                                    # Fallback: remove edges (u,v) if there exists an alternate path u->...->v
+                                    to_remove = set()
+                                    for u, v in list(G.edges()):
+                                        # if there's a path of length >1 from u to v, the direct edge is transitive
+                                        try:
+                                            for path in nx.all_simple_paths(G, u, v):
+                                                if len(path) > 2:
+                                                    to_remove.add((u, v))
+                                                    break
+                                        except nx.NetworkXError:
+                                            # if path enumeration fails, skip
+                                            pass
+                                    G.remove_edges_from(to_remove)
+                            else:
+                                # If not a DAG, attempt conservative reduction by checking alternate paths
+                                to_remove = set()
+                                for u, v in list(G.edges()):
+                                    try:
+                                        for path in nx.all_simple_paths(G, u, v):
+                                            if len(path) > 2:
+                                                to_remove.add((u, v))
+                                                break
+                                    except nx.NetworkXError:
+                                        pass
+                                G.remove_edges_from(to_remove)
+                        except (AttributeError, TypeError, nx.NetworkXError, ValueError):
+                            # best-effort: if reduction fails, return original graph
+                            pass
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 
     return G
@@ -229,30 +229,28 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
 def tokenize_with_commas(cmd_string, extract_commands=False):
     return _ggb_parser.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
 
-
-
 # Tokenization is provided by the core package `ggblab.parser`.
 # We import `tokenize_with_commas` directly above and use it in-place.
 
 
 class ConstructionTreeParser:
     """Dependency graph parser for GeoGebra constructions.
-    
+
     Analyzes object relationships in GeoGebra constructions by building
     directed graphs using NetworkX. Provides two graph representations:
-    
+
     - G (full dependency graph): Complete construction dependencies
     - G2 (simplified subgraph): Minimal construction sequences (DEPRECATED)
-    
+
     The parse() method builds the forward/backward dependency graph (G).
     The parse_subgraph() method attempts minimal extraction but has critical
     performance limitations (see method docstring and ARCHITECTURE.md).
-    
+
     Command learning:
     - Automatically extracts and caches GeoGebra commands from construction protocols
     - Persists command names to a shelve database for cross-project learning
     - Supports enable/disable of persistence via cache_enabled flag
-    
+
     Attributes:
         df (polars.DataFrame): Construction protocol dataframe
         G (nx.DiGraph): Full dependency graph
@@ -263,7 +261,7 @@ class ConstructionTreeParser:
         ft (dict): Tokenized function definitions, flattened
         command_cache (shelve.DbfilenameShelf): Persistent command database
         cache_enabled (bool): Enable/disable automatic persistence
-    
+
     Example:
         >>> parser = ggb_parser()
         >>> parser.df = construction_dataframe
@@ -271,11 +269,11 @@ class ConstructionTreeParser:
         >>> print(parser.roots)  # Independent objects
         >>> print(parser.leaves)  # Terminal constructions
         >>> commands = parser.get_known_commands()  # Retrieved cached commands
-    
+
     See:
         docs/architecture.md § Dependency Parser Architecture
     """
-    
+
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral", "boolean", "numeric", "angle"]
@@ -295,27 +293,37 @@ class ConstructionTreeParser:
         # store dataframe if provided; callers can also call `initialize_dataframe` later
         self.df = df
 
+        # Initialize commonly-used attributes here to avoid
+        # `attribute-defined-outside-init` (W0201) warnings and to make the
+        # object's shape explicit for consumers and static analysis.
+        self.rd = {}
+        self.ft = {}
+        self.G = nx.DiGraph()
+        self.G2 = nx.DiGraph()
+        self.roots = []
+        self.leaves = []
+
         cache_path = cache_path or '.ggblab_command_cache'
         self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
 
     def parse(self):
         """Build the full dependency graph (G) from construction protocol.
-        
+
         Analyzes the construction dataframe (self.df) and builds:
         - Forward dependencies: Object A depends on B (B → A edge)
         - Backward dependencies: Object A is used by B (A → B edge)
-        
+
         The graph nodes are GeoGebra object names; edges represent dependencies.
-        
+
         Attributes set:
             - self.G: NetworkX DiGraph of dependencies
             - self.roots: Objects with no dependencies (starting points)
             - self.leaves: Objects with no dependents (endpoints)
             - self.rd: Reverse dict (name → DataFrame row index)
             - self.ft: Tokenized function calls for each object
-        
+
         Also extracts and persists command names if caching is enabled.
-        
+
         Example:
             >>> parser.df = polars.DataFrame(construction_protocol)
             >>> parser.parse()
@@ -364,33 +372,36 @@ class ConstructionTreeParser:
             if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
                 try:
                     types_list = self.df["Type"].to_list()
-                except Exception:
+                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                     types_list = list(self.df["Type"])
                 try:
                     names_list = self.df["Name"].to_list()
-                except Exception:
+                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                     names_list = list(self.df["Name"])
                 type_map = {name: t for name, t in zip(names_list, types_list)}
                 nx.set_node_attributes(self.G, type_map, "Type")
-        except Exception:
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
         self.leaves = [v for v, d in self.G.out_degree() if d == 0]
-        
+
         # If a DataFrame is present, ensure `DependsOn` is a list-type column.
         # If the column exists as JSON strings, decode; otherwise compute
         # transitively from the graph. Best-effort: do not fail parse() on errors.
         try:
             if hasattr(self, 'df') and self.df is not None:
                 if "DependsOn" in self.df.columns:
-                    raw_col = self.df["DependsOn"].to_list()
+                    try:
+                        raw_col = self.df["DependsOn"].to_list()
+                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                        raw_col = list(self.df["DependsOn"])
                     converted = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):
                             try:
                                 converted.append(json.loads(v))
-                            except Exception:
+                            except (json.JSONDecodeError, TypeError, ValueError):
                                 converted.append(sorted(nx.ancestors(self.G, n)) if n in self.G else [])
                         elif v is None:
                             converted.append(sorted(nx.ancestors(self.G, n)) if n in self.G else [])
@@ -401,7 +412,7 @@ class ConstructionTreeParser:
 
                 # attach or replace DependsOn as a polars List(Utf8) column
                 self.df = self.df.with_columns(pl.Series("DependsOn", converted).cast(pl.List(pl.Utf8)))
-        except Exception:
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 
         # Validate token map (self.ft) for anomalies: self-references, missing refs, cycles
@@ -414,7 +425,7 @@ class ConstructionTreeParser:
                 out_dir = Path(out_dir)
                 try:
                     out_dir.mkdir(parents=True, exist_ok=True)
-                except Exception:
+                except (OSError, PermissionError):
                     # best-effort: ignore directory creation errors
                     pass
 
@@ -427,7 +438,7 @@ class ConstructionTreeParser:
                         canonical_json = _json.dumps(canonical, ensure_ascii=False, sort_keys=True)
                         digest = hashlib.sha1(canonical_json.encode('utf8')).hexdigest()[:8]
                         fname = f'ft_anomalies_{digest}.json'
-                    except Exception:
+                    except (TypeError, ValueError):
                         # fallback to fixed name if hashing fails
                         fname = 'ft_anomalies.json'
 
@@ -438,7 +449,7 @@ class ConstructionTreeParser:
                 # set the env `GGBLAB_FT_REPORT_DIR` or assign `ft_report_dir`
                 # on the parser instance.
                 pass
-        except Exception:
+        except (OSError, PermissionError):
             # Do not fail parse on logging or I/O errors
             logger.exception('ft validation failed')
 
@@ -485,15 +496,15 @@ class ConstructionTreeParser:
             if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
                 try:
                     types_list = self.df["Type"].to_list()
-                except Exception:
+                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                     types_list = list(self.df["Type"])
                 try:
                     names_list = self.df["Name"].to_list()
-                except Exception:
+                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                     names_list = list(self.df["Name"])
                 type_map = {name: t for name, t in zip(names_list, types_list)}
                 nx.set_node_attributes(self.G2, type_map, "Type")
-        except Exception:
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 
         explored = set()
@@ -564,15 +575,15 @@ class ConstructionTreeParser:
                 if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
                     try:
                         types_list = self.df["Type"].to_list()
-                    except Exception:
+                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                         types_list = list(self.df["Type"])
                     try:
                         names_list = self.df["Name"].to_list()
-                    except Exception:
+                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                         names_list = list(self.df["Name"])
                     type_map = {name: t for name, t in zip(names_list, types_list)}
                     nx.set_node_attributes(self.G2, type_map, "Type")
-            except Exception:
+            except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                 pass
 
             # If a DataFrame is present, ensure `DependsOn_minimal` is a list-type column.
@@ -581,13 +592,16 @@ class ConstructionTreeParser:
         try:
             if hasattr(self, 'df') and self.df is not None:
                 if "DependsOn_minimal" in self.df.columns:
-                    raw_col = self.df["DependsOn_minimal"].to_list()
+                    try:
+                        raw_col = self.df["DependsOn_minimal"].to_list()
+                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                        raw_col = list(self.df["DependsOn_minimal"])
                     converted_min = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):
                             try:
                                 converted_min.append(json.loads(v))
-                            except Exception:
+                            except (json.JSONDecodeError, TypeError, ValueError):
                                 if hasattr(self, 'G2') and n in self.G2:
                                     converted_min.append(sorted(list(self.G2.predecessors(n))))
                                 elif hasattr(self, 'G') and n in self.G:
@@ -614,7 +628,7 @@ class ConstructionTreeParser:
                             converted_min.append([])
 
                 self.df = self.df.with_columns(pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8)))
-        except Exception:
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 
         return self.G2
@@ -686,13 +700,16 @@ class ConstructionTreeParser:
         try:
             if hasattr(self, 'df') and self.df is not None:
                 if "DependsOn_minimal" in self.df.columns:
-                    raw_col = self.df["DependsOn_minimal"].to_list()
+                    try:
+                        raw_col = self.df["DependsOn_minimal"].to_list()
+                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                        raw_col = list(self.df["DependsOn_minimal"])
                     converted_min = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):
                             try:
                                 converted_min.append(json.loads(v))
-                            except Exception:
+                            except (json.JSONDecodeError, TypeError, ValueError):
                                 if hasattr(self, 'G2') and n in self.G2:
                                     converted_min.append(sorted(list(self.G2.predecessors(n))))
                                 elif hasattr(self, 'G') and n in self.G:
@@ -719,7 +736,7 @@ class ConstructionTreeParser:
                             converted_min.append([])
 
                 self.df = self.df.with_columns(pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8)))
-        except Exception:
+        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 
         return self.G2
@@ -730,13 +747,13 @@ class ConstructionTreeParser:
     #     Uses a topological sort + pruning approach instead of exhaustive path enumeration.
     #     """
     #     self.G2 = nx.DiGraph()
-        
+    #
     #     # Identify which nodes are essential (no alternative path)
     #     for node in self.G.nodes():
     #         direct_parents = list(self.G.predecessors(node))
     #         if not direct_parents:
     #             continue
-                
+    #
     #         # Check if all direct parents are needed
     #         # A parent is needed if removing it disconnects node from any root
     #         parents_to_keep = []
@@ -745,10 +762,10 @@ class ConstructionTreeParser:
     #             G_without = self.G.copy()
     #             G_without.remove_edge(parent, node)
     #             has_alternative = nx.has_path(G_without, parent, node)
-                
+    #
     #             if not has_alternative:
     #                 parents_to_keep.append(parent)
-            
+    #
     #         # Add edges for essential parents
     #         for parent in parents_to_keep:
     #             self.G2.add_edge(parent, node)
@@ -776,7 +793,7 @@ class ConstructionTreeParser:
                     else:
                         seen.remove(k)
                         return []
-                except Exception:
+                except (RuntimeError, TypeError, ValueError, KeyError, IndexError):
                     # On unexpected errors, be conservative and stop recursion
                     if k in seen:
                         seen.remove(k)
@@ -807,7 +824,7 @@ class ConstructionTreeParser:
                     else:
                         seen.remove(k)
                         return []
-                except Exception:
+                except (RuntimeError, TypeError, ValueError, KeyError, IndexError):
                     if k in seen:
                         seen.remove(k)
                     return []
@@ -841,7 +858,7 @@ class ConstructionTreeParser:
         else:
             try:
                 include_types = set(include_types)
-            except Exception:
+            except (TypeError, ValueError):
                 include_types = {include_types}
 
         nodes = set()
@@ -852,7 +869,7 @@ class ConstructionTreeParser:
                 try:
                     for path in nx.all_simple_paths(self.G, r, t):
                         nodes.update(path)
-                except Exception:
+                except nx.NetworkXError:
                     # fallback: include ancestors if path enumeration fails
                     if t in self.G:
                         nodes.update(nx.ancestors(self.G, t))
@@ -890,14 +907,14 @@ class ConstructionTreeParser:
                 comps = list(self.G.predecessors(c))
                 nodes.update(comps)
                 nodes.add(c)
-            except Exception:
+            except (nx.NetworkXError, TypeError, ValueError):
                 pass
 
         # 5) build induced subgraph and return copy as DiGraph
         try:
             G_sub = self.G.subgraph(nodes).copy()
             return nx.DiGraph(G_sub)
-        except Exception:
+        except (nx.NetworkXError, TypeError, ValueError):
             return nx.DiGraph()
 
     # Note: use `roots_to_targets_with_containers` to obtain a subtree from
@@ -1019,7 +1036,7 @@ class ConstructionTreeParser:
                 with open(out_path, 'w', encoding='utf8') as fh:
                     json.dump(safe, fh, ensure_ascii=False, indent=2)
                 logger.info('Wrote ft validation report to %s', out_path)
-            except Exception:
+            except (OSError, PermissionError):
                 logger.exception('Failed to write ft validation report to %s', out_path)
 
         return report

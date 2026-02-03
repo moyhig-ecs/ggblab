@@ -17,10 +17,45 @@ import type { IRegisterWidgetCommOptions } from './types';
  * ipywidgets. Keep the factory here so the decision and implementation
  * can be changed in one place in future.
  */
-export function createWidgetManager(): WidgetManagerType {
-  // Intentionally return undefined to match previous behavior in
-  // `src/index.ts` where `widgetManager` was left as `undefined`.
-  return undefined as any;
+// Internal injected manager (if any) — prefer explicit injection.
+let _injectedWidgetManager: WidgetManagerType | undefined = undefined;
+
+/**
+ * Inject a WidgetManager instance from the hosting application.
+ * Call this when a real ipywidgets manager is available so the
+ * ggblab frontend can delegate comm routing to it.
+ */
+export function setWidgetManager(m?: WidgetManagerType): void {
+  _injectedWidgetManager = m;
+  try {
+    // Also expose on global for other scripts that may want to detect it.
+    (globalThis as any).__GGWIDGET_MANAGER__ = m;
+  } catch (e) {
+    // ignore
+  }
+}
+
+function detectWidgetManager(): WidgetManagerType | undefined {
+  const g = globalThis as any;
+  // Heuristics: check well-known globals that host apps might expose.
+  if (g && g.__GGWIDGET_MANAGER__) {
+    return g.__GGWIDGET_MANAGER__ as WidgetManagerType;
+  }
+  if (g && g.jupyterWidgetManager) {
+    return g.jupyterWidgetManager as WidgetManagerType;
+  }
+  if (g && g.widgetManager) {
+    return g.widgetManager as WidgetManagerType;
+  }
+  return undefined;
+}
+
+export function createWidgetManager(): WidgetManagerType | undefined {
+  // Priority: explicitly injected manager, then detected global manager.
+  if (_injectedWidgetManager) {
+    return _injectedWidgetManager;
+  }
+  return detectWidgetManager();
 }
 
 // IRegisterWidgetCommOptions is imported from ./types
@@ -37,18 +72,22 @@ export function registerWidgetCommTargets(
   kernelConn: any,
   opts: IRegisterWidgetCommOptions
 ): () => void {
-  // Feature flag: enable/disable the raw `jupyter.widget` passthrough
-  // registration. When false (default) we skip registering handlers to
-  // avoid stealing comm targets from a proper ipywidgets manager which
-  // would otherwise render widget models (avoids "widget model not found").
-  const ENABLE_WIDGET_COMM_PASSTHROUGH = false;
+  // Dynamically enable passthrough when no WidgetManager is available.
+  // If a manager exists, avoid registering raw handlers that could
+  // interfere with ipywidgets. Otherwise enable passthrough so kernel
+  // comms to `jupyter.widget` are handled.
+  const managerAvailable = Boolean(createWidgetManager());
+  const ENABLE_WIDGET_COMM_PASSTHROUGH = !managerAvailable;
 
   if (!ENABLE_WIDGET_COMM_PASSTHROUGH) {
-    opts.dbg && opts.dbg('Widget comm passthrough disabled by flag');
+    opts.dbg &&
+      opts.dbg('Widget comm passthrough disabled: WidgetManager present');
     return () => {
       /* noop unregister */
     };
   }
+  opts.dbg &&
+    opts.dbg('Widget comm passthrough enabled: no WidgetManager detected');
   const dbg = opts.dbg || (() => {});
 
   const simpleHandler = (commOp: any, msg: any) => {
@@ -61,7 +100,11 @@ export function registerWidgetCommTargets(
             typeof content === 'string' ? JSON.parse(content) : content;
           let rmsg: any = null;
           const appletApi = opts.getAppletApi();
-          if (command.type === 'command' && appletApi && typeof appletApi.evalCommandGetLabels === 'function') {
+          if (
+            command.type === 'command' &&
+            appletApi &&
+            typeof appletApi.evalCommandGetLabels === 'function'
+          ) {
             const label = appletApi.evalCommandGetLabels(command.payload);
             rmsg = JSON.stringify({
               type: 'created',
@@ -74,19 +117,28 @@ export function registerWidgetCommTargets(
             let value: any[] = [];
             (Array.isArray(apiName) ? apiName : [apiName]).forEach(
               (f: string) => {
-                if (typeof (opts as any).isArrayOfArrays === 'function' && (opts as any).isArrayOfArrays(args)) {
+                if (
+                  typeof (opts as any).isArrayOfArrays === 'function' &&
+                  (opts as any).isArrayOfArrays(args)
+                ) {
                   const v2: any[] = [];
                   args.forEach((a: any[]) => {
                     v2.push(
-                      typeof appletApi[f] === 'function' ? appletApi[f](...a) : null
+                      typeof appletApi[f] === 'function'
+                        ? appletApi[f](...a)
+                        : null
                     );
                   });
                   value.push(v2);
                 } else {
                   value.push(
                     args
-                      ? (typeof appletApi[f] === 'function' ? appletApi[f](...args) : null)
-                      : (typeof appletApi[f] === 'function' ? appletApi[f]() : null)
+                      ? typeof appletApi[f] === 'function'
+                        ? appletApi[f](...args)
+                        : null
+                      : typeof appletApi[f] === 'function'
+                        ? appletApi[f]()
+                        : null
                   );
                 }
               }
@@ -353,9 +405,7 @@ export async function registerGlobalGGBlabCommTargets(
         (KernelAPI as any).runningChanged &&
         typeof (KernelAPI as any).runningChanged.disconnect === 'function'
       ) {
-        (KernelAPI as any).runningChanged.disconnect(
-          onRunningChanged as any
-        );
+        (KernelAPI as any).runningChanged.disconnect(onRunningChanged as any);
       }
       // Call all unregister functions
       Array.from(registry.keys()).forEach(k => {

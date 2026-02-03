@@ -182,12 +182,12 @@ class ggb_comm:
                 # Wait until stop_event is set in another thread
                 await loop.run_in_executor(None, self._stop_event.wait)
         else:
-                async with serve(self.client_handle, "localhost", 0) as self.server_handle:
-                   with self.thread_lock:
-                       self.wsPort = self.server_handle.sockets[0].getsockname()[1]
-                       self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
-                   # Wait until stop_event is set in another thread
-                   await loop.run_in_executor(None, self._stop_event.wait)
+            async with serve(self.client_handle, "localhost", 0) as self.server_handle:
+                with self.thread_lock:
+                    self.wsPort = self.server_handle.sockets[0].getsockname()[1]
+                    self.logs.append(f"WebSocket server started at ws://localhost:{self.wsPort}")
+                # Wait until stop_event is set in another thread
+                await loop.run_in_executor(None, self._stop_event.wait)
 
     async def client_handle(self, client_id):
         """Handle messages from a connected websocket client.

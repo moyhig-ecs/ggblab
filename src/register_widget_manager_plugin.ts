@@ -2,6 +2,7 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { setWidgetManager } from './widgetManager';
 
 /**
  * Plugin that tries to detect the jupyter-widgets manager plugins at runtime
@@ -102,6 +103,12 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
                       e
                     );
                   }
+                  try {
+                    // Also register via our injection API when available.
+                    setWidgetManager(manager);
+                  } catch (e) {
+                    console.debug('ggblab: setWidgetManager failed', e);
+                  }
                 } else if (
                   manager &&
                   manager.context &&
@@ -130,6 +137,14 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
                               'ggblab: auto-registered widgetManager on kernelChanged for',
                               kid
                             );
+                            try {
+                              setWidgetManager(manager);
+                            } catch (e) {
+                              console.debug(
+                                'ggblab: setWidgetManager failed',
+                                e
+                              );
+                            }
                             try {
                               // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                               // @ts-ignore
