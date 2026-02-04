@@ -9,54 +9,67 @@ export type KernelCommHelpers = {
   makeIncomingHandler: (processCommandMessage: (cmd: any) => Promise<string>) => (msg: any) => Promise<void>;
 };
 
-export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
+export function initKernelCommHelpers(
+  res: any,
+  dbg?: any,
+  overrides?: { callRemoteSocketSend?: (message: string) => Promise<void> }
+): KernelCommHelpers {
   // Per-init send chain to serialize socket sends
+  // Allow callers to provide their own send implementation (e.g. a
+  // WebSocket broker in the extension host). If provided, use it;
+  // otherwise, fall back to the original kernel2-based sender.
   let sendChain: Promise<void> = Promise.resolve();
 
-  async function callRemoteSocketSend(message: string): Promise<void> {
-    try {
-      dbg &&
-        dbg('callRemoteSocketSend: sending message', {
-          socketPath: res.socketPath,
-          wsUrl: `ws://localhost:${res.wsPort}/`,
-          messagePreview: (message || '').slice(0, 200)
-        });
+  let callRemoteSocketSend: (message: string) => Promise<void>;
 
-      const wsUrl = `ws://localhost:${res.wsPort}/`;
-      const socketPath = res.socketPath;
+  if (overrides && typeof overrides.callRemoteSocketSend === 'function') {
+    callRemoteSocketSend = overrides.callRemoteSocketSend;
+  } else {
+    callRemoteSocketSend = async function(message: string): Promise<void> {
+      try {
+        dbg &&
+          dbg('callRemoteSocketSend: sending message', {
+            socketPath: res.socketPath,
+            wsUrl: `ws://localhost:${res.wsPort}/`,
+            messagePreview: (message || '').slice(0, 200)
+          });
 
-      const doSend = async () => {
-        if (socketPath) {
-          await res.kernel2.requestExecute({
-            code: `
+        const wsUrl = `ws://localhost:${res.wsPort}/`;
+        const socketPath = res.socketPath;
+
+        const doSend = async () => {
+          if (socketPath) {
+            await res.kernel2.requestExecute({
+              code: `
 with unix_connect("${socketPath}") as ws:
 		ws.send(r"""${message}""")
 `
-          }).done;
-        } else {
-          await res.kernel2.requestExecute({
-            code: `
+            }).done;
+          } else {
+            await res.kernel2.requestExecute({
+              code: `
 with connect("${wsUrl}") as ws:
 		ws.send(r"""${message}""")
 `
-          }).done;
-        }
-        await new Promise(resolve => setTimeout(resolve, 30));
-      };
+            }).done;
+          }
+          await new Promise(resolve => setTimeout(resolve, 30));
+        };
 
-      const next = sendChain.then(() => doSend());
-      sendChain = next.catch(e => {
-        dbg && dbg('callRemoteSocketSend chain error', e);
-      });
-      await next;
-      dbg &&
-        dbg('callRemoteSocketSend: sent', {
-          idPreview: (message || '').slice(0, 40)
+        const next = sendChain.then(() => doSend());
+        sendChain = next.catch(e => {
+          dbg && dbg('callRemoteSocketSend chain error', e);
         });
-    } catch (err) {
-      console.error('callRemoteSocketSend: error sending message', err);
-      throw err;
-    }
+        await next;
+        dbg &&
+          dbg('callRemoteSocketSend: sent', {
+            idPreview: (message || '').slice(0, 40)
+          });
+      } catch (err) {
+        console.error('callRemoteSocketSend: error sending message', err);
+        throw err;
+      }
+    };
   }
 
   function attachCommCloseHandler(opts: any) {

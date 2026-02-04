@@ -7,20 +7,41 @@
   },
   "publisher": "local",
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:ggblab.openWebview",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "ggblab.openWebview",
+        "title": "GGBlab: Open Webview",
+        "category": "GGBlab"
+      }
+      ,
+      {
+        "command": "ggblab.dumpKernelComms",
+        "title": "GGBlab: Dump Kernel Comms",
+        "category": "GGBlab"
+      }
+    ]
+  },
   "scripts": {
-    "build:webview": "esbuild webview-src/index.tsx --bundle --outfile=media/bundle.js --loader:.tsx=tsx --loader:.ts=ts --define:process.env.NODE_ENV=\"production\"",
-    "watch:webview": "esbuild webview-src/index.tsx --bundle --outfile=media/bundle.js --loader:.tsx=tsx --loader:.ts=ts --watch",
+    "build:webview": "esbuild webview-src/index.tsx --bundle --outfile=media/bundle.js --loader:.tsx=tsx --loader:.ts=ts --define:process.env.NODE_ENV='\"production\"'",
+    "watch:webview": "esbuild webview-src/index.tsx --bundle --outfile=media/bundle.js --loader:.tsx=tsx --loader:.ts=ts --watch --define:process.env.NODE_ENV='\"production\"'",
     "build": "npm run build:webview && tsc -p ./",
     "watch": "npm run watch:webview & tsc -w -p ./"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
+    "@types/ws": "^8.5.0",
     "esbuild": "^0.18.0",
     "typescript": "^5.4.0"
   },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@jupyterlab/services": "^7.0.0"
+    "@jupyterlab/services": "^7.0.0",
+    "ws": "^8.13.0"
   }
 }

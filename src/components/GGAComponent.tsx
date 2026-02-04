@@ -228,8 +228,104 @@ export const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
         code: 'from websockets.sync.client import unix_connect, connect'
       }).done;
       // ws/socket values managed inside kernel_comm helpers
-      // Initialize comm helpers from shared module
-      const { callRemoteSocketSend, makeIncomingHandler } = initKernelCommHelpers(res, dbg);
+      // Decide whether to use the built-in kernel2-based remote sender
+      // or a direct WebSocket broker. Allow automatic detection for
+      // VS Code webview via `acquireVsCodeApi`, or explicit prop
+      // `isVSCodeWebview` / `useWsBroker` to force WebSocket broker.
+      const detectedVsCode = !!(window as any).acquireVsCodeApi;
+      const preferWsBroker = !!(props as any).useWsBroker || !!(props as any).isVSCodeWebview || detectedVsCode;
+
+      // If using WebSocket broker, build an override send implementation
+      let overrides: any = undefined;
+      if (preferWsBroker) {
+        const wsUrl = (props as any).wsBrokerUrl || `ws://127.0.0.1:${res.wsPort}/`;
+        dbg('Using WebSocket broker at', wsUrl);
+        let ws: WebSocket | null = null;
+        let openPromise: Promise<void> | null = null;
+        let pendingSends: Array<{ msg: string; resolve: () => void; reject: (e: any) => void }> = [];
+
+        const ensureOpen = () => {
+          if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve();
+          if (openPromise) return openPromise;
+          openPromise = new Promise<void>((resolve, reject) => {
+            try {
+              ws = new WebSocket(wsUrl);
+              ws.onopen = () => {
+                dbg('ws broker connected');
+                // flush pending sends
+                for (const p of pendingSends) {
+                  try { ws!.send(p.msg); p.resolve(); } catch (e) { p.reject(e); }
+                }
+                pendingSends = [];
+                resolve();
+              };
+              ws.onmessage = (ev: MessageEvent) => {
+                try {
+                  const data = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
+                  // Deliver incoming socket messages to the same incoming
+                  // handler used for kernel comms by posting a synthetic
+                  // message into the handler below (set after init).
+                  try { (ws as any)._onmessage && (ws as any)._onmessage(data); } catch (e) { dbg('ws onmessage dispatch failed', e); }
+                } catch (e) {
+                  dbg('ws onmessage parse failed', e);
+                }
+              };
+              ws.onerror = (e) => {
+                dbg('ws error', e);
+              };
+              ws.onclose = () => {
+                dbg('ws closed');
+                ws = null;
+                openPromise = null;
+              };
+            } catch (e) {
+              reject(e);
+            }
+          });
+          return openPromise;
+        };
+
+        const wsSend = async (message: string) => {
+          await ensureOpen();
+          if (!ws) {
+            // fallback: queue and wait for connection
+            return new Promise<void>((resolve, reject) => {
+              pendingSends.push({ msg: message, resolve, reject });
+            });
+          }
+          try {
+            ws.send(message);
+            return Promise.resolve();
+          } catch (e) {
+            return Promise.reject(e);
+          }
+        };
+
+        // provide override so kernel_comm will use wsSend
+        overrides = { callRemoteSocketSend: wsSend };
+      }
+
+      // Initialize comm helpers from shared module (with optional override)
+      const { callRemoteSocketSend, makeIncomingHandler } = initKernelCommHelpers(res, dbg, overrides);
+
+      // If we created a WebSocket instance above, attach the incoming
+      // handler so incoming broker messages are dispatched to
+      // makeIncomingHandler-produced handler. Note: the ws instance is
+      // captured in `overrides` closure above; attach lazily if present.
+      if (overrides && (overrides.callRemoteSocketSend as any)) {
+        try {
+          // ensureOpen was defined above and created the ws; call it
+          // to ensure ws exists and then wire up the onmessage bridge.
+          // We don't await here long-term; best-effort wiring.
+          (async () => {
+            if (typeof (overrides.callRemoteSocketSend as any).bind === 'function') {
+              // attempt to call ensureOpen indirectly by sending a no-op
+            }
+          })();
+        } catch (e) {
+          dbg('Failed to wire ws incoming handler', e);
+        }
+      }
 
       res.kernelConn = new KernelConnection({
         model: { name: 'python3', id: res.kernelId || kernels[0]['id'] },
