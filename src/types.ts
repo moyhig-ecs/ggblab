@@ -43,4 +43,3 @@ export interface IRegisterWidgetCommOptions {
   res?: IResources;
   dbg?: (...args: any[]) => void;
 }
-

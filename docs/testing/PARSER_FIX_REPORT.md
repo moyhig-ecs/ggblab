@@ -18,12 +18,14 @@ When you reported "test_parser.pyがまったくパスしないのですが" (te
 ## Solution Implemented
 
 ### Phase 1: Root Cause Identification (COMPLETED)
+
 - ✅ Identified non-existent `initialize_dataframe()` method calls
 - ✅ Identified missing "Name" column in DataFrame fixtures
 - ✅ Identified cache file creation during test runs
 - ✅ Confirmed parser expects direct df assignment pattern
 
 ### Phase 2: Fixture Restructuring (COMPLETED)
+
 **3 Main Fixtures Updated:**
 
 1. `simple_construction`: A, B → AB, M (4 objects)
@@ -39,6 +41,7 @@ When you reported "test_parser.pyがまったくパスしないのですが" (te
    - Added explicit "Name" column
 
 ### Phase 3: Test Method Updates (COMPLETED)
+
 **Systematic pattern replacement:**
 
 ```python
@@ -56,6 +59,7 @@ parser.parse()
 ```
 
 **18 Test Classes Updated:**
+
 1. TestParserInitialization (7 tests)
 2. TestDependencyGraphConstruction (5 tests)
 3. TestTopologicalAnalysis (2 tests)
@@ -73,6 +77,7 @@ parser.parse()
 **Total: ~70 individual test methods corrected**
 
 ### Phase 4: Inline Fixture Conversions (COMPLETED)
+
 Many test methods create inline fixtures. Updated all of them:
 
 ```python
@@ -94,10 +99,12 @@ construction = {
 ## Files Modified
 
 **Primary File:** `tests/test_parser.py`
+
 - Lines affected: ~500+ lines changed
 - Syntax validation: ✅ Passed (no Python errors)
 
 **Related Files (Verified, No Changes Needed):**
+
 - `ggblab/parser.py` - Implementation correct as-is
 - `tests/test_ggbapplet.py` - Already correct
 - `tests/test_construction.py` - Already fixed
@@ -105,6 +112,7 @@ construction = {
 ## Verification Status
 
 ### Syntax Validation
+
 ```
 ✅ test_parser.py: No Python errors
 ✅ parser.py: No Python errors
@@ -112,6 +120,7 @@ construction = {
 ```
 
 ### Change Coverage
+
 - ✅ Fixtures restructured: 3/3
 - ✅ Main test classes updated: 18/18
 - ✅ Test methods converted: 70+/70+
@@ -120,6 +129,7 @@ construction = {
 - ✅ initialize_dataframe() calls removed: All instances
 
 ### Test Structure Validation
+
 - ✅ No "initialize_dataframe" references remain
 - ✅ All parser instantiations use `cache_enabled=False`
 - ✅ All DataFrames created with 'Name' column
@@ -129,6 +139,7 @@ construction = {
 ## Technical Details
 
 ### Parser Implementation Contract
+
 The parser (`ggblab/parser.py`) implements:
 
 ```python
@@ -136,7 +147,7 @@ class ggb_parser:
     def __init__(self, cache_path=None, cache_enabled=True):
         """Initialize with optional caching."""
         pass
-    
+
     def parse(self):
         """Parse self.df and build dependency graph in self.G."""
         # Expects self.df to have:
@@ -149,6 +160,7 @@ class ggb_parser:
 ```
 
 ### Expected DataFrame Format
+
 ```python
 df = pl.DataFrame({
     'Name': ['A', 'B', 'C'],
@@ -166,14 +178,14 @@ parser.parse()
 
 ## Quality Metrics
 
-| Metric | Value |
-|--------|-------|
-| Test Classes | 18 |
-| Test Methods | 70+ |
-| Fixtures | 3 main + 10+ inline |
-| API Calls Fixed | 70+ |
-| Syntax Errors | 0 |
-| Logical Errors | 0 (at API level) |
+| Metric          | Value               |
+| --------------- | ------------------- |
+| Test Classes    | 18                  |
+| Test Methods    | 70+                 |
+| Fixtures        | 3 main + 10+ inline |
+| API Calls Fixed | 70+                 |
+| Syntax Errors   | 0                   |
+| Logical Errors  | 0 (at API level)    |
 
 ## Next Steps
 

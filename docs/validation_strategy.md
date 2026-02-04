@@ -37,7 +37,8 @@ await ggb.command("Circle(A, B)")  # ✓ Both A and B exist
 await ggb.command("Circle(A, C)")  # ✗ GeoGebraSemanticsError: C not found
 ```
 
-**Implementation**: 
+**Implementation**:
+
 1. Tokenizes the command
 2. Extracts tokens that look like object identifiers (start with letter)
 3. Checks against `_applet_objects` cache (updated by `command()` and `refresh_object_cache()`)
@@ -51,6 +52,7 @@ GeoGebra does not publicly maintain a machine-readable schema of available comma
 ### 2. Official Source is Outdated
 
 The [official GeoGebra GitHub repository](https://github.com/geogebra/geogebra) is significantly outdated:
+
 - Missing newer APIs like `evalCommandGetLabels()`
 - Command signatures may differ from the live version
 - No versioning tied to specific GeoGebra releases
@@ -84,13 +86,15 @@ Once GeoGebra publishes command metadata (or if internal inspection APIs become 
 
 An alternative approach that leverages GeoGebra's error feedback directly:
 
-**Mechanism**: 
+**Mechanism**:
+
 - GeoGebra's applet displays popup error dialogs for invalid commands
 - These error messages are forwarded to the kernel as events with `type: Error`
 - Errors accumulate in `ggb.comm.recv_events.queue` for inspection
 - The `command()` method could monitor this queue after execution
 
 **Proposed Implementation**:
+
 1. Execute the command asynchronously
 2. Poll `recv_events.queue` for Error events within a timeout window
 3. Parse the error message from GeoGebra (e.g., "Object B not found", "Type mismatch", etc.)
@@ -98,12 +102,14 @@ An alternative approach that leverages GeoGebra's error feedback directly:
 5. Optionally re-raise as a more informative `GeoGebraSemanticsError`
 
 **Advantages**:
+
 - Uses GeoGebra's actual behavior rather than a static schema
 - Automatically stays in sync with GeoGebra's current implementation
 - Captures error messages in user's language if supported
 - No maintenance of command metadata needed
 
 **Challenges**:
+
 - Requires parsing variable error message formats
 - Error dialogs may not always be shown (depends on GeoGebra settings)
 - Adds latency (must wait for error dialog to appear)
@@ -116,6 +122,7 @@ An alternative approach that leverages GeoGebra's error feedback directly:
 ### Object Filtering
 
 The semantic validator filters tokens to identify likely object names:
+
 - Must start with a letter (excludes operators, numbers)
 - Excludes reserved keywords like `true`, `false`
 - Only tokens that match this heuristic are checked
@@ -125,6 +132,7 @@ This avoids false positives on operators and literals.
 ### Performance
 
 Object existence checks are O(1) against the `_applet_objects` set. The cache is:
+
 - Initialized in `init()` via `refresh_object_cache()`
 - Updated automatically after successful `command()` calls
 - Refreshable manually via `refresh_object_cache()`
@@ -134,6 +142,7 @@ For performance-critical applications, disable validation or batch commands.
 ### Error Event Queue Structure
 
 The kernel's event receiver maintains an error queue in `ggb.comm.recv_events.queue`. Error events are labeled with `type: Error` and contain:
+
 - Error message from GeoGebra's applet popup
 - Timestamp
 - Context about which command or operation triggered the error
@@ -143,6 +152,7 @@ Future passive validation implementations can inspect this queue to provide enha
 ### Error Information
 
 `GeoGebraSemanticsError` includes:
+
 - `error.command`: The command that failed
 - `error.message`: Explanation of the error
 - `error.missing_objects`: List of referenced but non-existent objects (if applicable)

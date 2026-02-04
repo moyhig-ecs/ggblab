@@ -3,12 +3,14 @@
 ## Roadmap Overview (docs alignment)
 
 This TODO consolidates Roadmap and Future Works from:
+
 - [docs/philosophy.md](docs/philosophy.md) — Tiers 1–5 (education-first)
 - [docs/scoping.md](docs/scoping.md) — Pedagogical roadmap (v0.8–v1.2)
 - [docs/architecture.md](docs/architecture.md) — Communication design, launch strategy, testing, parser
 - [docs/sympy_integration.md](docs/sympy_integration.md) — SymPy bridge roadmap (v1.1+)
 
 Version focus:
+
 - ✅ **v0.7.3**: Unit test coverage, parser fix, error handling, CI/CD pipeline
 - v0.8–v1.0: Scene Timeline, launch strategy, error UX, strict types
 - v1.0–v1.5: Manim export, numerical integration wrappers
@@ -48,7 +50,7 @@ Version focus:
 
 ### ✅ Documentation Updates
 
-- ✅ **README.md**: 
+- ✅ **README.md**:
   - Added CI/CD badge
   - Updated testing section with GitHub Actions reference
   - Marked as ✅ completed: Unit tests, CI/CD pipeline
@@ -75,6 +77,7 @@ Version focus:
 **Refs**: [docs/philosophy.md § Tier 2](docs/philosophy.md), [docs/architecture.md § Widget Launch Strategy](docs/architecture.md)
 
 **Actions**:
+
 - [ ] v0.8: Implement `SceneTimeline` class (snapshot capture, store metadata)
 - [ ] v0.9: Add timeline navigation and playback in Jupyter
 - [ ] v0.8: Programmatic launch via ipylab `GeoGebra().init()` passing Comm target + socket settings
@@ -87,6 +90,7 @@ Version focus:
 **Refs**: [docs/philosophy.md § Tier 3](docs/philosophy.md), [docs/scoping.md § Parameter Sweeps](docs/scoping.md)
 
 **Actions**:
+
 - [ ] v0.9: Python wrappers for scipy ODEs → GeoGebra point lists
 - [ ] v0.9: Numpy ↔ GeoGebra conversions (point lists, curves)
 - [ ] v1.0: Parameter sweep utilities; record to `SceneTimeline`
@@ -99,6 +103,7 @@ Version focus:
 **Refs**: [docs/sympy_integration.md](docs/sympy_integration.md)
 
 **Actions**:
+
 - [ ] v1.1: Conversion layer `geogrebra_to_sympy()` and `sympy_to_geogrebra()`
 - [ ] v1.1: Verification APIs (`verify_collinearity`, `verify_concyclicity`, `verify_perpendicular`, `verify_property`)
 - [ ] v1.2: Code generation (`to_python_code`, `to_construction_string`)
@@ -111,6 +116,7 @@ Version focus:
 **Refs**: [docs/philosophy.md § Tier 2.5](docs/philosophy.md)
 
 **Actions**:
+
 - [ ] v1.0: `SceneTimeline.to_manim_script()` generates Scene class
 - [ ] v1.0: Geometry extraction from snapshots → manim primitives
 - [ ] v1.5: `SceneTimeline.render_video()` orchestrates `manim render` (MP4/GIF)
@@ -123,6 +129,7 @@ Version focus:
 **Refs**: [docs/architecture.md § Dependency Parser Architecture](docs/architecture.md#dependency-parser-architecture), [docs/philosophy.md § Parser: Rationale & Sunset](docs/philosophy.md)
 
 **Actions**:
+
 - [ ] v1.0: Replace `parse_subgraph()` with topological pruning approach (O(n(n+m)))
 - [ ] v1.0: Unit tests: chains, diamonds, N-ary, large graphs (50+ nodes)
 - [ ] v1.1: Deprecate/remove `parse_subgraph()` unless strong use case emerges
@@ -134,12 +141,14 @@ Version focus:
 **Refs**: [docs/architecture.md § Future Error Handling Improvements](docs/architecture.md)
 
 **Completed (v0.7.3)**:
+
 - ✅ Convert timeout to Python exception with context (command, timestamp)
 - ✅ Support custom timeout via `GeoGebra(timeout=5.0)` and per-call overrides
 - ✅ Hook GeoGebra dialog events; forward structured error via Comm
 - ✅ Basic retry logic (1 retry, 100ms backoff) for transient socket failures
 
 **Remaining (v0.8+)**:
+
 - [ ] v0.8: Enhanced error recovery strategies
 - [ ] v0.9: User-facing error dialogs in widget (not console-only)
 
@@ -151,6 +160,7 @@ Version focus:
 **Refs**: [AGENTS.md § Type Safety](AGENTS.md)
 
 **Actions**:
+
 - [ ] v0.8: Enable TypeScript strict mode; remove `any`
 - [ ] v0.8: Lightweight arg validation in `GeoGebra.command()` and `GeoGebra.function()`
 - [ ] v0.8: JSDoc/docstrings for all public TS/Python APIs
@@ -163,6 +173,7 @@ Version focus:
 **Refs**: [docs/architecture.md § Testing Strategies](docs/architecture.md)
 
 **Actions**:
+
 - [ ] v0.8: Add GitHub Actions `.github/workflows/ci.yml` (lint, unit, integration)
 - [ ] v0.8: Backend tests (`tests/test_comm.py`, parser tests incl. performance)
 - [ ] v0.8: Frontend unit tests; optional Playwright/Galata integration
@@ -176,6 +187,7 @@ Version focus:
 **Files**: [src/widget.tsx](src/widget.tsx), [ggblab/ggbapplet.py](ggblab/ggbapplet.py), [schema/plugin.json](schema/plugin.json)
 
 **Actions**:
+
 - [ ] v0.8: Constructor options `GeoGebra(comm_target='custom', timeout=5.0)`
 - [ ] v0.8: Populate [schema/plugin.json](schema/plugin.json) with user-configurable options
 - [ ] v0.9: JupyterLab settings UI (Comm target, socket timeout)
@@ -187,6 +199,7 @@ Version focus:
 **Files**: [ggblab/ggbapplet.py](ggblab/ggbapplet.py), [src/widget.tsx](src/widget.tsx)
 
 **Actions**:
+
 - [ ] v1.0: Structured logging (JSON) for major operations
 - [ ] v1.0: Latency metrics (command/func exec time, socket round-trip)
 - [ ] v1.0: Optional telemetry endpoint (privacy-respecting)

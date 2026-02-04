@@ -1,0 +1,31 @@
+import React, { useEffect, useRef } from 'react';
+
+// Minimal, clean placeholder component to restore a syntactically-valid file.
+export interface IGGAWidgetProps {
+  kernelId?: string;
+  commTarget?: string;
+  insertMode?: any;
+  wsPort?: number;
+  socketPath?: string | null;
+  appName?: string;
+  widgetManager?: any;
+}
+
+export const GGAComponent = (_props: IGGAWidgetProps): JSX.Element => {
+  const widgetRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Intentionally minimal: real implementation can be reintroduced incrementally.
+    return () => {
+      // cleanup placeholder
+      const el = widgetRef.current;
+      if (el) {
+        // nothing to clean currently
+      }
+    };
+  }, []);
+
+  return <div ref={widgetRef} style={{ width: '100%', height: '100%' }} />;
+};
+
+export default GGAComponent;

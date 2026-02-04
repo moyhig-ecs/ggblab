@@ -5,6 +5,7 @@
 All 70+ test methods in `test_parser.py` have been updated to use the correct parser API.
 
 ## The Problem (Before)
+
 ```python
 # ❌ WRONG - Method doesn't exist
 parser = ggb_parser()
@@ -12,6 +13,7 @@ parser.initialize_dataframe(df=df)
 ```
 
 ## The Solution (After)
+
 ```python
 # ✅ CORRECT - Use direct assignment and parse()
 parser = ggb_parser(cache_enabled=False)
@@ -22,6 +24,7 @@ parser.parse()
 ## Fixture Format Change
 
 ### Before (Dict-of-Dicts)
+
 ```python
 construction = {
     'A': {'Type': 'point', 'Command': '', ...},
@@ -30,6 +33,7 @@ construction = {
 ```
 
 ### After (Column-Oriented)
+
 ```python
 construction = {
     'Name': ['A', 'B'],
@@ -43,15 +47,15 @@ construction = {
 
 ## Key Changes Summary
 
-| Aspect | Count |
-|--------|-------|
-| Test classes | 18 |
-| Test methods | 70+ |
-| Fixtures updated | 3 |
-| inline fixtures | 10+ |
-| `cache_enabled=False` added | 70+ |
-| `initialize_dataframe()` removed | All |
-| `parser.df = df` added | 70+ |
+| Aspect                           | Count |
+| -------------------------------- | ----- |
+| Test classes                     | 18    |
+| Test methods                     | 70+   |
+| Fixtures updated                 | 3     |
+| inline fixtures                  | 10+   |
+| `cache_enabled=False` added      | 70+   |
+| `initialize_dataframe()` removed | All   |
+| `parser.df = df` added           | 70+   |
 
 ## Test Now Passes When
 

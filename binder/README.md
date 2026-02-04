@@ -11,5 +11,6 @@ This repository includes Binder configuration to let you try the `examples` note
 - If you want to run a different example, update the `filepath` query parameter to point to the desired notebook under `examples/`.
 
 Notes:
+
 - The build runs `binder/postBuild`, which installs the package. If you need additional system packages, add them to `binder/apt.txt`.
 - For heavy optional dependencies used in some examples, consider adding them to `binder/requirements.txt` to speed interactive use.

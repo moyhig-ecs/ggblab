@@ -1,10 +1,12 @@
 # セッションまとめ — 2026-01-24
 
 概要:
+
 - 対象: ggblab リポジトリ（JupyterLab拡張）
 - 目的: ブラウザ再読み込み後のパネル復元、フロントエンド/バックエンド間通信の安定化、デバッグ性改善
 
 主な変更点:
+
 1. フロントエンド
    - `src/index.ts`: Widget ID を事前に計算し、同一IDの既存パネルがあれば `close()` → `tracker.remove()` してから新規作成するように変更（パネル重複対策）。
    - `src/widget.tsx`: `callRemoteSocketSend` を直列化（Promiseチェーン）し、各送信間に約40msの遅延を追加。これにより GeoGebra イベントリスナーの多重発火時に kernel 側の `requestExecute` が詰まる問題を緩和。
@@ -22,16 +24,19 @@
    - `package.json` と `ggblab/_version.py` を `1.1.0` にバンプ。annotated tag `v1.1.0` を作成してリモートにプッシュ済み。
 
 観測・デバッグ上の注意点:
+
 - Jupyter の IPython Comm はセル実行中に受信できない制約があるため、OOB（out-of-band）ソケットを採用している。OOB は接続/切断を行う短命接続モデルで、永続接続を維持する設計ではない。
 - ログはまだグローバル／クラス変数（`ggb_comm.logs` 等）に蓄えられる実装で、Jupyter セッション境界の制約上やむを得ない面がある。必要なら `get_logs()` やファイル出力の追加を検討推奨。
 
 残タスク / 推奨次手順:
+
 - 静的チェック（TypeScript/ESLint）と Python 単体テストの実行（`pytest`）。
 - `send_recv` のウォッチドッグのタイムアウト値を運用状況に合わせて調整。
 - ログを永続化する（`logging` + `RotatingFileHandler`）か、ノイズ低減のためログレベルを調整。
 - 大きなリファクタ案: Tornado/ioloop を用いて OOB サーバを Jupyter の IOLoop に統合し、スレッド境界を除去する（将来的検討）。
 
 作業履歴（主要コミット／操作）:
+
 - フロントエンド修正: `src/index.ts`, `src/widget.tsx`
 - バックエンド修正: `ggblab/ggblab/comm.py`
 - ドキュメント更新: `README.md`

@@ -13,6 +13,7 @@ The ggblab scoping system manages geometric object visibility and accessibility 
 ### Layer-Based Visibility
 
 GeoGebra's construction protocol includes layer information (0-9, default 0). Objects on different layers can be:
+
 - Hidden/shown independently
 - Used to organize complexity
 - Mapped to Python scope levels (global → function → nested)
@@ -20,6 +21,7 @@ GeoGebra's construction protocol includes layer information (0-9, default 0). Ob
 ### Dependency-Driven Scoping
 
 The parser's dependency graph naturally forms a scope tree:
+
 ```
 Root objects (global scope)
   ├─ Point A
@@ -38,16 +40,19 @@ Objects can only reference their ancestors and siblings in this tree.
 ## Implementation Strategy
 
 ### Phase 1: Passive Tracking (Current)
+
 - Track object creation via `command()` responses
 - Cache visible objects in `_applet_objects`
 - Validate references against cached set
 
 ### Phase 2: Layer-Based Scoping (Planned)
+
 - Extract layer information from construction protocol
 - Group objects by layer in the dependency graph
 - Validate references respect layer visibility
 
 ### Phase 3: Scope Tree Navigation (Future)
+
 - Build a scope tree mirroring dependency relationships
 - Support queries like "all objects derived from A" or "all objects in scope of B"
 - Enable partial construction extraction respecting scope
@@ -75,6 +80,7 @@ Distance(obj1: GeometricObject, obj2: GeometricObject) -> Number
 ## Data Structures
 
 ### ObjectMetadata
+
 ```python
 class ObjectMetadata:
     name: str           # 'A', 'circle1', etc.
@@ -86,6 +92,7 @@ class ObjectMetadata:
 ```
 
 ### ScopeContext
+
 ```python
 class ScopeContext:
     visible_objects: set  # Objects visible in current scope
@@ -96,14 +103,17 @@ class ScopeContext:
 ## Validation Rules (Progressive)
 
 ### Current (Phase 1)
+
 - ✅ Object existence: referenced object is in applet
 
 ### Planned (Phase 2)
+
 - ⏳ Layer visibility: object's layer is visible
 - ⏳ Type compatibility: command argument matches expected type
 - ⏳ Arity checking: correct number of arguments
 
 ### Future (Phase 3)
+
 - ⏳ Scope accessibility: object is in accessible scope
 - ⏳ Circularity detection: prevent circular dependencies
 - ⏳ Reachability: ensure all object references are derivable
@@ -111,34 +121,38 @@ class ScopeContext:
 ## Integration Points
 
 ### GeoGebra XML Protocol
+
 - Layer information available in `<construction>` element
 - Object metadata in `<element>` tags with `type` and `layer` attributes
 - Command strings in `Command` attribute
 
 ### Parser Integration
+
 - `ggb_parser.parse()` can extract metadata
 - Store metadata in DataFrame alongside protocol
 - Use for scope-aware subgraph extraction
 
 ### Validation in command()
+
 ```python
 async def command(self, c):
     if self.check_semantics:
         # Existing: object existence
         validate_object_existence(c)
-        
+
         # Phase 2: layer visibility
         # validate_layer_visibility(c)
-        
+
         # Phase 2: type compatibility
         # validate_command_types(c)
-        
+
     await self.comm.send_recv(...)
 ```
 
 ## Error Handling
 
 ### GeoGebraScopeError (Future)
+
 ```python
 class GeoGebraScopeError(GeoGebraSemanticsError):
     """Object reference violates scope rules."""
@@ -150,7 +164,7 @@ class GeoGebraScopeError(GeoGebraSemanticsError):
 
 1. **Unit tests**: Scope tree construction from sample protocols
 2. **Integration tests**: Command validation in scoped contexts
-3. **Edge cases**: 
+3. **Edge cases**:
    - Empty construction
    - Single object (no dependencies)
    - Circular-like references (e.g., reflected points)

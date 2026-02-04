@@ -47,5 +47,4 @@ res = await ggb.sympy.verify("Circle(A,B) is tangent to Line(C,D)")
 For full implementation details and examples, consult the `ggblab_extra`
 package documentation or install the extras locally and copy their docs into
 `docs/ggblab_extra/`.
-
 ````
