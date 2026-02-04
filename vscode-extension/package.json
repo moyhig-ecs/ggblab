@@ -1,0 +1,26 @@
+{
+  "name": "ggblab-vscode",
+  "displayName": "GGBlab Viewer",
+  "version": "0.0.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "publisher": "local",
+  "main": "./out/extension.js",
+  "scripts": {
+    "build:webview": "esbuild webview-src/index.tsx --bundle --outfile=media/bundle.js --loader:.tsx=tsx --loader:.ts=ts --define:process.env.NODE_ENV=\"production\"",
+    "watch:webview": "esbuild webview-src/index.tsx --bundle --outfile=media/bundle.js --loader:.tsx=tsx --loader:.ts=ts --watch",
+    "build": "npm run build:webview && tsc -p ./",
+    "watch": "npm run watch:webview & tsc -w -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "esbuild": "^0.18.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@jupyterlab/services": "^7.0.0"
+  }
+}
