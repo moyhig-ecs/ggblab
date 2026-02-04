@@ -1,13 +1,11 @@
 // comm helper functions inlined from kernel_comm.ts to reduce indirection
-import { ReactWidget } from '@jupyterlab/ui-components';
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
 
 import { ServerConnection, KernelAPI, KernelConnection, KernelManager } from '@jupyterlab/services';
 import { initKernelCommHelpers } from '../kernel_comm';
 import { PageConfig } from '@jupyterlab/coreutils';
-import { DockLayout, Widget } from '@lumino/widgets';
-import { Message } from '@lumino/messaging';
+// Lumino types and wrappers are provided in src/lumino/GeoGebraWidget.tsx
 import type { WidgetManagerType } from '../widgetManager';
 import { registerWidgetCommTargets } from '../widgetManager';
 import type { IAppletApi, IResources } from '../types';
@@ -855,65 +853,12 @@ export const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 export interface IGGAWidgetProps {
   kernelId?: string;
   commTarget?: string;
-  insertMode?: DockLayout.InsertMode;
+  insertMode?: string;
   wsPort?: number;
   socketPath?: string;
   appName?: string;
   // Optional WidgetManager module or instance provided by the plugin activation
   widgetManager?: WidgetManagerType;
-}
-
-/**
- * A GeoGebra Lumino Widget that wraps a GeoGebraComponent.
- */
-export class GeoGebraWidget extends ReactWidget {
-  private props: IGGAWidgetProps | undefined;
-
-  /**
-   * Constructs a new GeoGebraWidget.
-   */
-  constructor(props?: IGGAWidgetProps) {
-    super();
-    this.addClass('jp-ggblabWidget');
-    this.props = props;
-  }
-
-  render(): JSX.Element {
-    return (
-      <GGAComponent
-        kernelId={this.props?.kernelId}
-        commTarget={this.props?.commTarget}
-        wsPort={this.props?.wsPort}
-        socketPath={this.props?.socketPath}
-        appName={this.props?.appName}
-        widgetManager={this.props?.widgetManager}
-      />
-    );
-  }
-
-  // only onResize is responsible for size changes in Lumino,
-  // but onAfterAttach and onAfterShow and onFitRequest may also be relevant in some cases.
-  protected onResize(msg: Widget.ResizeMessage): void {
-    // console.log("GeoGebraWidget resized:", msg.width, msg.height);
-    window.dispatchEvent(new Event('resize'));
-    super.onResize(msg);
-  }
-
-  // Only perform cleanup when the widget is explicitly closed by the user.
-  // Use onCloseRequest to trigger cleanup so that transient disposals
-  // during layout/restore operations do not tear down the internal state.
-  protected onCloseRequest(msg: Message): void {
-    dbg('GeoGebraWidget onCloseRequest — performing cleanup.');
-    window.dispatchEvent(new Event('close'));
-    super.onCloseRequest(msg);
-  }
-
-  // dispose should not trigger cleanup again; allow normal disposal to proceed
-  // without duplicating shutdown logic.
-  dispose(): void {
-    dbg('GeoGebraWidget disposed.');
-    super.dispose();
-  }
 }
 
 // // Example of attaching the GeoGebraWidget to a DockPanel
