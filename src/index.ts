@@ -1,8 +1,4 @@
-import {
-  ILayoutRestorer,
-  JupyterFrontEnd,
-  JupyterFrontEndPlugin
-} from '@jupyterlab/application';
+import { ILayoutRestorer, JupyterFrontEnd, JupyterFrontEndPlugin } from '@jupyterlab/application';
 import { MainAreaWidget, WidgetTracker } from '@jupyterlab/apputils';
 // ILauncher removed: launcher integration is not used in this build
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
@@ -10,10 +6,7 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
-import {
-  createWidgetManager,
-  registerGlobalGGBlabCommTargets
-} from './widgetManager';
+import { createWidgetManager, registerGlobalGGBlabCommTargets } from './widgetManager';
 
 /**
  * Legacy/compatibility note:
@@ -47,11 +40,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'A JupyterLab extension.',
   autoStart: true,
   optional: [ISettingRegistry, ILayoutRestorer],
-  activate: (
-    app: JupyterFrontEnd,
-    settingRegistry: ISettingRegistry | null,
-    restorer: ILayoutRestorer | null
-  ) => {
+  activate: (app: JupyterFrontEnd, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null) => {
     console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
     // Pragmatic global registration (option B): register a `jupyter.ggblab`
@@ -63,9 +52,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
       .then(unreg => {
         _unregisterGlobalGGBlab = unreg;
       })
-      .catch(e =>
-        console.warn('Failed to register global ggblab comm targets', e)
-      );
+      .catch(e => console.warn('Failed to register global ggblab comm targets', e));
 
     // Ensure we clean up registrations when the page unloads to avoid
     // leaving dangling front-end KernelConnection objects.
@@ -88,6 +75,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     // Tracker for created GeoGebra widgets so they can be restored after reload
     // cross-package Lumino types may differ in consumers
+    // @ts-ignore -- cross-package @lumino type mismatch; acceptable at runtime
     const tracker = new WidgetTracker<MainAreaWidget<GeoGebraWidget>>({
       namespace: 'ggblab-tracker'
     });
@@ -140,6 +128,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           widgetManager: widgetManager
         });
         // cross-package Lumino Title/Layout type mismatch
+        // @ts-ignore -- cross-package @lumino type mismatch; acceptable at runtime
         const widget = new MainAreaWidget<GeoGebraWidget>({ content });
         // make widget id unique so restorer can identify it later
         widget.id = widgetId;
@@ -182,9 +171,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const p = content.props || {};
           // Fallback to reconstructing kernelId from the widget id if not present
           const id = widget.id || '';
-          const kernelId =
-            p.kernelId ||
-            (id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '');
+          const kernelId = p.kernelId || (id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '');
           return {
             kernelId,
             commTarget: p.commTarget || '',

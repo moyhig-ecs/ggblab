@@ -5,15 +5,8 @@
 export type KernelCommHelpers = {
   callRemoteSocketSend: (message: string) => Promise<void>;
   ensureKernelComm: (opts: any) => Promise<any | null>;
-  attachCommCloseHandler: (opts: {
-    c: any;
-    setClosed: (b: boolean) => void;
-    commTarget: string;
-    dbg?: any;
-  }) => void;
-  makeIncomingHandler: (
-    processCommandMessage: (cmd: any) => Promise<string>
-  ) => (msg: any) => Promise<void>;
+  attachCommCloseHandler: (opts: { c: any; setClosed: (b: boolean) => void; commTarget: string; dbg?: any }) => void;
+  makeIncomingHandler: (processCommandMessage: (cmd: any) => Promise<string>) => (msg: any) => Promise<void>;
 };
 
 export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
@@ -72,11 +65,7 @@ with connect("${wsUrl}") as ws:
       (c as any).onClose = (m: any) => {
         try {
           setClosed(true);
-          const closedId =
-            (m && m.content && m.content.comm_id) ||
-            (c as any)?.comm_id ||
-            (c as any)?.commId ||
-            null;
+          const closedId = (m && m.content && m.content.comm_id) || (c as any)?.comm_id || (c as any)?.commId || null;
           _dbg &&
             _dbg('Kernel comm closed', {
               target: commTarget,
@@ -106,11 +95,7 @@ with connect("${wsUrl}") as ws:
       }
       res.comm = kconn.createComm(ct);
       try {
-        const maybeId =
-          (res.comm as any)?.comm_id ||
-          (res.comm as any)?.commId ||
-          (res.comm as any)?.id ||
-          null;
+        const maybeId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || (res.comm as any)?.id || null;
         _dbg &&
           _dbg('Recreated kernel comm', {
             target: ct,
@@ -131,8 +116,7 @@ with connect("${wsUrl}") as ws:
         _dbg && _dbg('Failed to attach close handler to recreated comm', err);
       }
       try {
-        (res.comm as any).open &&
-          (res.comm as any).open('REOPEN from GGB').done;
+        (res.comm as any).open && (res.comm as any).open('REOPEN from GGB').done;
       } catch (err) {
         _dbg && _dbg('Failed to open recreated comm', err);
       }
@@ -143,9 +127,7 @@ with connect("${wsUrl}") as ws:
     }
   }
 
-  function makeIncomingHandler(
-    processCommandMessage: (cmd: any) => Promise<string>
-  ) {
+  function makeIncomingHandler(processCommandMessage: (cmd: any) => Promise<string>) {
     let commClosed = false;
 
     const attachCommCloseHandlerLocal = (c: any) =>
@@ -183,8 +165,7 @@ with connect("${wsUrl}") as ws:
         }
 
         try {
-          const cId =
-            (res.comm as any)?.comm_id || (res.comm as any)?.commId || null;
+          const cId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || null;
           _dbg('Sending via kernel comm', {
             commTarget: res.commTarget,
             commId: cId,
@@ -211,23 +192,17 @@ with connect("${wsUrl}") as ws:
             try {
               res.comm.send(rmsg);
             } catch (e) {
-              _dbg(
-                'Failed to send via kernel comm, will still attempt remote socket send',
-                e,
-                { rmsgPreview: (rmsg || '').slice(0, 200) }
-              );
+              _dbg('Failed to send via kernel comm, will still attempt remote socket send', e, {
+                rmsgPreview: (rmsg || '').slice(0, 200)
+              });
             }
           } else {
-            _dbg(
-              'No kernel comm available to send reply; will mirror via remote socket'
-            );
+            _dbg('No kernel comm available to send reply; will mirror via remote socket');
           }
         } catch (e) {
-          _dbg(
-            'Failed to send via kernel comm, will still attempt remote socket send',
-            e,
-            { rmsgPreview: (rmsg || '').slice(0, 200) }
-          );
+          _dbg('Failed to send via kernel comm, will still attempt remote socket send', e, {
+            rmsgPreview: (rmsg || '').slice(0, 200)
+          });
         }
         await callRemoteSocketSend(rmsg);
       } catch (e) {

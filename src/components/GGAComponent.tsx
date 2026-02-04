@@ -1,18 +1,9 @@
-// Original widget.tsx (v1.3.4) cloned for backup/inspection.
-// This file is a snapshot of the legacy implementation and is not
-// compiled by the current build (kept under /backup to avoid tsconfig.
-
 // comm helper functions inlined from kernel_comm.ts to reduce indirection
 import { ReactWidget } from '@jupyterlab/ui-components';
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
 
-import {
-  ServerConnection,
-  KernelAPI,
-  KernelConnection,
-  KernelManager
-} from '@jupyterlab/services';
+import { ServerConnection, KernelAPI, KernelConnection, KernelManager } from '@jupyterlab/services';
 import { initKernelCommHelpers } from '../kernel_comm';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { DockLayout, Widget } from '@lumino/widgets';
@@ -34,10 +25,7 @@ function dbg(...args: any[]) {
 }
 
 export function isArrayOfArrays(value: any): boolean {
-  return (
-    Array.isArray(value) &&
-    value.every((subArray: any) => Array.isArray(subArray))
-  );
+  return Array.isArray(value) && value.every((subArray: any) => Array.isArray(subArray));
 }
 
 /**
@@ -45,23 +33,63 @@ export function isArrayOfArrays(value: any): boolean {
  *
  * @returns The React component
  */
-export const GGAComponent = (props: any): JSX.Element => {
+export const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
+  // const [kernels, setKernels] = React.useState<any[]>([]);
   const widgetRef = useRef<HTMLDivElement>(null);
+  // const [size, setSize] = useState<{width: number; height: number}>({width: 800, height: 600});
 
-  dbg(
-    'Component props: ',
-    props.kernelId,
-    props.commTarget,
-    props.socketPath,
-    props.wsPort
-  );
+  // The following `useState` + resize-listener is intentionally commented out.
+  // Lumino's layout and `onResize` handling are the primary resize signals
+  // for this widget; the code is kept as a reference for future experiments
+  // (ResizeObserver and alternate strategies were unreliable across themes).
+  // // Listen to resize events to update size state
+  // // but not working as expected in Lumino
+  //   useEffect(() => {
+  //     window.addEventListener('resize', () => {
+  //     if (widgetRef.current) {
+  //         setSize({
+  //             width: widgetRef.current.offsetWidth,
+  //             height: widgetRef.current.offsetHeight,
+  //         });
+  //         console.log("Resized to:", size.width, size.height);
+  //     }
+  //     });
+  //   }, []);
+
+  dbg('Component props: ', props.kernelId, props.commTarget, props.socketPath, props.wsPort);
+  // window.dispatchEvent(new Event('resize'));
 
   const elementId = 'ggb-element-' + (props?.kernelId || '').substring(0, 8);
   dbg('Element ID:', elementId);
 
   let applet: any = null;
+  // use exported `isArrayOfArrays`
+
+  /**
+   * Calls a remote procedure on kernel2 to send a message via remote socket between kernel2 to kernel.
+   * Executes Python code on kernel2 that sends the message through either a unix socket or websocket.
+   *
+   * Note on WebSocket Connection Handling:
+   * Previous attempts to maintain persistent websocket connections using ping/pong (keep-alive)
+   * were unsuccessful. Websocket connections established via kernel2.requestExecute() execute
+   * within isolated contexts that are torn down immediately after the code execution completes.
+   * Even with ping/pong mechanisms, connections would be disconnected once the kernel's
+   * requestExecute() context ended. Therefore, the implementation creates new socket connections
+   * for each message send operation, which is more reliable than attempting to maintain
+   * persistent but fragile connections.
+   *
+   * @param kernel2 - The kernel to execute the remote procedure on
+   * @param message - The message to send (as a JSON string)
+   * @param socketPath - Optional unix socket path (if provided, uses unix socket; otherwise uses websocket)
+   * @param wsUrl - WebSocket URL (used if socketPath is not provided)
+   */
+  // `sendChain` handled inside kernel_comm helpers when initialized.
 
   useEffect(() => {
+    // Move frequently-used props into the resource bag for consistency
+
+    // Resource bag: consolidate disposable resources into a single
+    // object with a `dispose()` helper so teardown is consistent.
     class Resources implements IResources {
       kernelId: string;
       commTarget: string;
@@ -73,20 +101,17 @@ export const GGAComponent = (props: any): JSX.Element => {
       comm: any = null;
       widgetComm: any = null;
       appletApi: IAppletApi | null = null;
+      // unregister function returned by `registerWidgetCommTargets`
       unregisterWidgetCommTargets: (() => void) | null = null;
       observer: MutationObserver | null = null;
       resizeHandler: (() => void) | null = null;
       closeHandler: (() => void) | null = null;
       metaViewport: HTMLMetaElement | null = null;
       scriptTag: HTMLScriptElement | null = null;
+      // store last-seen string values for objects to suppress redundant updates
       _lastValues: { [name: string]: string | null } = {};
 
-      constructor(
-        kernelId: string,
-        commTarget: string,
-        socketPath: string | null,
-        wsPort: number
-      ) {
+      constructor(kernelId: string, commTarget: string, socketPath: string | null, wsPort: number) {
         this.kernelId = kernelId;
         this.commTarget = commTarget;
         this.socketPath = socketPath;
@@ -163,6 +188,7 @@ export const GGAComponent = (props: any): JSX.Element => {
           }
 
           try {
+            // call the unregister function if present
             this.unregisterWidgetCommTargets?.();
             this.unregisterWidgetCommTargets = null;
           } catch (err) {
@@ -205,8 +231,7 @@ export const GGAComponent = (props: any): JSX.Element => {
       }).done;
       // ws/socket values managed inside kernel_comm helpers
       // Initialize comm helpers from shared module
-      const { callRemoteSocketSend, makeIncomingHandler } =
-        initKernelCommHelpers(res, dbg);
+      const { callRemoteSocketSend, makeIncomingHandler } = initKernelCommHelpers(res, dbg);
 
       res.kernelConn = new KernelConnection({
         model: { name: 'python3', id: res.kernelId || kernels[0]['id'] },
@@ -217,15 +242,19 @@ export const GGAComponent = (props: any): JSX.Element => {
       // Kernel comm lifecycle is managed inside kernel_comm helpers
 
       // Process a parsed command and return the reply message string.
+      // This function lives in the same `useEffect` scope so it can be
+      // called from multiple places (including outside
+      // `handleIncomingCommMessage`). It captures `appletApi` and other
+      // surrounding variables as needed.
       const processCommandMessage = async (command: any): Promise<string> => {
         let rmsg: any = null;
 
+        // Handler dictionary for command types. Keep each handler focused
+        // on producing the reply payload; the common send/mirroring logic
+        // is handled by the caller.
         const handlers: { [k: string]: (cmd: any) => Promise<any> } = {
           command: async (cmd: any) => {
-            if (
-              res.appletApi &&
-              typeof res.appletApi.evalCommandGetLabels === 'function'
-            ) {
+            if (res.appletApi && typeof res.appletApi.evalCommandGetLabels === 'function') {
               const label = res.appletApi.evalCommandGetLabels(cmd.payload);
               return JSON.stringify({
                 type: 'created',
@@ -245,39 +274,30 @@ export const GGAComponent = (props: any): JSX.Element => {
             let value: any[] = [];
             const args = cmd.payload.args;
             value = [];
-            (Array.isArray(apiName) ? apiName : [apiName]).forEach(
-              (f: string) => {
-                dbg('call', f, args);
-                if (isArrayOfArrays(args)) {
-                  const value2: any[] = [];
-                  args.forEach((arg2: any[]) => {
-                    if (
-                      res.appletApi &&
-                      typeof res.appletApi[f] === 'function'
-                    ) {
-                      value2.push(res.appletApi[f](...arg2) || null);
-                    } else {
-                      value2.push(null);
-                    }
-                  });
-                  value.push(value2);
-                } else {
-                  if (args) {
-                    value.push(
-                      res.appletApi && typeof res.appletApi[f] === 'function'
-                        ? res.appletApi[f](...args) || null
-                        : null
-                    );
+            (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+              dbg('call', f, args);
+              if (isArrayOfArrays(args)) {
+                const value2: any[] = [];
+                args.forEach((arg2: any[]) => {
+                  if (res.appletApi && typeof res.appletApi[f] === 'function') {
+                    value2.push(res.appletApi[f](...arg2) || null);
                   } else {
-                    value.push(
-                      res.appletApi && typeof res.appletApi[f] === 'function'
-                        ? res.appletApi[f]() || null
-                        : null
-                    );
+                    value2.push(null);
                   }
+                });
+                value.push(value2);
+              } else {
+                if (args) {
+                  value.push(
+                    res.appletApi && typeof res.appletApi[f] === 'function' ? res.appletApi[f](...args) || null : null
+                  );
+                } else {
+                  value.push(
+                    res.appletApi && typeof res.appletApi[f] === 'function' ? res.appletApi[f]() || null : null
+                  );
                 }
               }
-            );
+            });
             value = Array.isArray(apiName) ? value : value[0];
             dbg('Function value:', value);
             return JSON.stringify({
@@ -286,9 +306,13 @@ export const GGAComponent = (props: any): JSX.Element => {
               payload: { value: value }
             });
           },
+          // Lightweight listen handler: acknowledge subscription. More
+          // elaborate listener registration can be added later if needed.
           listen: async (cmd: any) => {
             dbg('Register listen request:', cmd.payload);
             try {
+              // Accept multiple payload shapes: [name, enabled],
+              // {name, enabled}, or a simple string (enabled=true).
               let name: string | null = null;
               let enabled = true;
               const p = cmd.payload;
@@ -315,20 +339,19 @@ export const GGAComponent = (props: any): JSX.Element => {
 
               let result: any = null;
               if (enabled) {
-                if (
-                  res.appletApi &&
-                  typeof res.appletApi.registerObjectUpdateListener ===
-                    'function'
-                ) {
+                if (res.appletApi && typeof res.appletApi.registerObjectUpdateListener === 'function') {
                   try {
+                    // Provide a callback that forwards updates to the
+                    // remote socket; keep it lightweight and non-blocking.
+                    // Listener callback: no update argument is provided by the
+                    // applet runtime. Instead, call `appletApi.getValueString`
+                    // to obtain a serializable representation of the object's
+                    // current value and forward it as the event payload.
                     const cb = () => {
                       try {
                         let value: any = null;
                         try {
-                          if (
-                            res.appletApi &&
-                            typeof res.appletApi.getValueString === 'function'
-                          ) {
+                          if (res.appletApi && typeof res.appletApi.getValueString === 'function') {
                             value = (res.appletApi.getValueString as any)(name);
                           } else {
                             value = null;
@@ -337,21 +360,16 @@ export const GGAComponent = (props: any): JSX.Element => {
                           dbg('getValueString failed', e);
                           value = null;
                         }
+                        // Suppress sending when the string value hasn't changed since last send.
                         try {
                           const last = res._lastValues[name] ?? null;
-                          const cur =
-                            value === null || value === undefined
-                              ? null
-                              : String(value);
+                          const cur = value === null || value === undefined ? null : String(value);
                           if (last !== null && last === cur) {
-                            dbg(
-                              'Suppressing unchanged value for',
-                              name,
-                              ':',
-                              cur
-                            );
+                            // unchanged, skip notification
+                            dbg('Suppressing unchanged value for', name, ':', cur);
                             return;
                           }
+                          // update last seen value
                           res._lastValues[name] = cur;
                         } catch (e) {
                           dbg('value-comparison in object update failed', e);
@@ -359,21 +377,20 @@ export const GGAComponent = (props: any): JSX.Element => {
 
                         const msg = JSON.stringify({
                           type: 'object_update',
+                          // id: cmd.id, // intentionally omitted: object_update events are
+                          // queued as asynchronous events and should not carry a
+                          // request/response id.
                           payload: { name, value }
                         });
-                        callRemoteSocketSend(msg).catch(e =>
-                          dbg('object_update send failed', e)
-                        );
+                        // fire-and-forget
+                        callRemoteSocketSend(msg).catch(e => dbg('object_update send failed', e));
                       } catch (e) {
                         dbg('Error in object update callback', e);
                       }
                     };
-                    result = await Promise.resolve(
-                      (res.appletApi.registerObjectUpdateListener as any)(
-                        name,
-                        cb
-                      )
-                    );
+                    // Some implementations may return a listener token.
+                    result = await Promise.resolve((res.appletApi.registerObjectUpdateListener as any)(name, cb));
+                    // Ensure the current value is delivered immediately after registration
                     try {
                       cb();
                     } catch (e) {
@@ -390,17 +407,9 @@ export const GGAComponent = (props: any): JSX.Element => {
                   };
                 }
               } else {
-                if (
-                  res.appletApi &&
-                  typeof res.appletApi.unregisterObjectUpdateListener ===
-                    'function'
-                ) {
+                if (res.appletApi && typeof res.appletApi.unregisterObjectUpdateListener === 'function') {
                   try {
-                    result = await Promise.resolve(
-                      (res.appletApi.unregisterObjectUpdateListener as any)(
-                        name
-                      )
-                    );
+                    result = await Promise.resolve((res.appletApi.unregisterObjectUpdateListener as any)(name));
                   } catch (e) {
                     dbg('unregisterObjectUpdateListener failed', e);
                     result = { ok: false, error: String(e) };
@@ -453,16 +462,21 @@ export const GGAComponent = (props: any): JSX.Element => {
         return rmsg;
       };
 
-      const handleIncomingCommMessage = makeIncomingHandler(
-        processCommandMessage
-      );
+      // Handler for incoming messages on the kernel-created comm; defined
+      // via kernel_comm helper so it can reuse the shared logic.
+      const handleIncomingCommMessage = makeIncomingHandler(processCommandMessage);
 
+      // Kernel comm lifecycle is managed by kernel_comm helpers.
+
+      // Register simple passthrough handlers for jupyter.widget when no
+      // widgetManager is present. The helper returns a cleanup function.
       try {
         if (props.widgetManager) {
-          dbg(
-            'widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens'
-          );
+          dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
         } else {
+          // Delegate widget comm passthrough registration to `widgetManager`
+          // module which centralizes that behavior. Provide the minimal
+          // option bag expected by the manager helper.
           const opts = {
             callRemoteSocketSend,
             kernel2: res.kernel2,
@@ -473,10 +487,10 @@ export const GGAComponent = (props: any): JSX.Element => {
             dbg
           };
 
-          const unregisterFn = registerWidgetCommTargets(
-            res.kernelConn,
-            opts as any
-          );
+          // registerWidgetCommTargets returns an unregister function
+          // which we store on the resource bag for cleanup. Use a clear
+          // field name so intent is obvious at call sites.
+          const unregisterFn = registerWidgetCommTargets(res.kernelConn, opts as any);
           res.unregisterWidgetCommTargets = unregisterFn;
         }
       } catch (e) {
@@ -485,6 +499,7 @@ export const GGAComponent = (props: any): JSX.Element => {
 
       async function ggbOnLoad(api: any) {
         dbg('GeoGebra applet loaded:', api);
+        // expose applet API to other handlers (widgetComm etc.)
         res.appletApi = api;
         (async function () {
           const msg = { type: 'start', payload: {} };
@@ -502,31 +517,40 @@ export const GGAComponent = (props: any): JSX.Element => {
         window.addEventListener('resize', res.resizeHandler);
         res.resizeHandler();
 
+        // // Observe size changes of the widget's DOM element
+        // // but not working as expected in Lumino
+        // const widgetElemnt = window.document.querySelector('div.lm-DockPanel-widget');
+        // const widgetElemnt = window.document.querySelector('div.lm-SplitPanel-child');
+        // const widgetElemnt = window.document.querySelector('div[class*="Panel"]');
+        // if (widgetElemnt) {
+        //   if (widgetRef.current) {
+        //     const resizeObserver = new ResizeObserver(() => {
+        //         console.log("Panel resized.");
+        //         resize();
+        //     });
+        //     resizeObserver.observe(widgetRef.current); //widgetElemnt);
+        //   }
+        // }
+
         if (res.commTarget) {
           res.comm = res.kernelConn.createComm(res.commTarget);
           try {
+            // Log comm creation details for debugging 'Comm not found' issues
             try {
-              const maybeId =
-                (res.comm as any)?.comm_id ||
-                (res.comm as any)?.commId ||
-                (res.comm as any)?.id ||
-                null;
+              const maybeId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || (res.comm as any)?.id || null;
               dbg('Created kernel comm', {
                 target: res.commTarget,
                 commObject: res.comm,
                 commId: maybeId
               });
             } catch {
-              dbg(
-                'Created kernel comm (unable to read id)',
-                res.commTarget,
-                res.comm
-              );
+              dbg('Created kernel comm (unable to read id)', res.commTarget, res.comm);
             }
             res.comm.open('HELO from GGB').done;
           } catch (e) {
             dbg('Failed to open kernel comm for', res.commTarget, e);
           }
+          // Attach close handler to surface unexpected closes
           try {
             res.comm.onClose = (m: any) => {
               try {
@@ -548,11 +572,17 @@ export const GGAComponent = (props: any): JSX.Element => {
             dbg('Unable to attach onClose to kernel comm', e);
           }
         } else {
+          // No kernel-level comm target provided: rely on remote socket
           res.comm = null;
           dbg('No commTarget provided; skipping kernel comm creation');
         }
+        // comm.send('HELO2').done
+
+        // kernel.registerCommTarget('test', (comm, commMsg) => {
+        // console.log("Comm opened from kernel with message:", commMsg['content']['data']);
 
         res.closeHandler = () => {
+          // Attempt to close comm and shutdown helper kernel
           try {
             res.comm?.close?.();
           } catch (e) {
@@ -572,14 +602,17 @@ export const GGAComponent = (props: any): JSX.Element => {
             dbg('Failed to attach handleIncomingCommMessage to comm', e);
           }
         } else {
-          dbg(
-            'No kernel comm available; messages will be sent via remote socket only'
-          );
+          dbg('No kernel comm available; messages will be sent via remote socket only');
         }
 
         const addListener = async function (data: any) {
           dbg('Add listener triggered for:', data);
-          const msg = { type: 'add', payload: data };
+          const msg = {
+            type: 'add',
+            payload: data
+          };
+          // console.log("Add detected:", JSON.stringify(msg));
+          // Prefer to send via widget comm bridge if available
           const s = JSON.stringify(msg);
           if (res.widgetComm) {
             try {
@@ -595,7 +628,11 @@ export const GGAComponent = (props: any): JSX.Element => {
 
         const removeListener = async function (data: any) {
           dbg('Remove listener triggered for:', data);
-          const msg = { type: 'remove', payload: data };
+          const msg = {
+            type: 'remove',
+            payload: data
+          };
+          // console.log("Remove detected:", JSON.stringify(msg));
           const s = JSON.stringify(msg);
           if (res.widgetComm) {
             try {
@@ -611,7 +648,11 @@ export const GGAComponent = (props: any): JSX.Element => {
 
         const renameListener = async function (data: any) {
           dbg('Rename listener triggered for:', data);
-          const msg = { type: 'rename', payload: data };
+          const msg = {
+            type: 'rename',
+            payload: data
+          };
+          // console.log("Rename detected:", JSON.stringify(msg));
           const s = JSON.stringify(msg);
           if (res.widgetComm) {
             try {
@@ -627,7 +668,11 @@ export const GGAComponent = (props: any): JSX.Element => {
 
         const clearListener = async function (data: any) {
           dbg('Clear listener triggered for:', data);
-          const msg = { type: 'clear', payload: data };
+          const msg = {
+            type: 'clear',
+            payload: data
+          };
+          // console.log("Rename detected:", JSON.stringify(msg));
           const s = JSON.stringify(msg);
           if (res.widgetComm) {
             try {
@@ -641,31 +686,41 @@ export const GGAComponent = (props: any): JSX.Element => {
         };
         api.registerClearListener(clearListener);
 
+        // The `clientListener` example below is kept commented out as a
+        // reference for future event types. It's disabled because it
+        // was not used in production and could generate noisy traffic.
+        // // nothing triggered?
+        // var clientListener = async function(data: any) {
+        // // console.log("Add listener triggered for:", data);
+        //     var msg = {
+        //         "type": "client",
+        //         "payload": data
+        //     }
+        //     console.log("Client detected:", JSON.stringify(msg));
+        //     await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
+        // }
+        // api.registerClearListener(clientListener);
+
         res.observer = new MutationObserver(mutations => {
           mutations.forEach(mutation => {
             mutation.addedNodes.forEach(node => {
               try {
-                (node as HTMLElement)
-                  .querySelectorAll('div.dialogMainPanel > div.dialogTitle')
-                  .forEach(n => {
-                    dbg(n.textContent);
-                    (
-                      (node as HTMLElement).querySelector(
-                        'div.dialogContent'
-                      ) as HTMLElement
-                    )
-                      .querySelectorAll("[class$='Label']")
-                      .forEach(async n2 => {
-                        dbg(n2.textContent);
-                        const msg = JSON.stringify({
-                          type: n.textContent,
-                          payload: n2.textContent
-                        });
-                        await callRemoteSocketSend(msg);
+                (node as HTMLElement).querySelectorAll('div.dialogMainPanel > div.dialogTitle').forEach(n => {
+                  dbg(n.textContent); // detect titles like 'Error'
+                  ((node as HTMLElement).querySelector('div.dialogContent') as HTMLElement)
+                    .querySelectorAll("[class$='Label']")
+                    .forEach(async n2 => {
+                      dbg(n2.textContent);
+                      const msg = JSON.stringify({
+                        type: n.textContent,
+                        payload: n2.textContent
                       });
-                  });
+                      // comm.send(msg);
+                      await callRemoteSocketSend(msg);
+                    });
+                });
               } catch (e) {
-                // ignore
+                // console.log(e, node);
               }
             });
           });
@@ -674,9 +729,7 @@ export const GGAComponent = (props: any): JSX.Element => {
       }
 
       // Avoid duplicate meta/script inserts: reuse if already present
-      const existingMeta = document.getElementById(
-        'ggblab-viewport-meta'
-      ) as HTMLMetaElement | null;
+      const existingMeta = document.getElementById('ggblab-viewport-meta') as HTMLMetaElement | null;
       if (existingMeta) {
         res.metaViewport = existingMeta;
       } else {
@@ -687,9 +740,7 @@ export const GGAComponent = (props: any): JSX.Element => {
         document.head.appendChild(res.metaViewport);
       }
 
-      const existingScript = document.getElementById(
-        'ggblab-deployggb-script'
-      ) as HTMLScriptElement | null;
+      const existingScript = document.getElementById('ggblab-deployggb-script') as HTMLScriptElement | null;
       const createApplet = () => {
         const params = {
           id: 'ggbApplet' + (props?.kernelId || '').substring(0, 8), // applet ID
@@ -701,19 +752,25 @@ export const GGAComponent = (props: any): JSX.Element => {
           showMenuBar: true, // show the menu bar
           autoHeight: true,
           scaleContainerClass: 'lm-Panel', // "lm-DockPanel-widget",
+          // autoWidth: false,
+          // scale: 2,
           allowUpscale: false,
           appletOnLoad: ggbOnLoad
         };
         applet = new (window as any).GGBApplet(params, true);
         applet.inject(elementId);
+        // Expose the active applet instance on `window.ggbApplet` for
+        // consistency across the codebase and for debug tooling.
         (window as any).ggbApplet = applet;
       };
 
       if (existingScript) {
         res.scriptTag = existingScript;
+        // If script already loaded and GGBApplet is available, instantiate immediately
         if ((window as any).GGBApplet) {
           createApplet();
         } else {
+          // Otherwise ensure we call createApplet once it loads
           res.scriptTag.addEventListener('load', createApplet, { once: true });
         }
       } else {
@@ -727,14 +784,17 @@ export const GGAComponent = (props: any): JSX.Element => {
     });
 
     return () => {
+      // Remove resize listener
       if (res.resizeHandler) {
         window.removeEventListener('resize', res.resizeHandler);
         res.resizeHandler = null;
       }
+      // Remove close listener
       if (res.closeHandler) {
         window.removeEventListener('close', res.closeHandler);
         res.closeHandler = null;
       }
+      // Disconnect mutation observer
       if (res.observer) {
         try {
           res.observer.disconnect();
@@ -743,23 +803,28 @@ export const GGAComponent = (props: any): JSX.Element => {
         }
         res.observer = null;
       }
+      // Unregister widget comm handlers if we registered them
       try {
         res.unregisterWidgetCommTargets?.();
         res.unregisterWidgetCommTargets = null;
       } catch (e) {
         dbg('Error unregistering widget comm targets', e);
       }
+      // Remove injected meta tag
       if (res.metaViewport && res.metaViewport.parentNode) {
         res.metaViewport.parentNode.removeChild(res.metaViewport);
         res.metaViewport = null;
       }
+      // Remove injected script tag
       if (res.scriptTag && res.scriptTag.parentNode) {
         res.scriptTag.parentNode.removeChild(res.scriptTag);
         res.scriptTag = null;
       }
+      // Clean up GeoGebra applet
       if (applet) {
         try {
           dbg('Cleaning up GeoGebra applet.');
+          // Use the unified `window.ggbApplet` reference when available
           const winApplet = (window as any).ggbApplet || applet;
           try {
             winApplet.remove();
@@ -773,6 +838,7 @@ export const GGAComponent = (props: any): JSX.Element => {
         delete (window as any).ggbApplet;
       }
 
+      // Close comm and shutdown helper kernel asynchronously via resource bag
       (async () => {
         try {
           await res.dispose();
@@ -783,16 +849,8 @@ export const GGAComponent = (props: any): JSX.Element => {
     };
   }, []);
 
-  return (
-    <div
-      id={elementId}
-      ref={widgetRef}
-      style={{ width: '100%', height: '100%' }}
-    ></div>
-  );
+  return <div id={elementId} ref={widgetRef} style={{ width: '100%', height: '100%' }}></div>;
 };
-
-export default GGAComponent;
 
 export interface IGGAWidgetProps {
   kernelId?: string;
@@ -801,12 +859,19 @@ export interface IGGAWidgetProps {
   wsPort?: number;
   socketPath?: string;
   appName?: string;
+  // Optional WidgetManager module or instance provided by the plugin activation
   widgetManager?: WidgetManagerType;
 }
 
+/**
+ * A GeoGebra Lumino Widget that wraps a GeoGebraComponent.
+ */
 export class GeoGebraWidget extends ReactWidget {
   private props: IGGAWidgetProps | undefined;
 
+  /**
+   * Constructs a new GeoGebraWidget.
+   */
   constructor(props?: IGGAWidgetProps) {
     super();
     this.addClass('jp-ggblabWidget');
@@ -826,19 +891,39 @@ export class GeoGebraWidget extends ReactWidget {
     );
   }
 
+  // only onResize is responsible for size changes in Lumino,
+  // but onAfterAttach and onAfterShow and onFitRequest may also be relevant in some cases.
   protected onResize(msg: Widget.ResizeMessage): void {
+    // console.log("GeoGebraWidget resized:", msg.width, msg.height);
     window.dispatchEvent(new Event('resize'));
     super.onResize(msg);
   }
 
+  // Only perform cleanup when the widget is explicitly closed by the user.
+  // Use onCloseRequest to trigger cleanup so that transient disposals
+  // during layout/restore operations do not tear down the internal state.
   protected onCloseRequest(msg: Message): void {
     dbg('GeoGebraWidget onCloseRequest — performing cleanup.');
     window.dispatchEvent(new Event('close'));
     super.onCloseRequest(msg);
   }
 
+  // dispose should not trigger cleanup again; allow normal disposal to proceed
+  // without duplicating shutdown logic.
   dispose(): void {
     dbg('GeoGebraWidget disposed.');
     super.dispose();
   }
 }
+
+// // Example of attaching the GeoGebraWidget to a DockPanel
+// // but commented out to avoid automatic execution.
+// const dock = new DockPanel();
+// ReactWidget.attach(dock, document.body);
+// // window.addEventListener('resize', () => { dock.update(); });
+// dock.layoutModified.connect(() => {
+//     console.log("Dock layout modified.");
+//     dock.update();
+// });
+
+export default GGAComponent;
