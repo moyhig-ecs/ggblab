@@ -11,10 +11,6 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
   id: 'ggblab:register-widget-manager',
   autoStart: true,
   activate: (app: JupyterFrontEnd) => {
-    // Expose a global registrar so other widget-manager code can notify
-    // ggblab about available managers when they activate. This covers
-    // cases where the widget manager cannot be detected via module
-    // inspection at runtime.
     try {
       (window as any).__ggblab_register_widget_manager = function (kernelId: string, manager: any) {
         try {
@@ -30,11 +26,9 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
 
     (async () => {
       try {
-        // Avoid bundler resolution of an optional dev dep by using runtime require.
         let mod: any = null;
         try {
           if (typeof (globalThis as any).require === 'function') {
-            // In Jupyter classic or some environments, require may be available at runtime.
             mod = (globalThis as any).require('@jupyter-widgets/jupyterlab-manager');
             console.debug('ggblab: register-widget-manager found jupyter-widgets module via global require');
           }
@@ -44,7 +38,6 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
         }
 
         if (!mod) {
-          // If runtime require did not find it, skip gracefully.
           console.debug('ggblab: jupyter-widgets manager not available for auto-plugin');
           return;
         }
@@ -63,50 +56,23 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
           p.activate = function (appArg: any, ...args: any[]) {
-            console.info('ggblab: wrapped widget-manager activate called', {
-              argsCount: args.length
-            });
+            console.info('ggblab: wrapped widget-manager activate called', { argsCount: args.length });
             const summaries = args.map((a: any) => {
-              try {
-                return {
-                  type: typeof a,
-                  keys: Object.keys(a || {}).slice(0, 10)
-                };
-              } catch (e) {
-                return { type: typeof a };
-              }
+              try { return { type: typeof a, keys: Object.keys(a || {}).slice(0, 10) }; } catch (e) { return { type: typeof a }; }
             });
             console.debug('ggblab: wrapped activate args summary', summaries);
             const result = origActivate(appArg, ...args);
             try {
               for (const a of args) {
-                if (!a || typeof a !== 'object') {
-                  continue;
-                }
+                if (!a || typeof a !== 'object') continue;
                 const isManager = typeof a.create_view === 'function' || typeof a.display_view_for_model === 'function' || !!a._create_views_for_model;
-                if (!isManager) {
-                  continue;
-                }
+                if (!isManager) continue;
                 const manager = a;
                 let kernelId = '';
-                try {
-                  kernelId = (manager.context && manager.context.session && manager.context.session.kernel && manager.context.session.kernel.id) || (manager.kernel && manager.kernel.id) || '';
-                } catch (e) {
-                  kernelId = '';
-                }
+                try { kernelId = (manager.context && manager.context.session && manager.context.session.kernel && manager.context.session.kernel.id) || (manager.kernel && manager.kernel.id) || ''; } catch (e) { kernelId = ''; }
                 if (kernelId && (window as any).__ggblab_register_widget_manager) {
-                  try {
-                    (window as any).__ggblab_register_widget_manager(kernelId, manager);
-                    console.debug('ggblab: auto-registered widgetManager for kernel', kernelId);
-                  } catch (e) {
-                    console.warn('ggblab: failed to auto-register widgetManager', e);
-                  }
-                  try {
-                    // Also register via our injection API when available.
-                    setWidgetManager(manager);
-                  } catch (e) {
-                    console.debug('ggblab: setWidgetManager failed', e);
-                  }
+                  try { (window as any).__ggblab_register_widget_manager(kernelId, manager); console.debug('ggblab: auto-registered widgetManager for kernel', kernelId); } catch (e) { console.warn('ggblab: failed to auto-register widgetManager', e); }
+                  try { setWidgetManager(manager); } catch (e) { console.debug('ggblab: setWidgetManager failed', e); }
                 } else if (manager && manager.context && manager.context.session) {
                   try {
                     const sess = manager.context.session;
@@ -119,38 +85,19 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
                           if (kid && (window as any).__ggblab_register_widget_manager) {
                             (window as any).__ggblab_register_widget_manager(kid, manager);
                             console.debug('ggblab: auto-registered widgetManager on kernelChanged for', kid);
-                            try {
-                              setWidgetManager(manager);
-                            } catch (e) {
-                              console.debug('ggblab: setWidgetManager failed', e);
-                            }
-                            try {
-                              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                              // @ts-ignore
-                              sess.kernelChanged.disconnect(handler);
-                            } catch (ee) {
-                              console.debug('ggblab: ignored', ee);
-                            }
+                            try { setWidgetManager(manager); } catch (e) { console.debug('ggblab: setWidgetManager failed', e); }
+                            try { /* eslint-disable-next-line @typescript-eslint/ban-ts-comment */ /* @ts-ignore */ sess.kernelChanged.disconnect(handler); } catch (ee) { console.debug('ggblab: ignored', ee); }
                           }
-                        } catch (ee) {
-                          console.debug('ggblab: ignored', ee);
-                        }
+                        } catch (ee) { console.debug('ggblab: ignored', ee); }
                       };
                       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
                       // @ts-ignore
                       sess.kernelChanged.connect(handler);
                     }
-                  } catch (e) {
-                    console.debug('ggblab: ignored', e);
-                  }
+                  } catch (e) { console.debug('ggblab: ignored', e); }
                 }
-                // Fallback behavior removed: do not write manager into a global
-                // `__ggblab_widget_manager` store. Integration should pass
-                // managers explicitly via extension APIs or props.
               }
-            } catch (e) {
-              console.warn('ggblab: error while probing widget-manager activate args', e);
-            }
+            } catch (e) { console.warn('ggblab: error while probing widget-manager activate args', e); }
             return result;
           };
         }
