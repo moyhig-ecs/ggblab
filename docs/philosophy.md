@@ -11,6 +11,7 @@ This document articulates the design principles, scope boundaries, and education
 ### Current State
 
 ggblab implements a **dual-channel communication pattern** that balances:
+
 - **Jupyter/JupyterHub compatibility**: Works locally and in cloud deployments (JupyterHub, Google Colab)
 - **Cell execution responsiveness**: Out-of-band socket (Unix domain / TCP) bridges the IPython Comm blocking limitation
 - **Platform portability**: POSIX sockets on Linux/macOS; TCP fallback on Windows
@@ -34,6 +35,7 @@ The communication architecture has reached **stable maturity**. Investment in fu
 ### The GeoGebra Problem
 
 GeoGebra **provides no formal Error API**:
+
 - No machine-readable error schema
 - No documented error event format
 - No structured error classification system
@@ -88,6 +90,7 @@ See [docs/architecture.md — Runtime Error Handling](architecture.md#runtime-er
 ### The Problem with GeoGebra Alone
 
 GeoGebra's native capabilities for numerical work are **asymmetric**:
+
 - ✅ **Geometry + visualization**: Unmatched; native 2D/3D rendering
 - ✅ **Symbolic algebra**: Usable for medium-complexity expressions
 - ✅ **Lists & iteration**: Functional `Map()`, `Sequence()` exist but are cumbersome
@@ -102,15 +105,15 @@ GeoGebra's native capabilities for numerical work are **asymmetric**:
 
 **Philosophy**: Leverage each platform's strength; bridge where needed.
 
-| Task | Belongs To | Why |
-|------|-----------|-----|
-| **Geometric definition** | GeoGebra | Native primitives (point, line, circle, polygon); effortless rendering |
-| **Transformation (affine, projection)** | GeoGebra native + Python wrapper | GeoGebra has matrix ops; Python cleans up interface (numpy arrays ↔ GeoGebra points) |
-| **ODE solving** | Python (scipy) | GeoGebra has no solver; scipy has mature algorithms |
-| **Visualization** | GeoGebra (primary), Matplotlib/Plotly (secondary) | GeoGebra excels; others useful for comparative plots |
-| **Scene timeline** | ggblab + GeoGebra | Python records snapshots; GeoGebra re-renders |
-| **List processing** | Python + GeoGebra function binding | Python iterates; GeoGebra evaluates user-defined functions |
-| **Educational narrative** | Jupyter notebook cells | Markdown + code + visualization in unified document |
+| Task                                    | Belongs To                                        | Why                                                                                  |
+| --------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **Geometric definition**                | GeoGebra                                          | Native primitives (point, line, circle, polygon); effortless rendering               |
+| **Transformation (affine, projection)** | GeoGebra native + Python wrapper                  | GeoGebra has matrix ops; Python cleans up interface (numpy arrays ↔ GeoGebra points) |
+| **ODE solving**                         | Python (scipy)                                    | GeoGebra has no solver; scipy has mature algorithms                                  |
+| **Visualization**                       | GeoGebra (primary), Matplotlib/Plotly (secondary) | GeoGebra excels; others useful for comparative plots                                 |
+| **Scene timeline**                      | ggblab + GeoGebra                                 | Python records snapshots; GeoGebra re-renders                                        |
+| **List processing**                     | Python + GeoGebra function binding                | Python iterates; GeoGebra evaluates user-defined functions                           |
+| **Educational narrative**               | Jupyter notebook cells                            | Markdown + code + visualization in unified document                                  |
 
 ### Concrete Example: Projectile Motion with Air Resistance
 
@@ -126,7 +129,7 @@ GeoGebra side:
   - Receive point list via ggblab
   - Define path object: Curve(points)
   - Render natively with slider for t, parameter sliders for g/k
-  
+
 Jupyter narrative:
   - Cell 1: Explain physics, show ODE
   - Cell 2: Import scipy, define ODE
@@ -171,11 +174,13 @@ for k in [0.1, 0.5, 1.0]:
 **Anti-pattern**: Wrapping GeoGebra's entire command syntax in Python.
 
 ❌ Don't: `ggb.create_point(x, y)` → `await ggb.command(f"A = ({x},{y})")`
+
 - Redundant; users can write GeoGebra syntax directly
 - Obscures what's actually happening
 - Maintenance burden for every API change
 
 ✅ Do: Wrap **composite operations** that Python does better:
+
 - Multi-step ODE solving → single function call
 - Batch parameter sweeps → loop + `await ggb.command()`
 - Scene timeline recording/playback → higher-level abstraction
@@ -187,6 +192,7 @@ for k in [0.1, 0.5, 1.0]:
 ### Vision: Wolfram's GeometricScene Paradigm
 
 Mathematica's `GeometricScene` is a powerful, underexplored concept in the broader programming community. It represents a **unified data structure** for geometric configurations that can be:
+
 - **Defined**: Specify objects, relationships, and constraints symbolically
 - **Parameterized**: Vary the scene as parameters change
 - **Visualized**: Render in 2D/3D at arbitrary resolution
@@ -214,6 +220,7 @@ MP4 Video (HD mathematical animation for teaching)
 ### Why Manim?
 
 **manim** (Mathematical Animation Engine by Grant Sanderson / 3Blue1Brown) is:
+
 - **Open-source**, Python-based
 - **Designed for math**: Elegantly animates equations, transformations, curves
 - **Publication-quality**: Produces broadcast-ready mathematical visualizations
@@ -239,20 +246,20 @@ Embed timelines in Jupyter cells with markdown annotations.
 
 **The final and defining feature**: Convert scene timelines to manim-rendered videos.
 
-```python
+````python
 class SceneTimeline:
     # ... previous methods ...
-    
-    def to_manim_script(self, 
+
+    def to_manim_script(self,
                         output_file='scene.py',
                         title='Geometric Transformation',
                         fps=30) -> str:
         """
         Generate a manim Scene class that reproduces the timeline.
-        
+
         Returns:
             Python source code as string
-            
+
         Example output:
         ```python
         from manim import *
@@ -264,7 +271,7 @@ class SceneTimeline:
                 # ... animate to frame 1, 2, ... N
         ```
         """
-        
+
     async def render_video(self,
                           output_format='mp4',
                           quality='high') -> bytes:
@@ -275,9 +282,10 @@ class SceneTimeline:
         3. Invoke 'manim render'
         4. Return video file bytes
         """
-```
+````
 
 **Pedagogical power**: Students can:
+
 1. Interactively build scenes in GeoGebra
 2. Record parameter evolution in Jupyter
 3. Export as professional-quality video
@@ -290,13 +298,14 @@ class SceneTimeline:
 
 **Reality check from implementation**: GeoGebra Applet's rendering pipeline misinterprets device DPI / responsive scaling. Placing two applets in smaller containers compounds the bug — content progressively shrinks, defeating pedagogical clarity.
 
-**Pragmatic redesign**: Single applet + timeline-driven navigation. Actually *better* UX:
+**Pragmatic redesign**: Single applet + timeline-driven navigation. Actually _better_ UX:
+
 - Users focus on one scene at a time, reducing cognitive load
 - Parameter transitions reveal cause-and-effect relationships more viscerally
 - Smooth playback (frame-by-frame or animated) makes understanding memorable
 - Works on all devices without DPI/scaling workarounds
 
-This aligns with the Mathematica precedent: *replay* conveys understanding better than *side-by-side comparison*.
+This aligns with the Mathematica precedent: _replay_ conveys understanding better than _side-by-side comparison_.
 
 ---
 
@@ -318,7 +327,7 @@ Through extensive experimentation, we discovered that `parse_subgraph()`, despit
 
 ### Reconsidering the True Goal
 
-Parser experiments revealed our actual objective: **Geometric Scene evolution**, not dependency minimization. This aligns with Stephen Wolfram's Scene concept in Mathematica — capturing and replaying the *trajectory* of a construction as parameters vary, rather than decomposing it.
+Parser experiments revealed our actual objective: **Geometric Scene evolution**, not dependency minimization. This aligns with Stephen Wolfram's Scene concept in Mathematica — capturing and replaying the _trajectory_ of a construction as parameters vary, rather than decomposing it.
 
 ### Revised Approach
 
@@ -351,6 +360,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 ### Scope Exclusion
 
 **Out of scope**:
+
 - Production deployment (high-availability, monitoring, SLA)
 - Real-time collaboration (multiple users editing same notebook simultaneously)
 - Offline-first workflows (assume network access)
@@ -369,6 +379,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 ### Tier 2: Scene & Animation (v0.8 - v1.0)
 
 **High learning value**:
+
 - Scene snapshot capture
 - Timeline navigation
 - Smooth playback in Jupyter
@@ -378,6 +389,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 ### Tier 2.5: Manim Export (v1.0 - v1.5)
 
 **Extremely high impact; defining feature**:
+
 - Extract geometry from scene snapshots
 - Generate manim Python code automatically
 - Render to MP4/GIF for publication
@@ -387,6 +399,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 ### Tier 3: Numerical Integration & Symbolic Verification (v0.9 - v1.0)
 
 **High learning value**:
+
 - Wrapper for scipy ODE solvers
 - Point list ↔ GeoGebra object conversion
 - Parameter sweep utilities
@@ -395,6 +408,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 **Why**: Teaches numerical analysis, complementary use of tools, scientific computing. SymPy integration enables symbolic proof verification, exact calculations, and bidirectional code generation between geometric representations.
 
 **SymPy Integration Highlights**:
+
 - Convert GeoGebra constructions ↔ SymPy geometric objects
 - Verify geometric properties symbolically (collinearity, concyclicity, perpendicularity)
 - Generate manim animation code from SymPy geometry
@@ -404,6 +418,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 ### Tier 4: Data Structures & Iteration (v1.0+)
 
 **Medium learning value**:
+
 - Polars/Pandas DataFrames for construction metadata
 - Batch list operations
 - Functional programming patterns
@@ -413,6 +428,7 @@ ggblab's primary audience is **geometry/math education**, not production applica
 ### Tier 5: Optimization & Deployment (v1.0+)
 
 **Low priority for education**:
+
 - Connection pooling, compression, binary protocols
 - High-availability setup
 - Cloud scaling
@@ -471,16 +487,16 @@ ggblab's primary audience is **geometry/math education**, not production applica
 
 ## Summary: Design Maturity by Dimension
 
-| Dimension | Status | Next Action |
-|-----------|--------|------------|
-| **Communication** | Mature, plateaued | Maintain; focus elsewhere |
-| **Geometry visualization** | Mature (GeoGebra native) | Enhance via Scene Timeline |
-| **Scene evolution** | Proof-of-concept needed | Implement v0.8-v1.0 |
-| **Manim export** | Greenfield; **defining feature** | Architect extraction + codegen (v1.0-v1.5) |
-| **Numerical analysis** | Greenfield | Design wrapper layer; v0.9-v1.0 |
-| **SymPy integration** | Greenfield | Bridge symbolic ↔ geometric representations; v1.1-v1.2 |
-| **Parser (subgraph)** | Failed experiment | Deprecate; shift focus to timeline |
-| **Educational integration** | In progress | Develop lesson modules; gather instructor feedback |
+| Dimension                   | Status                           | Next Action                                            |
+| --------------------------- | -------------------------------- | ------------------------------------------------------ |
+| **Communication**           | Mature, plateaued                | Maintain; focus elsewhere                              |
+| **Geometry visualization**  | Mature (GeoGebra native)         | Enhance via Scene Timeline                             |
+| **Scene evolution**         | Proof-of-concept needed          | Implement v0.8-v1.0                                    |
+| **Manim export**            | Greenfield; **defining feature** | Architect extraction + codegen (v1.0-v1.5)             |
+| **Numerical analysis**      | Greenfield                       | Design wrapper layer; v0.9-v1.0                        |
+| **SymPy integration**       | Greenfield                       | Bridge symbolic ↔ geometric representations; v1.1-v1.2 |
+| **Parser (subgraph)**       | Failed experiment                | Deprecate; shift focus to timeline                     |
+| **Educational integration** | In progress                      | Develop lesson modules; gather instructor feedback     |
 
 **Thesis**: ggblab's value lies not in technical infrastructure (communication is solved) but in creating a **unified authoring and publishing pipeline** for interactive mathematical education:
 

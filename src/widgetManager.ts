@@ -2,6 +2,9 @@
 // This module centralizes how a frontend WidgetManager (ipywidgets bridge)
 // would be created or provided. For now we intentionally return `undefined`
 // to preserve the previous behavior (avoiding ipywidgets interference).
+// This module centralizes how a frontend WidgetManager (ipywidgets bridge)
+// would be created or provided. For now we intentionally return `undefined`
+// to preserve the previous behavior (avoiding ipywidgets interference).
 
 /**
  * Opaque WidgetManager type used by the widget code when present.
@@ -68,10 +71,7 @@ export function createWidgetManager(): WidgetManagerType | undefined {
  * Returns a cleanup function that will attempt to unregister the
  * comm targets when called.
  */
-export function registerWidgetCommTargets(
-  kernelConn: any,
-  opts: IRegisterWidgetCommOptions
-): () => void {
+export function registerWidgetCommTargets(kernelConn: any, opts: IRegisterWidgetCommOptions): () => void {
   // Dynamically enable passthrough when no WidgetManager is available.
   // If a manager exists, avoid registering raw handlers that could
   // interfere with ipywidgets. Otherwise enable passthrough so kernel
@@ -80,14 +80,12 @@ export function registerWidgetCommTargets(
   const ENABLE_WIDGET_COMM_PASSTHROUGH = !managerAvailable;
 
   if (!ENABLE_WIDGET_COMM_PASSTHROUGH) {
-    opts.dbg &&
-      opts.dbg('Widget comm passthrough disabled: WidgetManager present');
+    opts.dbg && opts.dbg('Widget comm passthrough disabled: WidgetManager present');
     return () => {
       /* noop unregister */
     };
   }
-  opts.dbg &&
-    opts.dbg('Widget comm passthrough enabled: no WidgetManager detected');
+  opts.dbg && opts.dbg('Widget comm passthrough enabled: no WidgetManager detected');
   const dbg = opts.dbg || (() => {});
 
   const simpleHandler = (commOp: any, msg: any) => {
@@ -96,15 +94,10 @@ export function registerWidgetCommTargets(
       commOp.onMsg = async (m: any) => {
         const content = m?.content?.data || m;
         try {
-          const command =
-            typeof content === 'string' ? JSON.parse(content) : content;
+          const command = typeof content === 'string' ? JSON.parse(content) : content;
           let rmsg: any = null;
           const appletApi = opts.getAppletApi();
-          if (
-            command.type === 'command' &&
-            appletApi &&
-            typeof appletApi.evalCommandGetLabels === 'function'
-          ) {
+          if (command.type === 'command' && appletApi && typeof appletApi.evalCommandGetLabels === 'function') {
             const label = appletApi.evalCommandGetLabels(command.payload);
             rmsg = JSON.stringify({
               type: 'created',
@@ -115,34 +108,17 @@ export function registerWidgetCommTargets(
             const apiName = command.payload.name;
             const args = command.payload.args;
             let value: any[] = [];
-            (Array.isArray(apiName) ? apiName : [apiName]).forEach(
-              (f: string) => {
-                if (
-                  typeof (opts as any).isArrayOfArrays === 'function' &&
-                  (opts as any).isArrayOfArrays(args)
-                ) {
-                  const v2: any[] = [];
-                  args.forEach((a: any[]) => {
-                    v2.push(
-                      typeof appletApi[f] === 'function'
-                        ? appletApi[f](...a)
-                        : null
-                    );
-                  });
-                  value.push(v2);
-                } else {
-                  value.push(
-                    args
-                      ? typeof appletApi[f] === 'function'
-                        ? appletApi[f](...args)
-                        : null
-                      : typeof appletApi[f] === 'function'
-                        ? appletApi[f]()
-                        : null
-                  );
-                }
+            (Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+              if (typeof (opts as any).isArrayOfArrays === 'function' && (opts as any).isArrayOfArrays(args)) {
+                const v2: any[] = [];
+                args.forEach((a: any[]) => {
+                  v2.push(typeof appletApi[f] === 'function' ? appletApi[f](...a) : null);
+                });
+                value.push(v2);
+              } else {
+                value.push(args ? (typeof appletApi[f] === 'function' ? appletApi[f](...args) : null) : typeof appletApi[f] === 'function' ? appletApi[f]() : null);
               }
-            );
+            });
             value = Array.isArray(apiName) ? value : value[0];
             rmsg = JSON.stringify({
               type: 'value',
@@ -211,9 +187,7 @@ export const ENABLE_RUNNING_CHANGED = false;
  * objects for each running kernel so the front-end can listen for comm opens
  * from kernels that target `jupyter.ggblab`.
  */
-export async function registerGlobalGGBlabCommTargets(
-  app?: any
-): Promise<() => void> {
+export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => void> {
   const baseUrl = PageConfig.getBaseUrl();
   const token = PageConfig.getToken();
   const settings = ServerConnection.makeSettings({
@@ -250,28 +224,21 @@ export async function registerGlobalGGBlabCommTargets(
       const manager = createWidgetManager();
       if (manager && typeof manager.registerGGBlabHandler === 'function') {
         try {
-          const unregisterFromManager = manager.registerGGBlabHandler(
-            id,
-            (commOp: any, msg: any) => {
-              try {
-                // Delegate to manager for message routing.
-                // Manager may handle commOp and msg directly.
-                // If it does not, manager implementors should call commOp.onMsg themselves.
-              } catch (e) {
-                console.warn('Error delegating jupyter.ggblab to manager', e);
-              }
+          const unregisterFromManager = manager.registerGGBlabHandler(id, (commOp: any, msg: any) => {
+            try {
+              // Delegate to manager for message routing.
+              // Manager may handle commOp and msg directly.
+              // If it does not, manager implementors should call commOp.onMsg themselves.
+            } catch (e) {
+              console.warn('Error delegating jupyter.ggblab to manager', e);
             }
-          );
+          });
           registry.set(id, () => {
             unregisterFromManager && unregisterFromManager();
           });
           return;
         } catch (e) {
-          console.warn(
-            'Widget manager failed to register jupyter.ggblab',
-            id,
-            e
-          );
+          console.warn('Widget manager failed to register jupyter.ggblab', id, e);
         }
       }
 
@@ -358,14 +325,10 @@ export async function registerGlobalGGBlabCommTargets(
           app.serviceManager &&
           app.serviceManager.sessions &&
           typeof app.serviceManager.sessions.runningChanged === 'object' &&
-          typeof app.serviceManager.sessions.runningChanged.connect ===
-            'function'
+          typeof app.serviceManager.sessions.runningChanged.connect === 'function'
         ) {
           app.serviceManager.sessions.runningChanged.connect(onRunningChanged);
-        } else if (
-          (KernelAPI as any).runningChanged &&
-          typeof (KernelAPI as any).runningChanged.connect === 'function'
-        ) {
+        } else if ((KernelAPI as any).runningChanged && typeof (KernelAPI as any).runningChanged.connect === 'function') {
           (KernelAPI as any).runningChanged.connect(onRunningChanged);
         } else {
           // Fallback: poll periodically (conservative) — safe but less efficient.
@@ -379,9 +342,7 @@ export async function registerGlobalGGBlabCommTargets(
       }
     } else {
       // Dynamic detection disabled by flag; do nothing here.
-      dbg(
-        'Kernel runningChanged detection is disabled (ENABLE_RUNNING_CHANGED=false)'
-      );
+      dbg('Kernel runningChanged detection is disabled (ENABLE_RUNNING_CHANGED=false)');
     }
   } catch (e) {
     console.warn('Failed to attach runningChanged listener', e);
@@ -395,16 +356,10 @@ export async function registerGlobalGGBlabCommTargets(
         app.serviceManager &&
         app.serviceManager.sessions &&
         typeof app.serviceManager.sessions.runningChanged === 'object' &&
-        typeof app.serviceManager.sessions.runningChanged.disconnect ===
-          'function'
+        typeof app.serviceManager.sessions.runningChanged.disconnect === 'function'
       ) {
-        app.serviceManager.sessions.runningChanged.disconnect(
-          onRunningChanged as any
-        );
-      } else if (
-        (KernelAPI as any).runningChanged &&
-        typeof (KernelAPI as any).runningChanged.disconnect === 'function'
-      ) {
+        app.serviceManager.sessions.runningChanged.disconnect(onRunningChanged as any);
+      } else if ((KernelAPI as any).runningChanged && typeof (KernelAPI as any).runningChanged.disconnect === 'function') {
         (KernelAPI as any).runningChanged.disconnect(onRunningChanged as any);
       }
       // Call all unregister functions
@@ -420,3 +375,4 @@ export async function registerGlobalGGBlabCommTargets(
     }
   };
 }
+

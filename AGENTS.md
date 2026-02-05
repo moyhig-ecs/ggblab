@@ -70,8 +70,7 @@ Use your available tools (web search, documentation search) to access and retrie
 
 ### Logging and Debugging
 
-**❌ Don't**: Use `console.log()`
-**✅ Do**: Use structured logging or user-facing notifications
+**❌ Don't**: Use `console.log()` **✅ Do**: Use structured logging or user-facing notifications
 
 ```typescript
 // In TypeScript files like src/index.ts
@@ -79,8 +78,7 @@ import { INotification } from '@jupyterlab/apputils';
 app.commands.notifyCommandChanged();
 ```
 
-**✅ Do**: Use `console.error()` to log low-level error details that should not be presented to users in the UI
-**✅ Do**: Use `console.warn()` to log non-optimal conditions, e.g. an unexpected response from an external API that's been successfully handled.
+**✅ Do**: Use `console.error()` to log low-level error details that should not be presented to users in the UI **✅ Do**: Use `console.warn()` to log non-optimal conditions, e.g. an unexpected response from an external API that's been successfully handled.
 
 ### Type Safety
 
@@ -93,8 +91,7 @@ interface PluginConfig {
 }
 ```
 
-**❌ Don't**: Use the `any` type in TypeScript files
-**✅ Do**: Prefer typeguards over type casts
+**❌ Don't**: Use the `any` type in TypeScript files **✅ Do**: Prefer typeguards over type casts
 
 ### File-Scoped Validation
 
@@ -213,10 +210,7 @@ export function registerCommands(app: JupyterFrontEnd): void {
 Then in `src/index.ts`:
 
 ```typescript
-import {
-  JupyterFrontEnd,
-  JupyterFrontEndPlugin
-} from '@jupyterlab/application';
+import { JupyterFrontEnd, JupyterFrontEndPlugin } from '@jupyterlab/application';
 import { registerCommands, CommandIDs, CommandArguments } from './commands';
 
 const plugin: JupyterFrontEndPlugin<void> = {
@@ -297,8 +291,7 @@ source <path-to-venv>/bin/activate  # On macOS/Linux
 - Extension not appearing after build
 - `jupyter: command not found`
 
-**✅ Do**: Always activate your environment first
-**❌ Don't**: Run commands in your base/system environment
+**✅ Do**: Always activate your environment first **❌ Don't**: Run commands in your base/system environment
 
 ---
 
@@ -466,10 +459,7 @@ jupyter labextension develop . --overwrite
 
 ### Environment Notes
 
-**✅ Do**: Use a virtual environment (conda/mamba/micromamba/venv)
-**✅ Do**: Use `jlpm` exclusively
-**❌ Don't**: Mix package managers (`npm`, `yarn`) with `jlpm`
-**❌ Don't**: Mix lockfiles — keep only `yarn.lock`, not `package-lock.json`
+**✅ Do**: Use a virtual environment (conda/mamba/micromamba/venv) **✅ Do**: Use `jlpm` exclusively **❌ Don't**: Mix package managers (`npm`, `yarn`) with `jlpm` **❌ Don't**: Mix lockfiles — keep only `yarn.lock`, not `package-lock.json`
 
 ## Best Practices
 

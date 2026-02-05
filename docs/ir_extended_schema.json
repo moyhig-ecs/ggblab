@@ -4,24 +4,24 @@
   "type": "object",
   "required": ["schema_version", "elements", "commands"],
   "properties": {
-    "schema_version": {"type": "integer"},
+    "schema_version": { "type": "integer" },
     "elements": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id","name","type"],
+        "required": ["id", "name", "type"],
         "properties": {
-          "id": {"type":"integer"},
-          "name": {"type":"string"},
-          "type": {"type":"string"},
-          "coords": {"anyOf":[{"type":"null"},{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"}},"required":["x","y"]}]},
-          "layer": {"anyOf":[{"type":"integer"},{"type":"null"}]},
-          "command_id": {"anyOf":[{"type":"integer"},{"type":"null"}]},
-          "show_object": {"anyOf":[{"type":"boolean"},{"type":"null"}]},
-          "show_label": {"anyOf":[{"type":"boolean"},{"type":"null"}]},
-          "auxiliary": {"anyOf":[{"type":"boolean"},{"type":"null"}]},
-          "metadata": {"type":"object"},
-          "computed": {"type":"object"}
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "coords": { "anyOf": [{ "type": "null" }, { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" } }, "required": ["x", "y"] }] },
+          "layer": { "anyOf": [{ "type": "integer" }, { "type": "null" }] },
+          "command_id": { "anyOf": [{ "type": "integer" }, { "type": "null" }] },
+          "show_object": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] },
+          "show_label": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] },
+          "auxiliary": { "anyOf": [{ "type": "boolean" }, { "type": "null" }] },
+          "metadata": { "type": "object" },
+          "computed": { "type": "object" }
         }
       }
     },
@@ -29,26 +29,26 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id","name","inputs","outputs"],
+        "required": ["id", "name", "inputs", "outputs"],
         "properties": {
-          "id": {"type":"integer"},
-          "name": {"type":"string"},
-          "inputs": {"type":"array","items":{"type":"string"}},
-          "outputs": {"type":"array","items":{"type":"string"}},
-          "raw": {"type":["string","null"]},
-          "normalized": {"type":"object"}
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "inputs": { "type": "array", "items": { "type": "string" } },
+          "outputs": { "type": "array", "items": { "type": "string" } },
+          "raw": { "type": ["string", "null"] },
+          "normalized": { "type": "object" }
         }
       }
     },
     "inferences": {
       "type": "array",
       "items": {
-        "type":"object",
-        "properties":{
-          "pattern": {"type":"string"},
-          "subjects": {"type":"object"},
-          "evidence": {"type":"array","items":{"type":"string"}},
-          "confidence": {"type":"number"}
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string" },
+          "subjects": { "type": "object" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "confidence": { "type": "number" }
         }
       }
     }

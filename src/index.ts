@@ -1,8 +1,4 @@
-import {
-  ILayoutRestorer,
-  JupyterFrontEnd,
-  JupyterFrontEndPlugin
-} from '@jupyterlab/application';
+import { ILayoutRestorer, JupyterFrontEnd, JupyterFrontEndPlugin } from '@jupyterlab/application';
 import { MainAreaWidget, WidgetTracker } from '@jupyterlab/apputils';
 // ILauncher removed: launcher integration is not used in this build
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
@@ -10,10 +6,7 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
-import {
-  createWidgetManager,
-  registerGlobalGGBlabCommTargets
-} from './widgetManager';
+import { createWidgetManager, registerGlobalGGBlabCommTargets } from './widgetManager';
 
 /**
  * Legacy/compatibility note:
@@ -32,6 +25,7 @@ export function createWidgetManagerLegacy() {
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
+import registerWidgetManagerPlugin from './register_widget_manager_plugin';
 
 namespace CommandIDs {
   export const create = 'ggblab:create';
@@ -47,11 +41,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'A JupyterLab extension.',
   autoStart: true,
   optional: [ISettingRegistry, ILayoutRestorer],
-  activate: (
-    app: JupyterFrontEnd,
-    settingRegistry: ISettingRegistry | null,
-    restorer: ILayoutRestorer | null
-  ) => {
+  activate: (app: JupyterFrontEnd, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null) => {
     console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
     // Pragmatic global registration (option B): register a `jupyter.ggblab`
@@ -63,9 +53,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
       .then(unreg => {
         _unregisterGlobalGGBlab = unreg;
       })
-      .catch(e =>
-        console.warn('Failed to register global ggblab comm targets', e)
-      );
+      .catch(e => console.warn('Failed to register global ggblab comm targets', e));
 
     // Ensure we clean up registrations when the page unloads to avoid
     // leaving dangling front-end KernelConnection objects.
@@ -182,9 +170,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const p = content.props || {};
           // Fallback to reconstructing kernelId from the widget id if not present
           const id = widget.id || '';
-          const kernelId =
-            p.kernelId ||
-            (id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '');
+          const kernelId = p.kernelId || (id.startsWith('ggblab-') ? id.slice('ggblab-'.length) : '');
           return {
             kernelId,
             commTarget: p.commTarget || '',
@@ -201,4 +187,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   }
 };
 
-export default plugin;
+// Export both the main plugin and the manager-detection plugin so JupyterLab
+// will activate the manager probe and allow `setWidgetManager` to be called
+// when the jupyter-widgets manager becomes available.
+export default [plugin, registerWidgetManagerPlugin];

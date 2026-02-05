@@ -1,6 +1,7 @@
 # Session Summary — 2026-01-24
 
 Overview:
+
 - Repository: ggblab (JupyterLab extension)
 - Goal: Make panels persist across browser reloads, stabilize frontend↔backend communication, and improve observability for debugging.
 
@@ -23,16 +24,19 @@ Key changes:
    - Bumped package version to `1.1.0` (`package.json` and `ggblab/_version.py`) and pushed annotated tag `v1.1.0` to remote.
 
 Observability & debugging notes:
+
 - IPython Comm cannot receive messages while a notebook cell is executing; the out-of-band (OOB) socket exists to receive responses during kernel execution. OOB uses short-lived connections per transaction rather than a persistent websocket.
 - Logs are kept in global/class variables (e.g., `ggb_comm.logs`) to survive certain Jupyter session constraints; consider adding a `get_logs()` accessor or using a file/RotatingFileHandler for persistent diagnostics.
 
 Remaining / recommended next steps:
+
 - Run TypeScript static checks and Python tests (`pytest`) to verify changes end-to-end.
 - Adjust `send_recv` watchdog timeout as needed based on runtime behavior.
 - Optionally persist logs via `logging`+`RotatingFileHandler` or stream them to an external collector.
 - For a deeper refactor: consider integrating the OOB server into Jupyter's Tornado IOLoop to eliminate cross-thread asyncio boundaries.
 
 Commit summary (major edits):
+
 - `src/index.ts`, `src/widget.tsx` (frontend)
 - `ggblab/ggblab/comm.py` (backend)
 - `README.md` (documentation)
@@ -78,11 +82,13 @@ Python async I/O and Jupyter integration contain many practical pitfalls. Below 
   - Mitigation: Prefer libraries with native async support, or isolate sync libraries behind executors/workers.
 
 Practical pattern summary:
+
 - Combine explicit yields (`await asyncio.sleep(0)`), watchdog timeouts, and thread-/loop-safe queuing/locking to build a robust bridge between threads, the event loop, and blocking helper kernels. The changes applied in this session follow these practical rules.
 
 ---
 
 If you want, I can:
+
 - Commit this new English summary file and open a PR draft
 - Export the summary as a release note or CHANGELOG entry
 - Add a `get_logs()` helper to `ggb_comm` to make retrieving runtime logs easier

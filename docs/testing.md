@@ -39,6 +39,7 @@ pytest --lf
 ```
 
 Generated artifacts:
+
 - `htmlcov/` (HTML coverage report)
 - `coverage.xml` (coverage report for CI)
 

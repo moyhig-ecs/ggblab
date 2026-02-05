@@ -14,6 +14,7 @@ Complete documentation of testing infrastructure, fixes, and best practices for 
 ### Test Suite Structure
 
 **Backend Tests** (`tests/`):
+
 - `test_file.py`
   - Loading/saving by format (.ggb Base64, ZIP, JSON, XML), round-trip, edge cases
   - XML stripping and normalization (scientific notation)
@@ -26,6 +27,7 @@ Complete documentation of testing infrastructure, fixes, and best practices for 
   - Exception handling
 
 **Advanced Tests** (`ggblab_extra/tests/`):
+
 - `test_parser.py` (18 test classes, 70+ methods)
   - Dependency graph construction and analysis
   - Topological sorting, generations, reachability
@@ -35,6 +37,7 @@ Complete documentation of testing infrastructure, fixes, and best practices for 
 ### CI/CD Pipeline
 
 **GitHub Actions** ([.github/workflows/tests.yml](../../.github/workflows/tests.yml)):
+
 - Automated testing on every push to `main`/`dev`
 - Automated testing on all pull requests
 - Multi-platform: Ubuntu, macOS, Windows
@@ -65,12 +68,14 @@ pytest tests/ --junitxml=junit.xml --cov=ggblab --cov-report=xml
 All 70+ test methods in `test_parser.py` were refactored to match the actual parser implementation API:
 
 **Key Changes:**
+
 1. Fixture restructuring: Dict-of-dicts → Column-oriented format with "Name" column
 2. API correction: `parser.initialize_dataframe()` → `parser.df = df`
 3. Cache isolation: Added `cache_enabled=False` to all parser instantiations
 4. DataFrame validation: All tests use polars DataFrame with required columns
 
 **Results:**
+
 - ✅ All tests now follow correct implementation patterns
 - ✅ No API mismatches between tests and code
 - ✅ Proper test isolation (cache_enabled=False)
@@ -81,14 +86,18 @@ See [PARSER_FIX_REPORT.md](PARSER_FIX_REPORT.md) for complete details.
 ## Test Documentation Files
 
 ### In Root Directory (Legacy)
+
 These files are kept in the root for quick reference during development:
+
 - `FIX_COMPLETION_REPORT.md`
 - `TEST_FIX_SUMMARY.md`
 - `QUICK_REFERENCE.md`
 - `COMPLETION_CHECKLIST.md`
 
 ### In This Directory (docs/testing/)
+
 Archive and permanent copies of all testing documentation with better organization:
+
 - `PARSER_FIX_REPORT.md` - Full technical report
 - `FIXTURE_SUMMARY.md` - Fixture restructuring details
 - `QUICK_REFERENCE.md` - Quick reference guide
@@ -99,6 +108,7 @@ Archive and permanent copies of all testing documentation with better organizati
 ### Parser Implementation Contract
 
 The parser (`ggblab/parser.py`) expects:
+
 ```python
 parser = ggb_parser(cache_enabled=False)
 df = pl.DataFrame({
@@ -116,6 +126,7 @@ parser.parse()
 ### Test Isolation Pattern
 
 All tests use `cache_enabled=False` to prevent file I/O during test execution:
+
 ```python
 def test_example(self, simple_construction):
     parser = ggb_parser(cache_enabled=False)
@@ -127,27 +138,30 @@ def test_example(self, simple_construction):
 
 ## Status Summary
 
-| Component | Status | Details |
-|-----------|--------|---------|
-| Parser Tests | ✅ Complete | 70+ methods fixed, 18 test classes |
-| Applet Tests | ✅ Complete | 16 methods, validation logic |
-| Construction Tests | ✅ Complete | 20+ methods, file handling |
-| CI/CD Pipeline | ✅ Complete | GitHub Actions multi-OS/Python |
-| Coverage Reporting | ✅ Complete | Codecov integration enabled |
+| Component          | Status      | Details                            |
+| ------------------ | ----------- | ---------------------------------- |
+| Parser Tests       | ✅ Complete | 70+ methods fixed, 18 test classes |
+| Applet Tests       | ✅ Complete | 16 methods, validation logic       |
+| Construction Tests | ✅ Complete | 20+ methods, file handling         |
+| CI/CD Pipeline     | ✅ Complete | GitHub Actions multi-OS/Python     |
+| Coverage Reporting | ✅ Complete | Codecov integration enabled        |
 
 ## Next Steps
 
 ### Short Term (v0.7.3+)
+
 - [ ] Run full test suite to verify all fixes work: `pytest tests/ -v`
 - [ ] Monitor CI/CD pipeline on all platforms
 - [ ] Review coverage reports on Codecov
 
 ### Medium Term (v0.8+)
+
 - [ ] Add Playwright/Galata integration tests for browser automation
 - [ ] Expand coverage for edge cases in error handling
 - [ ] Add performance benchmarks for large constructions
 
 ### Long Term (v1.0+)
+
 - [ ] Full end-to-end workflow testing
 - [ ] Load testing for high concurrency scenarios
 - [ ] Platform-specific compatibility testing

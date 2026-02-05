@@ -56,6 +56,7 @@ print(val)
 ```
 
 If you encounter a timeout:
+
 - Restart the single-user server from the JupyterLab Control Panel
 - Verify that your cluster allows egress to `cdn.geogebra.org`
 - Check proxy/firewall logs for WebSocket or HTTP connection errors

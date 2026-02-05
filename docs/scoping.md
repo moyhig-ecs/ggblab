@@ -12,15 +12,16 @@ This document articulates ggblab's **foundational educational mission**: use geo
 
 Python's dynamic nature and permissive scoping rules make it a **poor vehicle for teaching fundamental programming concepts**:
 
-| Issue | Python Behavior | Educational Consequence |
-|-------|----------------|------------------------|
-| **Implicit global access** | Variables can be read from outer scopes without declaration | Students don't understand scope boundaries |
-| **Late binding** | Closures capture variable *references*, not values | Confusing behavior in loops (`lambda i: i` problem) |
-| **Weak encapsulation** | No private variables; convention-based (`_var`) | Students don't internalize information hiding |
-| **Namespace pollution** | `from module import *` is legal | No sense of explicit dependencies |
-| **Mutable default arguments** | `def f(x=[]):` creates shared state | Violates expectations of function isolation |
+| Issue                         | Python Behavior                                             | Educational Consequence                             |
+| ----------------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| **Implicit global access**    | Variables can be read from outer scopes without declaration | Students don't understand scope boundaries          |
+| **Late binding**              | Closures capture variable _references_, not values          | Confusing behavior in loops (`lambda i: i` problem) |
+| **Weak encapsulation**        | No private variables; convention-based (`_var`)             | Students don't internalize information hiding       |
+| **Namespace pollution**       | `from module import *` is legal                             | No sense of explicit dependencies                   |
+| **Mutable default arguments** | `def f(x=[]):` creates shared state                         | Violates expectations of function isolation         |
 
 **Result**: Students write code that "works" but have **no mental model** of:
+
 - Where variables are defined (scope boundaries)
 - What depends on what (dependency relationships)
 - When values are captured vs. referenced (binding semantics)
@@ -29,11 +30,13 @@ Python's dynamic nature and permissive scoping rules make it a **poor vehicle fo
 #### Traditional Approaches Fall Short
 
 **Textbook explanations**: Abstract diagrams of "local," "enclosing," "global," "built-in" scopes (LEGB rule)
+
 - ❌ No concrete, visual anchor
 - ❌ Disconnected from real problem-solving
 - ❌ Students memorize without understanding
 
 **Toy examples**: `x = 1` at global level, `x = 2` inside function
+
 - ❌ Artificial; no meaningful context
 - ❌ Doesn't generalize to complex programs
 - ❌ Boring; students disengage
@@ -51,19 +54,20 @@ Python's dynamic nature and permissive scoping rules make it a **poor vehicle fo
 ```
 Given:
   - Points A, B        [Base scope: axioms/givens]
-  
+
 Construct:
   - Line AB            [Scope 1: depends on A, B]
   - Midpoint M of AB   [Scope 2: depends on AB, hence on A, B]
   - Perpendicular bisector L of AB  [Scope 2: depends on AB]
   - Point C on L       [Scope 3: depends on L, hence on AB, A, B]
   - Triangle ABC       [Scope 4: depends on A, B, C]
-  
+
 Property to prove:
-  - Triangle ABC is isosceles  [Verification scope: accesses A, B, C, M, L] 
+  - Triangle ABC is isosceles  [Verification scope: accesses A, B, C, M, L]
 ```
 
 **This is a scoping hierarchy**:
+
 - **Base scope** (Points A, B): Foundational definitions; no dependencies
 - **Scope 1** (Line AB): Depends on base scope; closes over A, B
 - **Scope 2** (Midpoint M, Bisector L): Depends on Scope 1; transitively depends on base
@@ -72,15 +76,15 @@ Property to prove:
 
 #### The Isomorphism: Geometry ↔ Programming
 
-| Geometric Concept | Programming Concept | ggblab Manifestation |
-|------------------|---------------------|---------------------|
-| **Base points (A, B)** | Function parameters / global constants | User-defined initial state |
-| **Constructed line (AB)** | Local variable depending on parameters | `Line(A, B)` object in dependency graph |
-| **Derived point (M = midpoint)** | Computed value from local variables | `Midpoint(A, B)` in SymPy/GeoGebra |
-| **Constraint (C on L)** | Variable binding within scope | Point's position determined by ancestor objects |
-| **Property verification** | Function accessing multiple scopes | SymPy `verify_property()` traverses graph |
-| **Construction sequence** | Call stack / execution order | Topological sort of dependency graph |
-| **Parameter sweep (vary A)** | Closure capturing mutable reference | Scene Timeline records scope evolution |
+| Geometric Concept                | Programming Concept                    | ggblab Manifestation                            |
+| -------------------------------- | -------------------------------------- | ----------------------------------------------- |
+| **Base points (A, B)**           | Function parameters / global constants | User-defined initial state                      |
+| **Constructed line (AB)**        | Local variable depending on parameters | `Line(A, B)` object in dependency graph         |
+| **Derived point (M = midpoint)** | Computed value from local variables    | `Midpoint(A, B)` in SymPy/GeoGebra              |
+| **Constraint (C on L)**          | Variable binding within scope          | Point's position determined by ancestor objects |
+| **Property verification**        | Function accessing multiple scopes     | SymPy `verify_property()` traverses graph       |
+| **Construction sequence**        | Call stack / execution order           | Topological sort of dependency graph            |
+| **Parameter sweep (vary A)**     | Closure capturing mutable reference    | Scene Timeline records scope evolution          |
 
 #### Visual Manifestation in GeoGebra
 
@@ -104,7 +108,8 @@ Construction Protocol:
     B ──┘      └──> M ──┘
 ```
 
-**This IS a scope tree**: 
+**This IS a scope tree**:
+
 - Root nodes (A, B): No dependencies → global scope
 - Internal nodes (AB, M, L): Depend on ancestors → nested scopes
 - Leaf nodes (C): Depend on long chains → deeply nested scopes
@@ -129,6 +134,7 @@ Construction Protocol:
 #### Decomposition
 
 **Geometry**: "Construct an equilateral triangle"
+
 - Step 1: Define base segment AB
 - Step 2: Construct circle centered at A with radius |AB|
 - Step 3: Construct circle centered at B with radius |AB|
@@ -136,8 +142,9 @@ Construction Protocol:
 - Step 5: Triangle ABC is equilateral
 
 **Programming**: "Write a function to compute factorial"
+
 - Step 1: Base case (n = 0)
-- Step 2: Recursive case (n * factorial(n-1))
+- Step 2: Recursive case (n \* factorial(n-1))
 - Step 3: Combine
 
 **Skill transfer**: Both require breaking monolithic tasks into ordered subtasks.
@@ -145,11 +152,13 @@ Construction Protocol:
 #### Pattern Recognition
 
 **Geometry**: Recognize that "perpendicular bisector + midpoint" pattern appears in many constructions
+
 - Isosceles triangle construction
 - Square construction
 - Circle-tangent constructions
 
 **Programming**: Recognize that "initialize accumulator + iterate + update" pattern appears in many algorithms
+
 - Summing a list
 - Finding maximum
 - Filtering data
@@ -158,11 +167,13 @@ Construction Protocol:
 
 #### Abstraction
 
-**Geometry**: 
+**Geometry**:
+
 - Abstract away specific coordinates: "Triangle ABC" (not "Triangle at (0,0), (1,0), (0.5, √3/2)")
 - Focus on relationships: "Perpendicular" (not "slope = -1/m")
 
 **Programming**:
+
 - Abstract away implementation: `sort(list)` (not manual quicksort)
 - Focus on interfaces: "This function takes a list and returns a sorted list"
 
@@ -171,11 +182,13 @@ Construction Protocol:
 #### Algorithm Design
 
 **Geometry**: "Given three non-collinear points, construct the circumcircle"
+
 - Algorithm 1: Perpendicular bisectors of two sides intersect at circumcenter
 - Algorithm 2: Use formula for circumcenter coordinates
 - Trade-offs: Geometric vs. algebraic; visual clarity vs. computational efficiency
 
 **Programming**: "Sort a list of numbers"
+
 - Algorithm 1: Bubble sort (simple, slow)
 - Algorithm 2: Merge sort (complex, fast)
 - Trade-offs: Simplicity vs. efficiency
@@ -189,6 +202,7 @@ Construction Protocol:
 #### Concrete Example: Isosceles Triangle Construction
 
 **Mathematical Statement**:
+
 > Construct an isosceles triangle ABC where AB is the base.
 
 **Geometric Construction** (GeoGebra):
@@ -227,7 +241,7 @@ def construct_isosceles_triangle(base_length=4):
     # Scope 1: Define base points (like A, B)
     A = Point(0, 0)
     B = Point(base_length, 0)
-    
+
     # Scope 2: Derived objects (like M, AB, L)
     def perpendicular_bisector():
         # This function "closes over" A and B
@@ -235,20 +249,20 @@ def construct_isosceles_triangle(base_length=4):
         midpoint_x = (A.x + B.x) / 2
         midpoint_y = (A.y + B.y) / 2
         M = Point(midpoint_x, midpoint_y)
-        
+
         # Perpendicular direction
         dx = B.x - A.x
         dy = B.y - A.y
         perp_dx, perp_dy = -dy, dx  # Rotate 90°
-        
+
         return M, (perp_dx, perp_dy)
-    
+
     # Scope 3: Choose point on bisector (like C on L)
     M, perp_dir = perpendicular_bisector()
     height = 3  # User-chosen parameter
-    C = Point(M.x + height * perp_dir[0], 
+    C = Point(M.x + height * perp_dir[0],
               M.y + height * perp_dir[1])
-    
+
     # Return: Triangle closure
     # (Like Triangle ABC in geometry)
     return Triangle(A, B, C)
@@ -331,21 +345,21 @@ print(times_3(5))  # 15 (uses n=3)
 def parse(self, protocol: str) -> nx.DiGraph:
     """
     Parse GeoGebra construction protocol into dependency graph.
-    
+
     Returns:
         NetworkX DiGraph where:
         - Nodes: GeoGebra objects (points, lines, circles, etc.)
         - Edges: (A -> B) means "B depends on A"
     """
     # ... parse XML ...
-    
+
     # Build graph
     G = nx.DiGraph()
     for obj in construction_objects:
         G.add_node(obj['name'], **obj['properties'])
         for dependency in obj['depends_on']:
             G.add_edge(dependency, obj['name'])
-    
+
     return G
 ```
 
@@ -372,7 +386,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 
 pos = nx.spring_layout(graph)
-nx.draw(graph, pos, with_labels=True, node_color='lightblue', 
+nx.draw(graph, pos, with_labels=True, node_color='lightblue',
         node_size=500, font_size=10, arrows=True)
 plt.title("Dependency Graph = Scope Tree")
 plt.show()
@@ -507,24 +521,27 @@ for name, obj in sympy_objects['objects'].items():
 
 **Objective**: Can students transfer geometric scoping to programming scoping?
 
-| Criterion | Novice | Intermediate | Advanced |
-|----------|--------|--------------|----------|
-| **Identify dependencies** | Cannot identify which objects depend on which | Can identify direct dependencies (A → B) | Can trace transitive dependencies (A → B → C) |
-| **Scope boundaries** | Doesn't understand why deleting A breaks AB | Understands parent-child relationships | Can predict cascading effects of modifications |
-| **Closure behavior** | Cannot explain parameter binding | Understands that snapshots capture parameters | Can implement closures in Python using geometric intuition |
-| **Transfer to code** | Cannot relate geometry to programming | Can see similarities but not apply | Can write scoped Python code using geometric templates |
+| Criterion                 | Novice                                        | Intermediate                                  | Advanced                                                   |
+| ------------------------- | --------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------- |
+| **Identify dependencies** | Cannot identify which objects depend on which | Can identify direct dependencies (A → B)      | Can trace transitive dependencies (A → B → C)              |
+| **Scope boundaries**      | Doesn't understand why deleting A breaks AB   | Understands parent-child relationships        | Can predict cascading effects of modifications             |
+| **Closure behavior**      | Cannot explain parameter binding              | Understands that snapshots capture parameters | Can implement closures in Python using geometric intuition |
+| **Transfer to code**      | Cannot relate geometry to programming         | Can see similarities but not apply            | Can write scoped Python code using geometric templates     |
 
 ### Example Exercise
 
 **Geometric Problem**:
+
 > Given points A, B, C, construct the incenter I of triangle ABC.
 
 **Construction Steps**:
+
 1. Define A, B, C (global scope)
 2. Construct angle bisectors (nested scope; depend on A, B, C)
 3. Find intersection I of bisectors (nested scope; depends on bisectors)
 
 **Programming Challenge**:
+
 > Translate the construction to Python code with proper scoping.
 
 **Expected Solution**:
@@ -542,14 +559,14 @@ def construct_incenter(A, B, C):
         # Closure over vertex, side1, side2
         # ... compute bisector direction ...
         return bisector_line
-    
+
     # Scope 2: Compute bisectors
     bisector_A = angle_bisector(A, B, C)
     bisector_B = angle_bisector(B, A, C)
-    
+
     # Scope 3: Intersection = incenter
     I = intersect(bisector_A, bisector_B)
-    
+
     return I
 
 # Verification scope: Check that I is equidistant from all sides
@@ -558,6 +575,7 @@ assert distance(incenter, side_AB) == distance(incenter, side_BC)
 ```
 
 **Grading Criteria**:
+
 - ✅ Correct scope nesting (inner functions don't leak)
 - ✅ Closure semantics (bisectors capture vertex coordinates)
 - ✅ Dependency clarity (I depends on bisectors, which depend on A, B, C)
@@ -569,6 +587,7 @@ assert distance(incenter, side_AB) == distance(incenter, side_BC)
 ### Computational Thinking Is Transferable
 
 **The educational research consensus** (Barr & Stephenson, 2011; Brennan & Resnick, 2012):
+
 - Computational thinking skills transfer across domains
 - Abstract concepts need concrete anchors
 - **Mathematics is the ideal anchor** for programming concepts
@@ -588,20 +607,24 @@ Programming scoping (abstract, conceptual)
 ### The Pipeline: From Geometry to Professional Programming
 
 **Stage 1: Geometric Exploration (K-8)**
+
 - Students learn geometric constructions in GeoGebra
 - No programming; pure mathematics
 
 **Stage 2: Dependency Awareness (Grades 9-10)**
+
 - Students export constructions to ggblab
 - Visualize dependency graphs
 - Understand "this depends on that"
 
 **Stage 3: Scoping Translation (Grades 11-12 / College)**
+
 - Students write Python code mirroring geometric constructions
 - Explicit teaching: "Geometric dependency = programming scope"
 - Exercises: Translate constructions to code
 
 **Stage 4: Professional Programming (College / Career)**
+
 - Students write complex software with proper scoping
 - Intuition: "Check the dependency graph; avoid circular references"
 - Debugging: "Trace the scope chain; where was this variable defined?"
@@ -613,6 +636,7 @@ Programming scoping (abstract, conceptual)
 **Python's educational value is undeniable** (simple syntax, rich libraries). **But its scoping weaknesses are real**.
 
 **ggblab compensates** by:
+
 1. **Externalizing scope**: Make dependencies visual (graph), not implicit
 2. **Symbolic tracking**: SymPy's `free_symbols` makes scope explicit
 3. **Geometric grounding**: Anchor abstract scoping in tangible construction
@@ -712,11 +736,13 @@ Programming scoping (abstract, conceptual)
 #### Why Not Teach Scoping Directly in Python?
 
 **Standard approach**: Start with `def`, `global`, `nonlocal`, LEGB rule
+
 - ❌ Students memorize rules without mental models
 - ❌ No intuition for why scoping matters
 - ❌ Debugging scope errors is trial-and-error
 
 **ggblab approach**: Start with geometric dependencies (already intuitive)
+
 - ✅ Students already understand "line depends on points"
 - ✅ Natural mental model: construction order = scope hierarchy
 - ✅ Debugging geometric constructions trains dependency reasoning
@@ -726,14 +752,17 @@ Programming scoping (abstract, conceptual)
 #### The Cognitive Science Rationale
 
 **Dual Coding Theory** (Paivio, 1986):
+
 - Combining verbal (code) and visual (geometry) representations enhances learning
 - Students who see scoping both as code and as graphs outperform single-representation learners
 
 **Transfer of Learning** (Perkins & Salomon, 1992):
+
 - Far transfer (math → programming) requires explicit bridging
 - ggblab provides the bridge: geometric dependency → programming scope
 
 **Constructivism** (Piaget):
+
 - Students construct knowledge by connecting new concepts to existing schema
 - Geometric dependencies are existing schema (learned in math class)
 - Programming scopes are new concepts (connected via ggblab)
@@ -744,7 +773,8 @@ Programming scoping (abstract, conceptual)
 
 **ggblab's core educational mission** is to use geometric scene construction as a **visual, intuitive model for variable scoping**—a concept poorly taught in Python and essential for computational thinking.
 
-**The insight**: 
+**The insight**:
+
 - Geometric dependencies (points → lines → circles → ...) are isomorphic to programming scopes (global → function → nested → ...)
 - Students already understand geometric dependencies from math class
 - **ggblab bridges the gap**: Export GeoGebra → visualize dependency graph → translate to Python scopes
@@ -754,6 +784,7 @@ Programming scoping (abstract, conceptual)
 $$\text{Geometry (intuitive)} \xrightarrow{\text{ggblab}} \text{Dependency Graph (visual)} \xrightarrow{\text{mapping}} \text{Programming Scopes (abstract)}$$
 
 **Expected outcome**: Students who learn scoping via ggblab will:
+
 1. **Understand scope boundaries** (not just memorize LEGB)
 2. **Reason about dependencies** (debug faster)
 3. **Transfer to other languages** (scoping principles are universal)

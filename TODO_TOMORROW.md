@@ -12,5 +12,6 @@ Planned tasks to work on next:
 8. Document usage: add README snippets for transform & detection workflow.
 
 Notes:
+
 - Use `scripts/ir_transform.py` as the integration point. Add unit-checking tolerances and confidence scoring.
 - Prefer writing `inferences` declaratively into the extended IR so downstream UIs can consume without code.

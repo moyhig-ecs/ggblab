@@ -177,6 +177,10 @@
         "trailingComma": "none",
         "arrowParens": "avoid",
         "endOfLine": "auto",
+        "printWidth": 200,
+        "bracketSameLine": true,
+        "jsxSingleQuote": true,
+        "proseWrap": "never",
         "overrides": [
             {
                 "files": "package.json",

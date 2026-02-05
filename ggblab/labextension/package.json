@@ -109,7 +109,7 @@
     "outputDir": "ggblab/labextension",
     "schemaDir": "schema",
     "_build": {
-      "load": "static/remoteEntry.a5c1663549e6d6088456.js",
+      "load": "static/remoteEntry.bb77b350235bbef3b53d.js",
       "extension": "./extension",
       "style": "./style"
     }
@@ -182,6 +182,10 @@
     "trailingComma": "none",
     "arrowParens": "avoid",
     "endOfLine": "auto",
+    "printWidth": 200,
+    "bracketSameLine": true,
+    "jsxSingleQuote": true,
+    "proseWrap": "never",
     "overrides": [
       {
         "files": "package.json",
