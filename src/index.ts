@@ -6,7 +6,7 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
-import { createWidgetManager, registerGlobalGGBlabCommTargets } from './widgets/widgetManager';
+import { createWidgetManager, registerGlobalGGBlabCommTargets } from './widgets';
 
 /**
  * Legacy/compatibility note:
@@ -25,7 +25,7 @@ export function createWidgetManagerLegacy() {
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
-import registerWidgetManagerPlugin from './widgets/register_widget_manager_plugin';
+import { registerWidgetManagerPlugin } from './widgets';
 
 namespace CommandIDs {
   export const create = 'ggblab:create';

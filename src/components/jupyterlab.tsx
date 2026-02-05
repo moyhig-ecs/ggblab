@@ -1,6 +1,6 @@
 import { ServerConnection, KernelAPI, KernelConnection, KernelManager } from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
-import { initKernelCommHelpers } from '../comm/kernel_comm';
+import { initKernelCommHelpers } from '../comm';
 
 // Small utility copied from the applet to avoid circular imports
 export function isArrayOfArrays(value: any): boolean {
