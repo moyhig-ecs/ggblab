@@ -14,7 +14,7 @@ export function isArrayOfArrays(value: any): boolean {
  * - initializes kernel_comm helpers and returns the send/handler factories
  * - registers widget comm passthrough when appropriate
  */
-export async function setupKernelResources(res: any, props: any, dbg: (...args: any[]) => void) {
+export async function setupKernelResources(resources: any, props: any, dbg: (...args: any[]) => void) {
   let _result: any = null;
   await (async () => {
     return await KernelAPI.listRunning();
@@ -32,21 +32,21 @@ export async function setupKernelResources(res: any, props: any, dbg: (...args: 
       appendToken: true
     });
 
-    res.kernelManager = new KernelManager({ serverSettings: settings });
-    res.kernel2 = await res.kernelManager.startNew({ name: 'python3' });
-    dbg('Started new kernel:', res.kernel2, res.kernelId);
-    await res.kernel2.requestExecute({ code: 'from websockets.sync.client import unix_connect, connect' }).done;
+    resources.kernelManager = new KernelManager({ serverSettings: settings });
+    resources.kernel2 = await resources.kernelManager.startNew({ name: 'python3' });
+    dbg('Started new kernel:', resources.kernel2, resources.kernelId);
+    await resources.kernel2.requestExecute({ code: 'from websockets.sync.client import unix_connect, connect' }).done;
     // ws/socket values managed inside kernel_comm helpers
     // Initialize comm helpers from shared module
-    const { callRemoteSocketSend, makeIncomingHandler } = initKernelCommHelpers(res, dbg);
+    const { callRemoteSocketSend, makeIncomingHandler } = initKernelCommHelpers(resources, dbg);
 
-    res.kernelConn = new KernelConnection({
-      model: { name: 'python3', id: res.kernelId || kernels[0]['id'] },
+    resources.kernelConn = new KernelConnection({
+      model: { name: 'python3', id: resources.kernelId || kernels[0]['id'] },
       serverSettings: settings
     });
-    dbg('Connected to kernel:', res.kernelConn);
+    dbg('Connected to kernel:', resources.kernelConn);
 
-    _result = { callRemoteSocketSend, makeIncomingHandler, kernelConn: res.kernelConn };
+    _result = { callRemoteSocketSend, makeIncomingHandler, kernelConn: resources.kernelConn };
   });
 
   // Widget comm passthrough registration is handled by the applet fallback

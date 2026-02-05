@@ -9,7 +9,7 @@ export type KernelCommHelpers = {
   makeIncomingHandler: (processCommandMessage: (cmd: any) => Promise<string>) => (msg: any) => Promise<void>;
 };
 
-export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
+export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelpers {
   // Per-init send chain to serialize socket sends
   let sendChain: Promise<void> = Promise.resolve();
 
@@ -17,13 +17,13 @@ export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
     try {
       dbg &&
         dbg('callRemoteSocketSend: sending message', {
-          socketPath: res.socketPath,
-          wsUrl: `ws://localhost:${res.wsPort}/`,
+          socketPath: resources.socketPath,
+          wsUrl: `ws://localhost:${resources.wsPort}/`,
           messagePreview: (message || '').slice(0, 200)
         });
 
-      const wsUrl = `ws://localhost:${res.wsPort}/`;
-      const socketPath = res.socketPath;
+      const wsUrl = `ws://localhost:${resources.wsPort}/`;
+      const socketPath = resources.socketPath;
 
       const doSend = async () => {
         // Prefer executing the helper socket-send on the helper kernel (`kernel2`).
@@ -31,13 +31,13 @@ export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
         // attempt a best-effort fallback:
         //  - For websocket URLs: open a browser `WebSocket` and send directly.
         //  - For unix socket paths: log and skip (browser cannot open unix sockets).
-        if (res.kernel2 && typeof res.kernel2.requestExecute === 'function') {
+        if (resources.kernel2 && typeof resources.kernel2.requestExecute === 'function') {
           if (socketPath) {
-            await res.kernel2.requestExecute({
+            await resources.kernel2.requestExecute({
               code: `\nwith unix_connect("${socketPath}") as ws:\n\t\tws.send(r"""${message}""")\n`
             }).done;
           } else {
-            await res.kernel2.requestExecute({
+            await resources.kernel2.requestExecute({
               code: `\nwith connect("${wsUrl}") as ws:\n\t\tws.send(r"""${message}""")\n`
             }).done;
           }
@@ -119,29 +119,29 @@ export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
       if (!kconn) {
         throw new Error('No kernelConn available to create comm');
       }
-      res.comm = kconn.createComm(ct);
+      resources.comm = kconn.createComm(ct);
       try {
-        const maybeId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || (res.comm as any)?.id || null;
-        _dbg && _dbg('Recreated kernel comm', { target: ct, commObject: res.comm, commId: maybeId });
+        const maybeId = (resources.comm as any)?.comm_id || (resources.comm as any)?.commId || (resources.comm as any)?.id || null;
+        _dbg && _dbg('Recreated kernel comm', { target: ct, commObject: resources.comm, commId: maybeId });
       } catch (err) {
-        _dbg && _dbg('Recreated kernel comm (unable to read id)', ct, res.comm);
+        _dbg && _dbg('Recreated kernel comm (unable to read id)', ct, resources.comm);
       }
       try {
-        (res.comm as any).onMsg = h;
+        (resources.comm as any).onMsg = h;
       } catch (err) {
         _dbg && _dbg('Failed to attach onMsg to recreated comm', err);
       }
       try {
-        ach && ach(res.comm);
+        ach && ach(resources.comm);
       } catch (err) {
         _dbg && _dbg('Failed to attach close handler to recreated comm', err);
       }
       try {
-        (res.comm as any).open && (res.comm as any).open('REOPEN from GGB').done;
+        (resources.comm as any).open && (resources.comm as any).open('REOPEN from GGB').done;
       } catch (err) {
         _dbg && _dbg('Failed to open recreated comm', err);
       }
-      return res.comm;
+      return resources.comm;
     } catch (e) {
       _dbg && _dbg('ensureKernelComm failed', e);
       return null;
@@ -157,7 +157,7 @@ export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
         setClosed: (v: boolean) => {
           commClosed = v;
         },
-        commTarget: res.commTarget,
+        commTarget: resources.commTarget,
         dbg
       });
 
@@ -165,7 +165,7 @@ export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
       const _dbg = dbg || (() => {});
       _dbg('handleIncomingCommMessage:', msg);
       try {
-        _dbg('Kernel comm onMsg received', { commTarget: res.commTarget || '', msg });
+        _dbg('Kernel comm onMsg received', { commTarget: resources.commTarget || '', msg });
 
         const command = JSON.parse(msg.content.data as any);
         _dbg('Parsed command:', command.type, command.payload);
@@ -179,28 +179,28 @@ export function initKernelCommHelpers(res: any, dbg?: any): KernelCommHelpers {
         }
 
         try {
-          const cId = (res.comm as any)?.comm_id || (res.comm as any)?.commId || null;
-          _dbg('Sending via kernel comm', { commTarget: res.commTarget, commId: cId, preview: (rmsg || '').slice(0, 200) });
-          if (!res.comm || commClosed) {
+          const cId = (resources.comm as any)?.comm_id || (resources.comm as any)?.commId || null;
+          _dbg('Sending via kernel comm', { commTarget: resources.commTarget, commId: cId, preview: (rmsg || '').slice(0, 200) });
+          if (!resources.comm || commClosed) {
             try {
               const created = await ensureKernelComm({
-                kernelConn: res.kernelConn,
-                commTarget: res.commTarget,
+                kernelConn: resources.kernelConn,
+                commTarget: resources.commTarget,
                 handleIncomingCommMessage: handler,
                 attachCloseHandler: attachCommCloseHandlerLocal,
                 dbg: _dbg
               });
               if (created) {
-                res.comm = created;
+                resources.comm = created;
                 commClosed = false;
               }
             } catch (e) {
               _dbg('ensureKernelComm failed before sending reply', e);
             }
           }
-          if (res.comm) {
+          if (resources.comm) {
             try {
-              res.comm.send(rmsg);
+              resources.comm.send(rmsg);
             } catch (e) {
               _dbg('Failed to send via kernel comm, will still attempt remote socket send', e, { rmsgPreview: (rmsg || '').slice(0, 200) });
             }

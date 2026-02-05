@@ -1,7 +1,7 @@
 // Shared lightweight types for ggblab frontend
 
 /** Minimal shape of the GeoGebra applet API used by the widget code. */
-export interface IAppletApi {
+export interface IGeoGebraAppletApi {
   evalCommandGetLabels?: (payload: any) => any;
   registerObjectUpdateListener?: (name: string, cb: () => void) => any;
   unregisterObjectUpdateListener?: (name: string) => any;
@@ -12,7 +12,7 @@ export interface IAppletApi {
 }
 
 /** Loose resource bag interface matching `Resources` used in `src/widget.tsx`. */
-export interface IResources {
+export interface IGeoGebraResources {
   kernelId?: string;
   commTarget?: string;
   socketPath?: string | null;
@@ -22,7 +22,7 @@ export interface IResources {
   kernelConn?: any;
   comm?: any;
   widgetComm?: any;
-  appletApi?: IAppletApi | null;
+  appletApi?: IGeoGebraAppletApi | null;
   // Unregister function returned by `registerWidgetCommTargets`.
   unregisterWidgetCommTargets?: (() => void) | null;
   observer?: MutationObserver | null;
@@ -39,7 +39,7 @@ export interface IRegisterWidgetCommOptions {
   kernel2: any;
   socketPath: string | null;
   wsUrl: string;
-  getAppletApi: () => IAppletApi | null;
-  res?: IResources;
+  getAppletApi: () => IGeoGebraAppletApi | null;
+  resources?: IGeoGebraResources;
   dbg?: (...args: any[]) => void;
 }
