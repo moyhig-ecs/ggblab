@@ -3,9 +3,9 @@ import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
 
 import setupKernelResources from './jupyterlab';
-import { registerWidgetCommTargets } from '../widgetManager';
+import { registerWidgetCommTargets } from '../widgets/widgetManager';
 import { DockLayout } from '@lumino/widgets';
-import type { WidgetManagerType } from '../widgetManager';
+import type { WidgetManagerType } from '../widgets/widgetManager';
 // widgetManager registration is handled inside `setupKernelResources`
 import type { IGeoGebraAppletApi, IGeoGebraResources } from '../types';
 
