@@ -161,6 +161,7 @@ export async function setupKernelResources(resources: any, props: any, dbg: (...
     try { console.info('ggblab: clearBrowserStorageOnStartup active — clearing storages (selective mode default)'); } catch (e) {}
     clearBrowserStorage().catch(() => {});
   }
+  
   await (async () => {
     return await KernelAPI.listRunning();
   })().then(async (kernels) => {
