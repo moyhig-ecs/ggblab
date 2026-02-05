@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 // comm helper functions inlined from kernel_comm.ts to reduce indirection
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
@@ -8,6 +9,7 @@ import { DockLayout } from '@lumino/widgets';
 import type { WidgetManagerType } from '../widgets';
 // widgetManager registration is handled inside `setupKernelResources`
 import type { IGeoGebraAppletApi, IGeoGebraResources } from '../types';
+import { injectGeoGebraApplet } from '../shared/createApplet';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -99,6 +101,8 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			socketPath: string | null;
 			wsPort: number;
 			kernel2: any = null;
+			kernel3: any = null;
+			kernel3Conn: any = null;
 			kernelManager: any = null;
 			kernelConn: any = null;
 			comm: any = null;
@@ -106,6 +110,8 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			appletApi: IGeoGebraAppletApi | null = null;
 			// unregister function returned by `registerWidgetCommTargets`
 			unregisterWidgetCommTargets: (() => void) | null = null;
+			// cleanup function returned by injectGeoGebraApplet
+			injectCleanup: (() => void) | null = null;
 			observer: MutationObserver | null = null;
 			resizeHandler: (() => void) | null = null;
 			closeHandler: (() => void) | null = null;
@@ -139,6 +145,24 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 							dbg('Error shutting down kernel2 during cleanup', err);
 						}
 						this.kernel2 = null;
+					}
+
+					if (this.kernel3) {
+						try {
+							await this.kernel3.shutdown();
+						} catch (err) {
+							dbg('Error shutting down kernel3 during cleanup', err);
+						}
+						this.kernel3 = null;
+					}
+
+					if (this.kernel3Conn) {
+						try {
+							this.kernel3Conn.dispose?.();
+						} catch (err) {
+							dbg('Error disposing kernel3 websocket connection', err);
+						}
+						this.kernel3Conn = null;
 					}
 
 					this.widgetComm = null;
@@ -194,6 +218,13 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 						// call the unregister function if present
 						this.unregisterWidgetCommTargets?.();
 						this.unregisterWidgetCommTargets = null;
+						// call injector cleanup if present
+						try {
+							this.injectCleanup?.();
+						} catch (err) {
+							dbg('Error during inject cleanup', err);
+						}
+						this.injectCleanup = null;
 					} catch (err) {
 						dbg('Error unregistering widget comm targets', err);
 					}
@@ -347,7 +378,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 												// Suppress sending when the string value hasn't changed since last send.
 												try {
 													const last = resources._lastValues[name] ?? null;
-													const cur = value == null ? null : String(value);
+													const cur = value === null || value === undefined ? null : String(value);
 													if (last !== null && last === cur) {
 														// unchanged, skip notification
 														dbg('Suppressing unchanged value for', name, ':', cur);
@@ -741,84 +772,30 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				resources.observer.observe(document.body, { childList: true, subtree: true });
 			}
 
-			// Avoid duplicate meta/script inserts: reuse if already present
-			const existingMeta = document.getElementById(
-				'ggblab-viewport-meta'
-			) as HTMLMetaElement | null;
-			if (existingMeta) {
-				resources.metaViewport = existingMeta;
-			} else {
-				resources.metaViewport = document.createElement('meta');
-				resources.metaViewport.id = 'ggblab-viewport-meta';
-				resources.metaViewport.name = 'viewport';
-				resources.metaViewport.content = 'width=device-width, initial-scale=1';
-				document.head.appendChild(resources.metaViewport);
-			}
-
-			const existingScript = document.getElementById(
-				'ggblab-deployggb-script'
-			) as HTMLScriptElement | null;
-			dbg('Script element lookup', { existingScript: !!existingScript, scriptId: 'ggblab-deployggb-script' });
-			const createApplet = () => {
-				const params = {
-					id: 'ggbApplet' + (props?.kernelId || '').substring(0, 8), // applet ID
-					appName: props?.appName || 'suite', // allow overriding appName via props
-					width: 800, // applet width
-					height: 600, // applet height
-					showToolBar: true, // show the toolbar
-					showAlgebraInput: false, // show algebra input field
-					showMenuBar: true, // show the menu bar
-					autoHeight: true,
-					scaleContainerClass: 'lm-Panel', // "lm-DockPanel-widget",
-					// autoWidth: false,
-					// scale: 2,
+			// Use shared injector to create the GeoGebra applet and manage
+			// the script/meta insertion. This centralizes logic so the same
+			// behavior can be reused by the vscode-extension React widget.
+			try {
+				const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
+					elementId,
+					appName: props?.appName || 'suite',
+					width: 800,
+					height: 600,
+					scaleContainerClass: 'lm-Panel',
 					allowUpscale: false,
-					appletOnLoad: ggbOnLoad
-				};
-				applet = new (window as any).GGBApplet(params, true);
-				applet.inject(elementId);
-				// Expose the active applet instance on `window.ggbApplet` for
-				// consistency across the codebase and for debug tooling.
-				(window as any).ggbApplet = applet;
-			};
+					appletOnLoad: ggbOnLoad,
+					dbg
+				});
+				resources.scriptTag = scriptTag;
+				resources.metaViewport = metaViewport;
+				resources.injectCleanup = cleanup || null;
 
-			if (existingScript) {
-				resources.scriptTag = existingScript;
-				// If script already loaded and GGBApplet is available, instantiate immediately
-				if ((window as any).GGBApplet) {
-					dbg('GGBApplet already present on window; creating applet immediately');
-					try {
-						createApplet();
-					} catch (err) {
-						dbg('createApplet threw when called immediately', err);
-					}
-				} else {
-					// Otherwise ensure we call createApplet once it loads
-					dbg('GGBApplet not present; attaching load listener to existing script');
-					resources.scriptTag.addEventListener('load', () => {
-						dbg('Existing script load event fired; invoking createApplet');
-						try {
-							createApplet();
-						} catch (err) {
-							dbg('createApplet threw during existing script load handler', err);
-						}
-					}, { once: true });
-				}
-			} else {
-				resources.scriptTag = document.createElement('script');
-				resources.scriptTag.id = 'ggblab-deployggb-script';
-				resources.scriptTag.src = 'https://cdn.geogebra.org/apps/deployggb.js';
-				resources.scriptTag.async = true;
-				resources.scriptTag.onload = () => {
-					dbg('Injected script onload fired; invoking createApplet');
-					try {
-						createApplet();
-					} catch (err) {
-						dbg('createApplet threw during injected script onload', err);
-					}
-				};
-				dbg('Appending new script tag to document.body', { src: resources.scriptTag.src });
-				document.body.appendChild(resources.scriptTag);
+				// capture the created applet instance for later cleanup
+				appletPromise.then((a: any) => {
+					applet = a;
+				}).catch((e: any) => dbg('Applet creation failed', e));
+			} catch (e) {
+				dbg('injectGeoGebraApplet failed', e);
 			}
 		})();
 
