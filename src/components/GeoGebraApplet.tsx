@@ -7,7 +7,7 @@ import { registerWidgetCommTargets } from '../widgetManager';
 import { DockLayout } from '@lumino/widgets';
 import type { WidgetManagerType } from '../widgetManager';
 // widgetManager registration is handled inside `setupKernelResources`
-import type { IAppletApi, IResources } from '../types';
+import type { IGeoGebraAppletApi, IGeoGebraResources } from '../types';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -30,7 +30,7 @@ export function isArrayOfArrays(value: any): boolean {
  *
  * @returns The React component
  */
-const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
+const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 	// const [kernels, setKernels] = React.useState<any[]>([]);
 	const widgetRef = useRef<HTMLDivElement>(null);
 	// const [size, setSize] = useState<{width: number; height: number}>({width: 800, height: 600});
@@ -93,7 +93,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 
 		// Resource bag: consolidate disposable resources into a single
 		// object with a `dispose()` helper so teardown is consistent.
-		class Resources implements IResources {
+		class Resources implements IGeoGebraResources {
 			kernelId: string;
 			commTarget: string;
 			socketPath: string | null;
@@ -103,7 +103,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			kernelConn: any = null;
 			comm: any = null;
 			widgetComm: any = null;
-			appletApi: IAppletApi | null = null;
+			appletApi: IGeoGebraAppletApi | null = null;
 			// unregister function returned by `registerWidgetCommTargets`
 			unregisterWidgetCommTargets: (() => void) | null = null;
 			observer: MutationObserver | null = null;
@@ -203,7 +203,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			}
 		}
 
-		const res: IResources = new Resources(props.kernelId || '', props.commTarget || '', props.socketPath || null, props.wsPort || 8888);
+		const resources: IGeoGebraResources = new Resources(props.kernelId || '', props.commTarget || '', props.socketPath || null, props.wsPort || 8888);
 
 		// Quick debug probe: confirm the IIFE below is entered at runtime.
 		dbg('useEffect: created Resources, about to run setup IIFE', {
@@ -213,7 +213,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 
 		(async () => {
 			dbg('IIFE: entered - calling setupKernelResources');
-			const { callRemoteSocketSend, makeIncomingHandler } = await setupKernelResources(res, props, dbg);
+			const { callRemoteSocketSend, makeIncomingHandler } = await setupKernelResources(resources, props, dbg);
 
 			// Kernel comm lifecycle is managed inside kernel_comm helpers
 
@@ -230,8 +230,8 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				// is handled by the caller.
 				const handlers: { [k: string]: (cmd: any) => Promise<any> } = {
 					command: async (cmd: any) => {
-						if (res.appletApi && typeof res.appletApi.evalCommandGetLabels === 'function') {
-							const label = res.appletApi.evalCommandGetLabels(cmd.payload);
+						if (resources.appletApi && typeof resources.appletApi.evalCommandGetLabels === 'function') {
+							const label = resources.appletApi.evalCommandGetLabels(cmd.payload);
 							return JSON.stringify({
 								type: 'created',
 								id: cmd.id,
@@ -256,8 +256,8 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 								if (isArrayOfArrays(args)) {
 									const value2: any[] = [];
 									args.forEach((arg2: any[]) => {
-										if (res.appletApi && typeof res.appletApi[f] === 'function') {
-											value2.push(res.appletApi[f](...arg2) || null);
+										if (resources.appletApi && typeof resources.appletApi[f] === 'function') {
+											value2.push(resources.appletApi[f](...arg2) || null);
 										} else {
 											value2.push(null);
 										}
@@ -265,15 +265,15 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 									value.push(value2);
 								} else {
 									if (args) {
-										value.push(
-											res.appletApi && typeof res.appletApi[f] === 'function'
-												? res.appletApi[f](...args) || null
+											value.push(
+											resources.appletApi && typeof resources.appletApi[f] === 'function'
+												? resources.appletApi[f](...args) || null
 												: null
 										);
 									} else {
 										value.push(
-											res.appletApi && typeof res.appletApi[f] === 'function'
-												? res.appletApi[f]() || null
+											resources.appletApi && typeof resources.appletApi[f] === 'function'
+												? resources.appletApi[f]() || null
 												: null
 										);
 									}
@@ -322,7 +322,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 							let result: any = null;
 							if (enabled) {
 								if (
-									res.appletApi && typeof res.appletApi.registerObjectUpdateListener === 'function'
+									resources.appletApi && typeof resources.appletApi.registerObjectUpdateListener === 'function'
 								) {
 									try {
 										// Provide a callback that forwards updates to the
@@ -335,8 +335,8 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 											try {
 												let value: any = null;
 													try {
-														if (res.appletApi && typeof res.appletApi.getValueString === 'function') {
-															value = (res.appletApi.getValueString as any)(name);
+														if (resources.appletApi && typeof resources.appletApi.getValueString === 'function') {
+															value = (resources.appletApi.getValueString as any)(name);
 														} else {
 															value = null;
 														}
@@ -346,7 +346,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 													}
 												// Suppress sending when the string value hasn't changed since last send.
 												try {
-													const last = res._lastValues[name] ?? null;
+													const last = resources._lastValues[name] ?? null;
 													const cur = value == null ? null : String(value);
 													if (last !== null && last === cur) {
 														// unchanged, skip notification
@@ -354,7 +354,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 														return;
 													}
 													// update last seen value
-													res._lastValues[name] = cur;
+													resources._lastValues[name] = cur;
 												} catch (e) {
 													dbg('value-comparison in object update failed', e);
 												}
@@ -374,7 +374,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 										};
 										// Some implementations may return a listener token.
 										result = await Promise.resolve(
-											(res.appletApi.registerObjectUpdateListener as any)(name, cb)
+											(resources.appletApi.registerObjectUpdateListener as any)(name, cb)
 										);
 										// Ensure the current value is delivered immediately after registration
 										try {
@@ -394,11 +394,11 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 								}
 							} else {
 								if (
-									res.appletApi && typeof res.appletApi.unregisterObjectUpdateListener === 'function'
+									resources.appletApi && typeof resources.appletApi.unregisterObjectUpdateListener === 'function'
 								) {
 									try {
 										result = await Promise.resolve(
-											(res.appletApi.unregisterObjectUpdateListener as any)(name)
+											(resources.appletApi.unregisterObjectUpdateListener as any)(name)
 										);
 									} catch (e) {
 										dbg('unregisterObjectUpdateListener failed', e);
@@ -478,37 +478,37 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			    ensures correct behavior in those cases while remaining no-op when a
 			    real manager is present (`props.widgetManager` guard).
 			*/
-			try {
-				if (props.widgetManager) {
-					dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
-				} else {
-					const opts = {
-						callRemoteSocketSend,
-						kernel2: res.kernel2,
-						socketPath: res.socketPath,
-						wsUrl: `ws://localhost:${res.wsPort}/`,
-						getAppletApi: () => res.appletApi,
-						isArrayOfArrays: isArrayOfArrays,
-						dbg
-					};
+					try {
+						if (props.widgetManager) {
+							dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
+						} else {
+							const opts = {
+								callRemoteSocketSend,
+								kernel2: resources.kernel2,
+								socketPath: resources.socketPath,
+								wsUrl: `ws://localhost:${resources.wsPort}/`,
+								getAppletApi: () => resources.appletApi,
+								isArrayOfArrays: isArrayOfArrays,
+								dbg
+							};
 
-					const unregisterFn = registerWidgetCommTargets(res.kernelConn, opts as any);
-					res.unregisterWidgetCommTargets = unregisterFn;
-				}
-			} catch (e: any) {
-				dbg('Widget comm target registration skipped or failed', e);
-			}
+							const unregisterFn = registerWidgetCommTargets(resources.kernelConn, opts as any);
+							resources.unregisterWidgetCommTargets = unregisterFn;
+						}
+					} catch (e: any) {
+						dbg('Widget comm target registration skipped or failed', e);
+					}
       
 			async function ggbOnLoad(api: any) {
 				dbg('GeoGebra applet loaded:', api);
 				// expose applet API to other handlers (widgetComm etc.)
-				res.appletApi = api;
+				resources.appletApi = api;
 				(async function () {
 					const msg = { type: 'start', payload: {} };
 					await callRemoteSocketSend(JSON.stringify(msg));
 				})();
 
-				res.resizeHandler = function () {
+				resources.resizeHandler = function () {
 					const wrapperDiv = document.getElementById(elementId);
 					const parentDiv = wrapperDiv?.parentElement;
 					const width = parseInt(parentDiv?.style.width || '800');
@@ -516,8 +516,8 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					api.recalculateEnvironments();
 					api.setSize(width, height);
 				};
-				window.addEventListener('resize', res.resizeHandler);
-				res.resizeHandler();
+				window.addEventListener('resize', resources.resizeHandler);
+				resources.resizeHandler();
 
 				// // Observe size changes of the widget's DOM element
 				// // but not working as expected in Lumino
@@ -533,44 +533,44 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				//     resizeObserver.observe(widgetRef.current); //widgetElemnt);
 				// }
 
-				if (res.commTarget) {
-					res.comm = res.kernelConn.createComm(res.commTarget);
+				if (resources.commTarget) {
+					resources.comm = resources.kernelConn.createComm(resources.commTarget);
 					try {
 						// Log comm creation details for debugging 'Comm not found' issues
 						try {
 							const maybeId =
-								(res.comm as any)?.comm_id ||
-								(res.comm as any)?.commId ||
-								(res.comm as any)?.id ||
+								(resources.comm as any)?.comm_id ||
+								(resources.comm as any)?.commId ||
+								(resources.comm as any)?.id ||
 								null;
 							dbg('Created kernel comm', {
-								target: res.commTarget,
-								commObject: res.comm,
+								target: resources.commTarget,
+								commObject: resources.comm,
 								commId: maybeId
 							});
 						} catch {
-							dbg('Created kernel comm (unable to read id)', res.commTarget, res.comm);
+							dbg('Created kernel comm (unable to read id)', resources.commTarget, resources.comm);
 						}
-						res.comm.open('HELO from GGB').done;
+						resources.comm.open('HELO from GGB').done;
 					} catch (e) {
-						dbg('Failed to open kernel comm for', res.commTarget, e);
+						dbg('Failed to open kernel comm for', resources.commTarget, e);
 					}
 					// Attach close handler to surface unexpected closes
 					try {
-						res.comm.onClose = (m: any) => {
+						resources.comm.onClose = (m: any) => {
 							try {
 								const closedId =
 									(m && m.content && m.content.comm_id) ||
-									(res.comm as any)?.comm_id ||
-									(res.comm as any)?.commId ||
+									(resources.comm as any)?.comm_id ||
+									(resources.comm as any)?.commId ||
 									null;
 								dbg('Kernel comm closed', {
-									target: res.commTarget,
+									target: resources.commTarget,
 									commId: closedId,
 									message: m
 								});
 							} catch (e) {
-								dbg('Kernel comm closed (no id available)', res.commTarget, m);
+								dbg('Kernel comm closed (no id available)', resources.commTarget, m);
 							}
 						};
 					} catch (e) {
@@ -578,7 +578,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					}
 				} else {
 					// No kernel-level comm target provided: rely on remote socket
-					res.comm = null;
+					resources.comm = null;
 					dbg('No commTarget provided; skipping kernel comm creation');
 				}
 				// comm.send('HELO2').done
@@ -586,23 +586,23 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				// kernel.registerCommTarget('test', (comm, commMsg) => {
 				// console.log("Comm opened from kernel with message:", commMsg['content']['data']);
 
-				res.closeHandler = () => {
+				resources.closeHandler = () => {
 					// Attempt to close comm and shutdown helper kernel
 					try {
-						res.comm?.close?.();
+						resources.comm?.close?.();
 					} catch (e) {
 						console.error(e);
 					}
-					res.kernel2?.shutdown().catch((err: any) => console.error(err));
+					resources.kernel2?.shutdown().catch((err: any) => console.error(err));
 					dbg('Kernel and comm closed.');
-					if (res.resizeHandler) {
-						window.removeEventListener('resize', res.resizeHandler);
+					if (resources.resizeHandler) {
+						window.removeEventListener('resize', resources.resizeHandler);
 					}
 				};
-				window.addEventListener('close', res.closeHandler);
-				if (res.comm) {
+				window.addEventListener('close', resources.closeHandler);
+				if (resources.comm) {
 					try {
-						res.comm.onMsg = handleIncomingCommMessage;
+						resources.comm.onMsg = handleIncomingCommMessage;
 					} catch (e) {
 						dbg('Failed to attach handleIncomingCommMessage to comm', e);
 					}
@@ -621,9 +621,9 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					// console.log("Add detected:", JSON.stringify(msg));
 					// Prefer to send via widget comm bridge if available
 					const s = JSON.stringify(msg);
-					if (res.widgetComm) {
+					if (resources.widgetComm) {
 						try {
-							res.widgetComm.send(s);
+							resources.widgetComm.send(s);
 							return;
 						} catch (e) {
 							dbg('widgetComm.send failed, falling back', e);
@@ -641,9 +641,9 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					};
 					// console.log("Remove detected:", JSON.stringify(msg));
 					const s = JSON.stringify(msg);
-					if (res.widgetComm) {
+					if (resources.widgetComm) {
 						try {
-							res.widgetComm.send(s);
+							resources.widgetComm.send(s);
 							return;
 						} catch (e) {
 							dbg('widgetComm.send failed, falling back', e);
@@ -661,9 +661,9 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					};
 					// console.log("Rename detected:", JSON.stringify(msg));
 					const s = JSON.stringify(msg);
-					if (res.widgetComm) {
+					if (resources.widgetComm) {
 						try {
-							res.widgetComm.send(s);
+							resources.widgetComm.send(s);
 							return;
 						} catch (e) {
 							dbg('widgetComm.send failed, falling back', e);
@@ -681,9 +681,9 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					};
 					// console.log("Rename detected:", JSON.stringify(msg));
 					const s = JSON.stringify(msg);
-					if (res.widgetComm) {
+					if (resources.widgetComm) {
 						try {
-							res.widgetComm.send(s);
+							resources.widgetComm.send(s);
 							return;
 						} catch (e) {
 							dbg('widgetComm.send failed, falling back', e);
@@ -708,7 +708,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				// }
 				// api.registerClearListener(clientListener);
 
-				res.observer = new MutationObserver(mutations => {
+				resources.observer = new MutationObserver(mutations => {
 					mutations.forEach(mutation => {
 						mutation.addedNodes.forEach(node => {
 							try {
@@ -738,7 +738,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 						});
 					});
 				});
-				res.observer.observe(document.body, { childList: true, subtree: true });
+				resources.observer.observe(document.body, { childList: true, subtree: true });
 			}
 
 			// Avoid duplicate meta/script inserts: reuse if already present
@@ -746,13 +746,13 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				'ggblab-viewport-meta'
 			) as HTMLMetaElement | null;
 			if (existingMeta) {
-				res.metaViewport = existingMeta;
+				resources.metaViewport = existingMeta;
 			} else {
-				res.metaViewport = document.createElement('meta');
-				res.metaViewport.id = 'ggblab-viewport-meta';
-				res.metaViewport.name = 'viewport';
-				res.metaViewport.content = 'width=device-width, initial-scale=1';
-				document.head.appendChild(res.metaViewport);
+				resources.metaViewport = document.createElement('meta');
+				resources.metaViewport.id = 'ggblab-viewport-meta';
+				resources.metaViewport.name = 'viewport';
+				resources.metaViewport.content = 'width=device-width, initial-scale=1';
+				document.head.appendChild(resources.metaViewport);
 			}
 
 			const existingScript = document.getElementById(
@@ -783,7 +783,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			};
 
 			if (existingScript) {
-				res.scriptTag = existingScript;
+				resources.scriptTag = existingScript;
 				// If script already loaded and GGBApplet is available, instantiate immediately
 				if ((window as any).GGBApplet) {
 					dbg('GGBApplet already present on window; creating applet immediately');
@@ -795,7 +795,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				} else {
 					// Otherwise ensure we call createApplet once it loads
 					dbg('GGBApplet not present; attaching load listener to existing script');
-					res.scriptTag.addEventListener('load', () => {
+					resources.scriptTag.addEventListener('load', () => {
 						dbg('Existing script load event fired; invoking createApplet');
 						try {
 							createApplet();
@@ -805,11 +805,11 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 					}, { once: true });
 				}
 			} else {
-				res.scriptTag = document.createElement('script');
-				res.scriptTag.id = 'ggblab-deployggb-script';
-				res.scriptTag.src = 'https://cdn.geogebra.org/apps/deployggb.js';
-				res.scriptTag.async = true;
-				res.scriptTag.onload = () => {
+				resources.scriptTag = document.createElement('script');
+				resources.scriptTag.id = 'ggblab-deployggb-script';
+				resources.scriptTag.src = 'https://cdn.geogebra.org/apps/deployggb.js';
+				resources.scriptTag.async = true;
+				resources.scriptTag.onload = () => {
 					dbg('Injected script onload fired; invoking createApplet');
 					try {
 						createApplet();
@@ -817,47 +817,47 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 						dbg('createApplet threw during injected script onload', err);
 					}
 				};
-				dbg('Appending new script tag to document.body', { src: res.scriptTag.src });
-				document.body.appendChild(res.scriptTag);
+				dbg('Appending new script tag to document.body', { src: resources.scriptTag.src });
+				document.body.appendChild(resources.scriptTag);
 			}
 		})();
 
 		return () => {
 			// Remove resize listener
-			if (res.resizeHandler) {
-				window.removeEventListener('resize', res.resizeHandler);
-				res.resizeHandler = null;
+			if (resources.resizeHandler) {
+				window.removeEventListener('resize', resources.resizeHandler);
+				resources.resizeHandler = null;
 			}
 			// Remove close listener
-			if (res.closeHandler) {
-				window.removeEventListener('close', res.closeHandler);
-				res.closeHandler = null;
+			if (resources.closeHandler) {
+				window.removeEventListener('close', resources.closeHandler);
+				resources.closeHandler = null;
 			}
 			// Disconnect mutation observer
-			if (res.observer) {
+			if (resources.observer) {
 				try {
-					res.observer.disconnect();
+					resources.observer.disconnect();
 				} catch (e) {
 					console.error(e);
 				}
-				res.observer = null;
+				resources.observer = null;
 			}
 			// Unregister widget comm handlers if we registered them
 			try {
-				res.unregisterWidgetCommTargets?.();
-				res.unregisterWidgetCommTargets = null;
+				resources.unregisterWidgetCommTargets?.();
+				resources.unregisterWidgetCommTargets = null;
 			} catch (e) {
 				dbg('Error unregistering widget comm targets', e);
 			}
 			// Remove injected meta tag
-			if (res.metaViewport && res.metaViewport.parentNode) {
-				res.metaViewport.parentNode.removeChild(res.metaViewport);
-				res.metaViewport = null;
+			if (resources.metaViewport && resources.metaViewport.parentNode) {
+				resources.metaViewport.parentNode.removeChild(resources.metaViewport);
+				resources.metaViewport = null;
 			}
 			// Remove injected script tag
-			if (res.scriptTag && res.scriptTag.parentNode) {
-				res.scriptTag.parentNode.removeChild(res.scriptTag);
-				res.scriptTag = null;
+			if (resources.scriptTag && resources.scriptTag.parentNode) {
+				resources.scriptTag.parentNode.removeChild(resources.scriptTag);
+				resources.scriptTag = null;
 			}
 			// Clean up GeoGebra applet
 			if (applet) {
@@ -880,7 +880,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			// Close comm and shutdown helper kernel asynchronously via resource bag
 			(async () => {
 				try {
-					await res.dispose();
+					await resources.dispose();
 				} catch (e) {
 					console.error('Error during cleanup:', e);
 				}
@@ -897,7 +897,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 	);
 };
 
-export interface IGGAWidgetProps {
+export interface IGeoGebraAppletProps {
 	kernelId?: string;
 	commTarget?: string;
 	insertMode?: DockLayout.InsertMode;
@@ -923,5 +923,5 @@ export interface IGGAWidgetProps {
 //     dock.update();
 // });
 
-export default GGAComponent;
+export default GeoGebraApplet;
 
