@@ -11,10 +11,43 @@ const registerWidgetManagerPlugin: JupyterFrontEndPlugin<void> = {
   id: 'ggblab:register-widget-manager',
   autoStart: true,
   activate: (app: JupyterFrontEnd) => {
+    // Expose a global registrar so other widget-manager code can notify
+    // ggblab about available managers when they activate. This covers
+    // cases where the widget manager cannot be detected via module
+    // inspection at runtime.
+    try {
+      (window as any).__ggblab_register_widget_manager = function (kernelId: string, manager: any) {
+        try {
+          setWidgetManager(manager);
+          console.debug('ggblab: __ggblab_register_widget_manager called for', kernelId);
+        } catch (e) {
+          console.debug('ggblab: __ggblab_register_widget_manager handler failed', e);
+        }
+      };
+    } catch (e) {
+      console.debug('ggblab: failed to define __ggblab_register_widget_manager', e);
+    }
+
     (async () => {
       try {
-        const mod: any = await import('@' + 'jupyter-widgets/jupyterlab-manager');
-        console.debug('ggblab: register-widget-manager found jupyter-widgets module');
+        // Avoid bundler resolution of an optional dev dep by using runtime require.
+        let mod: any = null;
+        try {
+          if (typeof (globalThis as any).require === 'function') {
+            // In Jupyter classic or some environments, require may be available at runtime.
+            mod = (globalThis as any).require('@jupyter-widgets/jupyterlab-manager');
+            console.debug('ggblab: register-widget-manager found jupyter-widgets module via global require');
+          }
+        } catch (e) {
+          console.debug('ggblab: jupyter-widgets manager not available via global require', e);
+          mod = null;
+        }
+
+        if (!mod) {
+          // If runtime require did not find it, skip gracefully.
+          console.debug('ggblab: jupyter-widgets manager not available for auto-plugin');
+          return;
+        }
 
         const candidates: any[] = Array.isArray(mod.default) ? mod.default : Array.isArray(mod) ? mod : [];
         console.debug('ggblab: register-widget-manager candidates count', candidates.length);

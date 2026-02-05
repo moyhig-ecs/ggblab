@@ -2,17 +2,11 @@
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
 
-import {
-	ServerConnection,
-	KernelAPI,
-	KernelConnection,
-	KernelManager
-} from '@jupyterlab/services';
-import { initKernelCommHelpers } from '../kernel_comm';
-import { PageConfig } from '@jupyterlab/coreutils';
+import setupKernelResources from './jupyterlab';
+import { registerWidgetCommTargets } from '../widgetManager';
 import { DockLayout } from '@lumino/widgets';
 import type { WidgetManagerType } from '../widgetManager';
-import { registerWidgetCommTargets } from '../widgetManager';
+// widgetManager registration is handled inside `setupKernelResources`
 import type { IAppletApi, IResources } from '../types';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
@@ -211,38 +205,15 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 
 		const res: IResources = new Resources(props.kernelId || '', props.commTarget || '', props.socketPath || null, props.wsPort || 8888);
 
+		// Quick debug probe: confirm the IIFE below is entered at runtime.
+		dbg('useEffect: created Resources, about to run setup IIFE', {
+			kernelId: props.kernelId,
+			commTarget: props.commTarget
+		});
+
 		(async () => {
-			return await KernelAPI.listRunning();
-		})().then(async (kernels) => {
-			// setKernels(kernels);
-			dbg('Running kernels:', kernels);
-
-			const baseUrl = PageConfig.getBaseUrl();
-			const token = PageConfig.getToken();
-			dbg(`Base URL: ${baseUrl}`);
-			dbg(`Token: ${token}`);
-			const settings = ServerConnection.makeSettings({
-				baseUrl: baseUrl, //'http://localhost:8889/',
-				token: token, //'7e89be30eb93ee7c149a839d4c7577e08c2c25b3c7f14647',
-				appendToken: true
-			});
-
-			res.kernelManager = new KernelManager({ serverSettings: settings });
-			res.kernel2 = await res.kernelManager.startNew({ name: 'python3' });
-			dbg('Started new kernel:', res.kernel2, res.kernelId);
-			await res.kernel2.requestExecute({
-				code: 'from websockets.sync.client import unix_connect, connect'
-			}).done;
-			// ws/socket values managed inside kernel_comm helpers
-			// Initialize comm helpers from shared module
-			const { callRemoteSocketSend, makeIncomingHandler } =
-				initKernelCommHelpers(res, dbg);
-
-			res.kernelConn = new KernelConnection({
-				model: { name: 'python3', id: res.kernelId || kernels[0]['id'] },
-				serverSettings: settings
-			});
-			dbg('Connected to kernel:', res.kernelConn);
+			dbg('IIFE: entered - calling setupKernelResources');
+			const { callRemoteSocketSend, makeIncomingHandler } = await setupKernelResources(res, props, dbg);
 
 			// Kernel comm lifecycle is managed inside kernel_comm helpers
 
@@ -396,7 +367,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 													payload: { name, value }
 												});
 												// fire-and-forget
-												callRemoteSocketSend(msg).catch(e => dbg('object_update send failed', e));
+												callRemoteSocketSend(msg).catch((e: any) => dbg('object_update send failed', e));
 											} catch (e) {
 												dbg('Error in object update callback', e);
 											}
@@ -485,19 +456,32 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			// via kernel_comm helper so it can reuse the shared logic.
 			const handleIncomingCommMessage = makeIncomingHandler(processCommandMessage);
 
-			// Kernel comm lifecycle is managed by kernel_comm helpers.
-
-			// Register simple passthrough handlers for jupyter.widget when no
-			// widgetManager is present. The helper returns a cleanup function.
+			/*
+			  Widget comm passthrough fallback
+			  -------------------------------
+			  Reason: In some host environments (non-JupyterLab pages, timing differences,
+			  or when the optional ipywidgets bridge isn't available), the centralized
+			  `register_widget_manager_plugin` may not be able to detect or register a
+			  frontend `WidgetManager` early enough for the GeoGebra applet to handle
+			  incoming widget-related comms. To avoid breaking ipywidgets (which expect
+			  the `jupyter.widget` comm target to be handled), we provide a lightweight
+			  passthrough here as a guarded fallback.
+			
+			  How this relates to `register_widget_manager_plugin`:
+			  - `register_widget_manager_plugin` (exported from `src/register_widget_manager_plugin.ts`
+			    and exposed in `src/index.ts`) is the preferred mechanism: it runs
+			    during JupyterLab activation and attempts to detect the real
+			    ipywidgets manager and call `setWidgetManager(...)` so the applet can
+			    delegate message routing to the manager.
+			  - However, that plugin may be unavailable (optional dependency), run
+			    later, or be ineffective in non-Lab contexts. This inline fallback
+			    ensures correct behavior in those cases while remaining no-op when a
+			    real manager is present (`props.widgetManager` guard).
+			*/
 			try {
-					if (props.widgetManager) {
-					dbg(
-						'widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens'
-					);
+				if (props.widgetManager) {
+					dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
 				} else {
-					// Delegate widget comm passthrough registration to `widgetManager`
-					// module which centralizes that behavior. Provide the minimal
-					// option bag expected by the manager helper.
 					const opts = {
 						callRemoteSocketSend,
 						kernel2: res.kernel2,
@@ -508,16 +492,13 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 						dbg
 					};
 
-					// registerWidgetCommTargets returns an unregister function
-					// which we store on the resource bag for cleanup. Use a clear
-					// field name so intent is obvious at call sites.
 					const unregisterFn = registerWidgetCommTargets(res.kernelConn, opts as any);
 					res.unregisterWidgetCommTargets = unregisterFn;
 				}
-			} catch (e) {
+			} catch (e: any) {
 				dbg('Widget comm target registration skipped or failed', e);
 			}
-
+      
 			async function ggbOnLoad(api: any) {
 				dbg('GeoGebra applet loaded:', api);
 				// expose applet API to other handlers (widgetComm etc.)
@@ -777,6 +758,7 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 			const existingScript = document.getElementById(
 				'ggblab-deployggb-script'
 			) as HTMLScriptElement | null;
+			dbg('Script element lookup', { existingScript: !!existingScript, scriptId: 'ggblab-deployggb-script' });
 			const createApplet = () => {
 				const params = {
 					id: 'ggbApplet' + (props?.kernelId || '').substring(0, 8), // applet ID
@@ -804,20 +786,41 @@ const GGAComponent = (props: IGGAWidgetProps): JSX.Element => {
 				res.scriptTag = existingScript;
 				// If script already loaded and GGBApplet is available, instantiate immediately
 				if ((window as any).GGBApplet) {
-					createApplet();
+					dbg('GGBApplet already present on window; creating applet immediately');
+					try {
+						createApplet();
+					} catch (err) {
+						dbg('createApplet threw when called immediately', err);
+					}
 				} else {
 					// Otherwise ensure we call createApplet once it loads
-					res.scriptTag.addEventListener('load', createApplet, { once: true });
+					dbg('GGBApplet not present; attaching load listener to existing script');
+					res.scriptTag.addEventListener('load', () => {
+						dbg('Existing script load event fired; invoking createApplet');
+						try {
+							createApplet();
+						} catch (err) {
+							dbg('createApplet threw during existing script load handler', err);
+						}
+					}, { once: true });
 				}
 			} else {
 				res.scriptTag = document.createElement('script');
 				res.scriptTag.id = 'ggblab-deployggb-script';
 				res.scriptTag.src = 'https://cdn.geogebra.org/apps/deployggb.js';
 				res.scriptTag.async = true;
-				res.scriptTag.onload = createApplet;
+				res.scriptTag.onload = () => {
+					dbg('Injected script onload fired; invoking createApplet');
+					try {
+						createApplet();
+					} catch (err) {
+						dbg('createApplet threw during injected script onload', err);
+					}
+				};
+				dbg('Appending new script tag to document.body', { src: res.scriptTag.src });
 				document.body.appendChild(res.scriptTag);
 			}
-		});
+		})();
 
 		return () => {
 			// Remove resize listener

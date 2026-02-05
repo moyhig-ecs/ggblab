@@ -33,6 +33,12 @@ export function setWidgetManager(m?: WidgetManagerType): void {
   try {
     // Also expose on global for other scripts that may want to detect it.
     (globalThis as any).__GGWIDGET_MANAGER__ = m;
+    try {
+      // Emit a console debug to aid runtime diagnosis when a manager is injected.
+      console.debug('ggblab: setWidgetManager called', { hasManager: !!m });
+    } catch (e) {
+      // ignore
+    }
   } catch (e) {
     // ignore
   }
@@ -41,15 +47,24 @@ export function setWidgetManager(m?: WidgetManagerType): void {
 function detectWidgetManager(): WidgetManagerType | undefined {
   const g = globalThis as any;
   // Heuristics: check well-known globals that host apps might expose.
+  try {
+    console.debug('ggblab: detectWidgetManager probing globals');
+  } catch (e) {
+    // ignore
+  }
   if (g && g.__GGWIDGET_MANAGER__) {
+    try { console.debug('ggblab: detected manager via __GGWIDGET_MANAGER__'); } catch (_) {}
     return g.__GGWIDGET_MANAGER__ as WidgetManagerType;
   }
   if (g && g.jupyterWidgetManager) {
+    try { console.debug('ggblab: detected manager via jupyterWidgetManager'); } catch (_) {}
     return g.jupyterWidgetManager as WidgetManagerType;
   }
   if (g && g.widgetManager) {
+    try { console.debug('ggblab: detected manager via widgetManager'); } catch (_) {}
     return g.widgetManager as WidgetManagerType;
   }
+  try { console.debug('ggblab: no widget manager detected in globals'); } catch (_) {}
   return undefined;
 }
 
