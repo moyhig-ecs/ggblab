@@ -16,7 +16,13 @@ from datetime import datetime
 from typing import Optional
 
 import ipykernel.connect
-from ipylab import JupyterFrontEnd
+import os
+import json
+from pathlib import Path
+from urllib.parse import urlsplit, parse_qs, urlunsplit
+from IPython.display import display, JSON
+# Note: import `ipylab` lazily inside `init()` to avoid hard dependency
+# and accidental panel injection when running in non-JupyterLab hosts.
 from IPython.core.getipython import get_ipython
 
 from ggblab.utils import flatten
@@ -103,7 +109,7 @@ class GeoGebra:
         self.check_semantics = False
         self._applet_objects = set()  # Cache of known objects
   
-    async def init(self, appName: str = 'suite'):
+    async def init(self, appName: str = 'suite', use_vscode: Optional[bool] = None):
         """Initialize the GeoGebra widget and communication channels.
         
         This method:
@@ -154,24 +160,121 @@ class GeoGebra:
             _connection_file = ipykernel.connect.get_connection_file()
             self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
 
-            self.app = JupyterFrontEnd()
-            # Pass `appName` through to the frontend so the widget may
-            # initialize the desired GeoGebra flavor (graphing, geometry, etc.).
-            self.app.commands.execute('ggblab:create', {
-                'kernelId': self.kernel_id,
-                'commTarget': 'jupyter.ggblab',
-                'insertMode': 'split-right',
-                'socketPath': self.comm.socketPath,
-                'appName': appName,
-                # 'wsPort': self.comm.wsPort,
-            })
-            # Skipping comm-stability wait: removed as it can trigger
-            # kernel-side comm introspection that creates transient comms
-            # and leads to "No such comm" errors during initialization.
+            # Decide whether to open a frontend panel (ipylab) or simply
+            # publish the kernel/socket info for an external host (e.g.
+            # VS Code webview) to consume.
+            # Precedence:
+            # 1. explicit `use_vscode` argument to `init()` if not None
+            # 2. environment variable `GGBLAB_USE_VSCODE` if present
+            # 3. auto-detect: presence of `VSCODE_PID` implies VS Code
+            try:
+                if use_vscode is None:
+                    env_vscode = os.environ.get('GGBLAB_USE_VSCODE')
+                    if env_vscode is not None:
+                        use_vscode = str(env_vscode).lower() in ('1', 'true', 'yes')
+                    else:
+                        use_vscode = ('VSCODE_PID' in os.environ)
+            except Exception:
+                use_vscode = False
 
-            # Widget-manager probing removed: unnecessary and causes hidden
-            # kernel-side Comm creation during init which can lead to "No such
-            # comm" errors. Skipping probing and continuing initialization.
+            # If `use_vscode` is requested, skip ipylab and publish kernel/socket
+            if use_vscode:
+                try:
+                    display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
+                    # Best-effort: write workspace .vscode/ggblab.json so the
+                    # VS Code extension can pick up server connection info.
+                    try:
+                        # Build payload to write for the extension. Include kernelId
+                        # and socketPath so the extension can connect without prompts.
+                        payload = {'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}
+
+                        # connection file path
+                        try:
+                            conn_file = ipykernel.connect.get_connection_file()
+                            payload['connection_file'] = conn_file
+                        except Exception:
+                            conn_file = None
+
+                        # Try to discover a running Jupyter server and token
+                        try:
+                            from jupyter_server.serverapp import list_running_servers
+                            servers = list(list_running_servers())
+                            if servers:
+                                srv = servers[0]
+                                # prefer explicit base_url if provided by server
+                                base_url = srv.get('base_url') or srv.get('baseUrl') or None
+                                raw_url = srv.get('url') or srv.get('server_url') or None
+                                token = srv.get('token') or srv.get('password') or None
+
+                                # If raw_url contains token query, extract it
+                                if raw_url:
+                                    parts = urlsplit(raw_url)
+                                    qs = parse_qs(parts.query)
+                                    # common token keys
+                                    token_keys = ['token', 'access_token']
+                                    found_token = None
+                                    for k in token_keys:
+                                        if k in qs and qs[k]:
+                                            found_token = qs[k][0]
+                                            break
+                                    if found_token and not token:
+                                        token = found_token
+                                    # rebuild base url without query (scheme+host[:port]+path)
+                                    base_no_q = urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
+                                    # prefer explicit host+port URL over a bare '/' base_url
+                                    if (not base_url) or (str(base_url).strip() == '/'):
+                                        base_url = base_no_q
+
+                                if base_url:
+                                    payload['baseUrl'] = base_url
+                                if token:
+                                    payload['token'] = token
+                        except Exception:
+                            # ignore if jupyter_server not available
+                            pass
+
+                        # Write to .vscode/ggblab.json in cwd (best-effort workspace)
+                        try:
+                            ws_file = Path.cwd() / '.vscode' / 'ggblab.json'
+                            ws_file.parent.mkdir(parents=True, exist_ok=True)
+                            # Write payload; token may be present — extension will
+                            # move token to SecretStorage and sanitize the file.
+                            with open(ws_file, 'w', encoding='utf8') as fh:
+                                json.dump(payload, fh, indent=2)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    except Exception:
+                        pass
+                except Exception:
+                    print('ggblab: kernelId=%s socketPath=%s' % (self.kernel_id, self.comm.socketPath))
+            else:
+                # Attempt to open an ipylab panel; if unavailable, fall back
+                # to publishing the kernel/socket info so external hosts can
+                # still pick it up.
+                try:
+                    import ipylab  # type: ignore
+                    JupyterFrontEnd = getattr(ipylab, 'JupyterFrontEnd', None)
+                    if JupyterFrontEnd is None:
+                        try:
+                            display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
+                        except Exception:
+                            print('ggblab: kernelId=%s socketPath=%s' % (self.kernel_id, self.comm.socketPath))
+                    else:
+                        self.app = JupyterFrontEnd()
+                        self.app.commands.execute('ggblab:create', {
+                            'kernelId': self.kernel_id,
+                            'commTarget': 'jupyter.ggblab',
+                            'insertMode': 'split-right',
+                            'socketPath': self.comm.socketPath,
+                            'appName': appName,
+                        })
+                except Exception:
+                    try:
+                        display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
+                    except Exception:
+                        print('ggblab: kernelId=%s socketPath=%s' % (self.kernel_id, self.comm.socketPath))
             
             # Initialize object cache
             # await self.refresh_object_cache()

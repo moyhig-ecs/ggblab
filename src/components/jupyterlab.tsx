@@ -1,7 +1,8 @@
 import { ServerConnection, KernelAPI, KernelConnection, KernelManager } from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { initKernelCommHelpers } from '../comm';
-import { startKernel, shutdownKernel, getKernelspecs } from '../shared/jupyterRest';
+// Note: import jupyter REST helpers dynamically where needed to keep
+// browser/webview bundles small and avoid unused-import build errors.
 
 // Small utility copied from the applet to avoid circular imports
 export function isArrayOfArrays(value: any): boolean {
@@ -36,7 +37,19 @@ export async function setupKernelResources(resources: any, props: any, dbg: (...
       return false;
     }
   })();
-  const shouldClear = shouldClearFromProps || shouldClearFromPageConfig || shouldClearFromGlobal;
+  let shouldClear = shouldClearFromProps || shouldClearFromPageConfig || shouldClearFromGlobal;
+
+  // If running inside a VS Code webview (props.serverSettings present),
+  // do not clear browser storage by default. Allow callers to opt-in by
+  // passing `clearBrowserStorageInWebview: true` in props.
+  try {
+    const runningInWebview = !!(props && props.serverSettings);
+    const allowClearInWebview = !!(props && (props.clearBrowserStorageInWebview === true || props.clearBrowserStorageInWebview === 'true'));
+    if (runningInWebview && !allowClearInWebview) {
+      try { console.debug('ggblab: running in VS Code webview — skipping browser storage clear by default'); } catch (e) {}
+      shouldClear = false;
+    }
+  } catch (e) { /* ignore */ }
 
   try {
     console.debug('ggblab: clearBrowserStorage flags', { shouldClearFromProps, shouldClearFromPageConfig, shouldClearFromGlobal, shouldClear });
@@ -186,18 +199,10 @@ export async function setupKernelResources(resources: any, props: any, dbg: (...
       settings = ServerConnection.makeSettings({ baseUrl: restSettings.baseUrl || '/', appendToken: true });
     }
     dbg('Using serverSettings from props (webview mode)');
-    try {
-      // Use REST path to list running kernels to avoid KernelAPI resolving
-      // against the webview origin.
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      const { listRunningKernels } = await import('../shared/jupyterRest');
-      kernels = await listRunningKernels(restSettings);
-      dbg('Running kernels (via REST):', kernels);
-    } catch (e) {
-      dbg('Failed to list running kernels via REST', e);
-      kernels = [];
-    }
+    // For security reasons, REST-based listing of kernels is disabled.
+    // Avoid using `../shared/jupyterRest` and default to an empty list.
+    dbg('Skipping REST-based kernel listing for webview/serverSettings (disabled)');
+    kernels = [];
   } else {
     try {
       kernels = await KernelAPI.listRunning();
@@ -222,79 +227,38 @@ export async function setupKernelResources(resources: any, props: any, dbg: (...
   resources.kernelManager = new KernelManager({ serverSettings: settings });
   resources.kernel2 = await resources.kernelManager.startNew({ name: 'python3' });
     dbg('Started new kernel:', resources.kernel2, resources.kernelId);
-    await resources.kernel2.requestExecute({ code: 'from websockets.sync.client import unix_connect, connect' }).done;
-    // Start an auxiliary kernel (kernel3) to register comm targets on the
-    // kernel side. This allows the frontend to open comms that the kernel
-    // will handle via the comm_manager. We register both 'jupyter.widget'
-    // and 'ipython' targets as useful defaults.
     try {
-      if (props && props.serverSettings) {
-        // Start helper kernel via Jupyter REST API when explicit serverSettings
-        // are provided (e.g., VS Code webview). We create a small wrapper
-        // object exposing a `shutdown()` method so the existing disposal
-        // logic in consumers continues to work.
-        try {
-          const kinfo: any = await startKernel(props.serverSettings, 'python3');
-          // keep an object for shutdown via REST
-          resources.kernel3 = {
-            id: kinfo.id,
-            shutdown: async () => {
-              try {
-                await shutdownKernel(props.serverSettings, kinfo.id);
-              } catch (err) {
-                dbg('Error shutting down REST-started kernel3', err);
-              }
-            }
-          };
-          dbg('Started helper kernel3 via REST:', kinfo);
-
-          // Create a websocket KernelConnection to the REST-started kernel so
-          // we can execute code (register comm targets) on it. Use the
-          // ServerConnection settings created earlier.
-          try {
-            const regCode = `
-def _ggblab_comm_open(comm, msg):
-    try:
-        print('ggblab comm opened:', getattr(comm, 'comm_id', None))
-    except Exception as e:
-        print('comm open handler error', e)
-
-get_ipython().kernel.comm_manager.register_target('jupyter.widget', _ggblab_comm_open)
-get_ipython().kernel.comm_manager.register_target('ipython', _ggblab_comm_open)
+      await resources.kernel2.requestExecute({ code: 'from websockets.sync.client import unix_connect, connect' }).done;
+      dbg('Imported unix_connect/connect in kernel2');
+      // If a socketPath is available, perform a light probe to verify unix socket connectivity
+      try {
+        const probePath = resources.socketPath || (props && props.serverSettings && props.serverSettings.socketPath) || null;
+        if (probePath) {
+          const probeCode = `
+try:
+    with unix_connect("${probePath}") as ws:
+        ws.send(r'''{"type":"probe","source":"kernel2"}''')
+    print('ggblab:kernel2_probe:ok')
+except Exception as _e:
+    print('ggblab:kernel2_probe:error', repr(_e))
 `;
-            const kernelConn3 = new KernelConnection({ model: { name: 'python3', id: kinfo.id }, serverSettings: settings });
-            // run registration code
-            await kernelConn3.requestExecute({ code: regCode }).done;
-            resources.kernel3Conn = kernelConn3;
-            dbg('Started websocket KernelConnection for kernel3 and registered comm targets');
-          } catch (err) {
-            dbg('Failed to create KernelConnection or register comm targets for REST-started kernel3', err);
-          }
-        } catch (err) {
-          dbg('Failed to start kernel3 via REST', err);
+          await resources.kernel2.requestExecute({ code: probeCode }).done;
+          dbg('kernel2 unix_connect probe executed (sent probe)');
+        } else {
+          dbg('No socketPath available to probe from kernel2');
         }
-      } else {
-        resources.kernel3 = await resources.kernelManager.startNew({ name: 'python3' });
-        dbg('Started helper kernel3:', resources.kernel3 && resources.kernel3.id);
-        const regCode = `
-def _ggblab_comm_open(comm, msg):
-    try:
-        print('ggblab comm opened:', getattr(comm, 'comm_id', None))
-    except Exception as e:
-        print('comm open handler error', e)
-
-get_ipython().kernel.comm_manager.register_target('jupyter.widget', _ggblab_comm_open)
-get_ipython().kernel.comm_manager.register_target('ipython', _ggblab_comm_open)
-`;
-        await resources.kernel3.requestExecute({ code: regCode }).done;
-        dbg('Registered comm targets on kernel3');
+      } catch (e) {
+        dbg('kernel2 unix_connect probe failed', e);
       }
     } catch (e) {
-      dbg('Failed to start kernel3 or register comm targets', e);
+      dbg('Failed to import unix_connect/connect in kernel2', e);
     }
+    // Note: auxiliary kernel3 startup/registration removed — comm targets
+    // are handled via the primary kernel or widget registration paths.
     // ws/socket values managed inside kernel_comm helpers
     // Initialize comm helpers from shared module
     const { callRemoteSocketSend, makeIncomingHandler } = initKernelCommHelpers(resources, dbg);
+    dbg('Initialized kernel_comm helpers:', { callRemoteSocketSend, makeIncomingHandler });
 
     // Determine a target kernel id to connect to. `kernels` may be empty
     // (e.g., fresh server), and `resources.kernelId` may also be empty.

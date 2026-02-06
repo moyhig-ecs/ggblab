@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 // comm helper functions inlined from kernel_comm.ts to reduce indirection
 import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
@@ -101,13 +100,12 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			socketPath: string | null;
 			wsPort: number;
 			kernel2: any = null;
-			kernel3: any = null;
-			kernel3Conn: any = null;
 			kernelManager: any = null;
 			kernelConn: any = null;
 			comm: any = null;
 			widgetComm: any = null;
 			appletApi: IGeoGebraAppletApi | null = null;
+			appletStyleObserver: MutationObserver | null = null;
 			// unregister function returned by `registerWidgetCommTargets`
 			unregisterWidgetCommTargets: (() => void) | null = null;
 			// cleanup function returned by injectGeoGebraApplet
@@ -147,24 +145,6 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 						this.kernel2 = null;
 					}
 
-					if (this.kernel3) {
-						try {
-							await this.kernel3.shutdown();
-						} catch (err) {
-							dbg('Error shutting down kernel3 during cleanup', err);
-						}
-						this.kernel3 = null;
-					}
-
-					if (this.kernel3Conn) {
-						try {
-							this.kernel3Conn.dispose?.();
-						} catch (err) {
-							dbg('Error disposing kernel3 websocket connection', err);
-						}
-						this.kernel3Conn = null;
-					}
-
 					this.widgetComm = null;
 					this.appletApi = null;
 
@@ -184,6 +164,15 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 							dbg('Error disconnecting observer', err);
 						}
 						this.observer = null;
+					}
+
+					if (this.appletStyleObserver) {
+						try {
+							this.appletStyleObserver.disconnect();
+						} catch (err) {
+							dbg('Error disconnecting appletStyleObserver', err);
+						}
+						this.appletStyleObserver = null;
 					}
 
 					if (this.resizeHandler) {
@@ -240,7 +229,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 		dbg('useEffect: created Resources, about to run setup IIFE', {
 			kernelId: props.kernelId,
 			commTarget: props.commTarget
-		});
+		}, []);
 
 		(async () => {
 			dbg('IIFE: entered - calling setupKernelResources');
@@ -540,12 +529,19 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				})();
 
 				resources.resizeHandler = function () {
-					const wrapperDiv = document.getElementById(elementId);
-					const parentDiv = wrapperDiv?.parentElement;
-					const width = parseInt(parentDiv?.style.width || '800');
-					const height = parseInt(parentDiv?.style.height || '600');
-					api.recalculateEnvironments();
-					api.setSize(width, height);
+					try {
+						const wrapperDiv = document.getElementById(elementId) as HTMLElement | null;
+						const target = wrapperDiv?.parentElement ?? wrapperDiv;
+						if (!target) return;
+						// Prefer measured size over style strings
+						const rect = target.getBoundingClientRect();
+						const width = Math.max(1, Math.floor(rect.width));
+						const height = Math.max(1, Math.floor(rect.height));
+						try { api.recalculateEnvironments(); } catch (e) { dbg('recalculateEnvironments failed', e); }
+						try { api.setSize(width, height); } catch (e) { dbg('setSize failed', e); }
+					} catch (e) {
+						dbg('resizeHandler error', e);
+					}
 				};
 				window.addEventListener('resize', resources.resizeHandler);
 				resources.resizeHandler();
@@ -776,13 +772,30 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			// the script/meta insertion. This centralizes logic so the same
 			// behavior can be reused by the vscode-extension React widget.
 			try {
+				// Measure container so applet is created at the current panel size
+				const wrapperDiv = widgetRef.current ?? document.getElementById(elementId);
+				const targetForSize = (wrapperDiv as HTMLElement | null)?.parentElement ?? (wrapperDiv as HTMLElement | null);
+				let measuredWidth = 800;
+				let measuredHeight = 600;
+				try {
+					if (targetForSize) {
+						const rect = (targetForSize as HTMLElement).getBoundingClientRect();
+						measuredWidth = Math.max(1, Math.floor(rect.width));
+						measuredHeight = Math.max(1, Math.floor(rect.height));
+					}
+				} catch (e) {
+					dbg('Failed to measure container for initial size, falling back to defaults', e);
+				}
+
 				const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
 					elementId,
 					appName: props?.appName || 'suite',
-					width: 800,
-					height: 600,
-					scaleContainerClass: 'lm-Panel',
-					allowUpscale: false,
+					width: measuredWidth,
+					height: measuredHeight,
+					// disable container-scaling so the applet uses exact measured size
+					scaleContainerClass: undefined,
+					// Allow the applet to upscale when the panel grows
+					allowUpscale: true,
 					appletOnLoad: ggbOnLoad,
 					dbg
 				});
@@ -790,9 +803,70 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				resources.metaViewport = metaViewport;
 				resources.injectCleanup = cleanup || null;
 
-				// capture the created applet instance for later cleanup
+				// capture the created applet instance for later cleanup and
+				// apply measured sizing. Reapply size after short delays to
+				// override any internal resets performed by the runtime.
 				appletPromise.then((a: any) => {
 					applet = a;
+					try {
+						const api = a;
+						// measure current container again for accuracy
+						const wrapperDiv2 = widgetRef.current ?? document.getElementById(elementId);
+						const target2 = wrapperDiv2?.parentElement ?? wrapperDiv2;
+						let w = measuredWidth;
+						let h = measuredHeight;
+						try {
+							if (target2) {
+								const rect2 = (target2 as HTMLElement).getBoundingClientRect();
+								w = Math.max(1, Math.floor(rect2.width));
+								h = Math.max(1, Math.floor(rect2.height));
+							}
+						} catch (e) {
+							dbg('Failed to re-measure container for sizing', e);
+						}
+						try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
+						try { api.setSize(w, h); dbg('Applied initial applet size', w, h); } catch (e) { dbg('api.setSize failed', e); }
+						// Force applet DOM to use exact width/height and remove any
+						// transform-based scaling that preserves initial aspect ratio.
+						try {
+							const appletNode = document.getElementById('ggbApplet-' + elementId);
+							if (appletNode) {
+								(appletNode as HTMLElement).style.width = '100%';
+								(appletNode as HTMLElement).style.height = '100%';
+								(appletNode as HTMLElement).style.maxWidth = '100%';
+								(appletNode as HTMLElement).style.transform = 'none';
+								(appletNode as HTMLElement).style.transformOrigin = '0 0';
+							}
+						} catch (e) { dbg('Failed to override applet DOM styles', e); }
+						// reapply after short delays to outlast internal resets
+						setTimeout(() => { try { api.setSize(w, h); dbg('Reapplied size (250ms)'); } catch (e) { dbg('reapply failed', e); } }, 250);
+						setTimeout(() => { try { api.setSize(w, h); dbg('Reapplied size (1000ms)'); } catch (e) { dbg('reapply failed', e); } }, 1000);
+
+						// Observe the applet node for style/attribute changes and
+						// reapply our desired styles immediately when the runtime
+						// attempts to change them.
+						try {
+							const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
+							if (appletNode) {
+								const observer = new MutationObserver(mutations => {
+									try {
+										// On any attribute change, enforce styles & size
+										const rect3 = (appletNode.parentElement ?? appletNode).getBoundingClientRect();
+										const ww = Math.max(1, Math.floor(rect3.width));
+										const hh = Math.max(1, Math.floor(rect3.height));
+										try { api.setSize(ww, hh); } catch (e) { /* ignore */ }
+										try { appletNode.style.transform = 'none'; appletNode.style.width = '100%'; appletNode.style.height = '100%'; } catch (e) { /* ignore */ }
+									} catch (e) {
+										dbg('appletStyleObserver handler error', e);
+									}
+								});
+								observer.observe(appletNode, { attributes: true, attributeFilter: ['style', 'class'], subtree: false });
+								resources.appletStyleObserver = observer;
+							}
+						} catch (e) { dbg('Failed to create appletStyleObserver', e); }
+					} catch (e) {
+						dbg('Error applying size to applet', e);
+					}
 				}).catch((e: any) => dbg('Applet creation failed', e));
 			} catch (e) {
 				dbg('injectGeoGebraApplet failed', e);

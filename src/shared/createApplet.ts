@@ -63,9 +63,15 @@ export function injectGeoGebraApplet(opts: IInjectOptions): IInjectResult {
       showAlgebraInput: false,
       showMenuBar: true,
       autoHeight: true,
-      scaleContainerClass,
       allowUpscale
     };
+    // Only include scaleContainerClass if a non-empty value was provided.
+    // When omitted, the applet will use explicit width/height instead of
+    // applying container-scaling which preserves aspect ratio and can leave
+    // vertical letterbox space.
+    if (scaleContainerClass) {
+      params.scaleContainerClass = scaleContainerClass;
+    }
     if (appletOnLoad) {
       params.appletOnLoad = appletOnLoad;
     }

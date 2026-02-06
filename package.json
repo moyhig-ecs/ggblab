@@ -61,9 +61,8 @@
     "@jupyterlab/settingregistry": "^4.0.0",
     "@lumino/widgets": "^2.7.2",
     "@marshallku/react-postscribe": "^0.2.0",
+    "cross-fetch": "^3.1.5",
     "react-meta-tags": "^1.0.1"
-    ,
-    "cross-fetch": "^3.1.5"
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.5.2",

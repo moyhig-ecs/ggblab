@@ -95,6 +95,43 @@ jlpm build   # optional: only needed for frontend changes
 jupyter lab
 ```
 
+## Jupyter server CORS / allow_origin (for webview integrations)
+
+If you run ggblab inside an environment where a webview or external host
+needs to connect to the local Jupyter server (for example a VS Code webview),
+you may need to allow cross-origin requests from the host. In most local
+deployments using plain HTTP this is not a concern; however, some webview
+integrations require the server to accept cross-origin requests.
+
+Quick runtime option:
+
+```bash
+# Classic Notebook/JupyterLab
+jupyter lab --NotebookApp.allow_origin='*'
+
+# jupyter_server-based (newer) process
+jupyter lab --ServerApp.allow_origin='*'
+```
+
+Persistent config (user-level): add to `~/.jupyter/jupyter_notebook_config.py`
+or `~/.jupyter/jupyter_server_config.py` depending on your server:
+
+```python
+# allow all origins (use with caution on publicly accessible servers)
+c.NotebookApp.allow_origin = '*'
+# optionally allow credentials (cookies) if your host sends them
+c.NotebookApp.allow_credentials = True
+```
+
+Security note:
+
+- `allow_origin='*'` permits all origins and should only be used in local
+   or tightly controlled environments. Do not use it on public-facing servers
+   without additional access controls. A safer pattern is to restrict the
+   allowed origin to the exact webview origin or to proxy REST requests via
+   the host extension (recommended for VS Code integrations).
+
+
 Notes:
 
 - For managed JupyterHub deployments, `pip install ggblab` is usually sufficient — no manual `jlpm` steps are required.

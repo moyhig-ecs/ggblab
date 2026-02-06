@@ -61,6 +61,7 @@
     "@jupyterlab/settingregistry": "^4.0.0",
     "@lumino/widgets": "^2.7.2",
     "@marshallku/react-postscribe": "^0.2.0",
+    "cross-fetch": "^3.1.5",
     "react-meta-tags": "^1.0.1"
   },
   "devDependencies": {
@@ -109,7 +110,7 @@
     "outputDir": "ggblab/labextension",
     "schemaDir": "schema",
     "_build": {
-      "load": "static/remoteEntry.1ebcebf9d9ce9ff019d1.js",
+      "load": "static/remoteEntry.86e8e82bc60008fd69eb.js",
       "extension": "./extension",
       "style": "./style"
     }
