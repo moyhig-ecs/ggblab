@@ -1,0 +1,36 @@
+name: Publish VS Code Extension
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    name: Prepare and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: vscode-extension
+        run: npm ci
+
+      - name: Prepare VSIX (sync version & build)
+        working-directory: vscode-extension
+        run: npm run prepare-vsix
+
+      - name: Publish to Visual Studio Marketplace
+        working-directory: vscode-extension
+        env:
+          VSCODE_PAT: ${{ secrets.VSCODE_PAT }}
+        run: |
+          # vsce supports --pat; using npx ensures local usage without global install
+          npx vsce publish --pat "$VSCODE_PAT"

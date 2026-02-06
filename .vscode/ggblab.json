@@ -1,7 +1,7 @@
 {
-  "kernelId": "682d7174-c0b9-4d68-90e1-1e447b16f5ec",
-  "socketPath": "/tmp/ggb_q6i7heh7",
-  "connection_file": "/Users/manabu/Library/Jupyter/runtime/kernel-682d7174-c0b9-4d68-90e1-1e447b16f5ec.json",
+  "kernelId": "a941c376-b133-444f-897e-cdd4fd37f2da",
+  "socketPath": "/tmp/ggb_hddov221",
+  "connection_file": "/Users/manabu/Library/Jupyter/runtime/kernel-a941c376-b133-444f-897e-cdd4fd37f2da.json",
   "baseUrl": "http://localhost:8888/",
-  "token": "f2c5b1408b6c5160f2b9ff63490eb212ee2cc5331e67f904"
+  "token": ""
 }

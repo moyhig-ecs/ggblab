@@ -161,15 +161,42 @@ function activate(context) {
   // Read workspace .vscode/ggblab.json (if present) and return {path,data}
   const readWorkspaceGgblab = async () => {
     try {
-      const wsRoot = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0].uri.fsPath) || process.cwd();
-      const f = path.join(wsRoot, '.vscode', 'ggblab.json');
-      if (fs.existsSync(f)) {
-        try {
-          const txt = fs.readFileSync(f, 'utf8');
-          const data = JSON.parse(txt || '{}');
-          return { path: f, data };
-        } catch (e) {
-          ggblabOutput?.appendLine('Failed to parse .vscode/ggblab.json: ' + String(e));
+      const seen = new Set();
+      const candidates = [];
+
+      // Add all workspace folders (if any)
+      if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length) {
+        for (const wf of vscode.workspace.workspaceFolders) {
+          try { candidates.push(wf.uri.fsPath); } catch (e) {}
+        }
+      }
+
+      // Also probe process.cwd() and a few parent directories (best-effort)
+      try { candidates.push(process.cwd()); } catch (e) {}
+      try {
+        let p = process.cwd();
+        for (let i = 0; i < 6; i++) {
+          const parent = path.dirname(p || '');
+          if (!parent || parent === p) break;
+          candidates.push(parent);
+          p = parent;
+        }
+      } catch (e) {}
+
+      for (const base of candidates) {
+        if (!base) continue;
+        const f = path.join(base, '.vscode', 'ggblab.json');
+        if (seen.has(f)) continue;
+        seen.add(f);
+        if (fs.existsSync(f)) {
+          try {
+            const txt = fs.readFileSync(f, 'utf8');
+            const data = JSON.parse(txt || '{}');
+            ggblabOutput?.appendLine('.vscode/ggblab.json found: ' + f);
+            return { path: f, data };
+          } catch (e) {
+            ggblabOutput?.appendLine('Failed to parse .vscode/ggblab.json (' + f + '): ' + String(e));
+          }
         }
       }
     } catch (e) {
@@ -298,8 +325,8 @@ function activate(context) {
           try { wsGg = await readWorkspaceGgblab(); } catch (e) { wsGg = null; }
           if (wsGg) {
             try { ggblabOutput?.appendLine('.vscode/ggblab.json found: ' + JSON.stringify(wsGg.data)); } catch (e) {}
-            // Move token into SecretStorage if present
-            try { await storeTokenFromWorkspaceFile(wsGg); } catch (e) {}
+            // NOTE: do not remove token from the workspace file here; read and
+            // use it directly. Token management left to workspace policy.
           }
 
           // Merge sources: prefer discovered -> workspace file -> extension config

@@ -200,7 +200,36 @@ class GeoGebra:
                             from jupyter_server.serverapp import list_running_servers
                             servers = list(list_running_servers())
                             if servers:
-                                srv = servers[0]
+                                # If we have a kernel connection file, prefer the
+                                # server entry that matches its host/port.
+                                srv = None
+                                try:
+                                    if conn_file and Path(conn_file).exists():
+                                        try:
+                                            with open(conn_file, 'r', encoding='utf8') as cf:
+                                                conn_json = json.load(cf)
+                                        except Exception:
+                                            conn_json = {}
+                                        conn_ip = conn_json.get('ip') or conn_json.get('ip')
+                                        # no direct port in connection file; try to infer
+                                        conn_port = None
+                                        # iterate servers to find best match
+                                        for s in servers:
+                                            raw_url = s.get('url') or s.get('server_url') or ''
+                                            if not raw_url:
+                                                continue
+                                            parts = urlsplit(raw_url)
+                                            host = parts.hostname
+                                            port = parts.port
+                                            if conn_ip and host and (conn_ip == host or (conn_ip in ('127.0.0.1', '::1') and host in ('localhost', '127.0.0.1'))):
+                                                srv = s
+                                                break
+                                except Exception:
+                                    srv = None
+
+                                if srv is None:
+                                    srv = servers[0]
+
                                 # prefer explicit base_url if provided by server
                                 base_url = srv.get('base_url') or srv.get('baseUrl') or None
                                 raw_url = srv.get('url') or srv.get('server_url') or None
@@ -227,8 +256,11 @@ class GeoGebra:
 
                                 if base_url:
                                     payload['baseUrl'] = base_url
-                                if token:
-                                    payload['token'] = token
+                                # Always include a token key so workspace consumers
+                                # (e.g. the VS Code extension) see the field even
+                                # when no token is available. Use empty string as
+                                # a sentinel for "no token".
+                                payload['token'] = token or ''
                         except Exception:
                             # ignore if jupyter_server not available
                             pass

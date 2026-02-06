@@ -1,3 +1,38 @@
+# GeoGebra Injector (vscode-extension)
+
+This folder contains the VS Code extension that opens a webview and injects a GeoGebra applet for debugging.
+
+Extension ID: `moyhig.geogebra-injector` (publisher: `moyhig`, name: `geogebra-injector`)
+
+Quick build & package
+
+1. Build the web bundle (produces `dist/bundle.js`):
+
+```bash
+cd vscode-extension
+npm install   # if needed the first time
+npm run build
+```
+
+2. Prepare and package (automated: sync version from top-level and build):
+
+```bash
+cd vscode-extension
+npm run package:vsce
+```
+
+This runs `scripts/sync-version.js` to copy the top-level `package.json` `version` into this package, runs the build, then runs `vsce package`.
+
+Install the generated VSIX locally:
+
+```bash
+code --install-extension geogebra-injector-<version>.vsix
+```
+
+Notes
+- Ensure `vsce` is available on PATH for `npm run package:vsce` to succeed.
+- Adjust `.vscodeignore` if the produced VSIX still contains unnecessary files.
+- To publish to the Marketplace you need a publisher account; the extension ID will be `ggblab.geogebra-injector` when publishing.
 # GGBlab Applet Injector (VS Code Extension)
 
 This is a minimal VS Code extension that opens a Webview and injects a GeoGebra applet for quick debugging.

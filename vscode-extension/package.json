@@ -1,8 +1,13 @@
 {
-  "name": "ggblab-applet-injector",
-  "displayName": "GGBlab Applet Injector",
+  "name": "geogebra-injector",
+  "displayName": "GeoGebra Injector (GGBlab)",
+  "publisher": "moyhig",
   "description": "A simple VS Code extension that opens a webview and injects a GeoGebra applet for debugging.",
-  "version": "0.0.0",
+  "version": "1.4.2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ggblab/ggblab"
+  },
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -64,9 +69,11 @@
   "scripts": {
     "build": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser",
     "watch": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare-vsix": "node ./scripts/sync-version.js && npm run build",
+    "package:vsce": "npm run prepare-vsix && vsce package"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "author": "ggblab",
+  "license": "BSD-3-Clause"
 }

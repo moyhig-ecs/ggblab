@@ -1,0 +1,26 @@
+# Ignore source files and metadata not needed in the VSIX
+node_modules
+.git
+.github
+**/__tests__/**
+**/*.spec.js
+**/*.map
+**/*.log
+examples
+docs
+tests
+*.md
+*.markdown
+*.ipynb
+coverage
+build
+dist/**/src
+src
+*.tgz
+*.psd
+*.ai
+/.vscode
+
+# Keep dist/bundle.js if present; if you build the bundle, don't ignore dist
+# (remove the following line if you produce dist/bundle.js)
+dist/**/*.ts
