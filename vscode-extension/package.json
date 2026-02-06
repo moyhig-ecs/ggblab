@@ -1,0 +1,71 @@
+{
+  "name": "ggblab-applet-injector",
+  "displayName": "GGBlab Applet Injector",
+  "description": "A simple VS Code extension that opens a webview and injects a GeoGebra applet for debugging.",
+  "version": "0.0.0",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "activationEvents": [
+    "onCommand:ggblab.openApplet"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ggblab.openApplet",
+        "title": "GGBlab: Open Applet Webview"
+      }
+    ]
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "compute-gcd": "^1.2.1",
+    "compute-lcm": "^1.1.2",
+    "esbuild": "^0.18.20",
+    "fast-deep-equal": "^3.1.3",
+    "fast-uri": "^3.1.0",
+    "isomorphic.js": "^0.2.5",
+    "js-tokens": "^4.0.0",
+    "json-schema-compare": "^0.2.2",
+    "json-schema-merge-allof": "^0.8.1",
+    "json-schema-traverse": "^1.0.0",
+    "json5": "^2.2.3",
+    "jsonpointer": "^5.0.1",
+    "lib0": "^0.2.117",
+    "lodash": "^4.17.23",
+    "lodash-es": "^4.17.23",
+    "loose-envify": "^1.4.0",
+    "minimist": "^1.2.8",
+    "path-browserify": "^1.0.1",
+    "querystringify": "^2.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-is": "^18.3.1",
+    "require-from-string": "^2.0.2",
+    "requires-port": "^1.0.0",
+    "scheduler": "^0.23.2",
+    "typescript": "^5.9.3",
+    "undici-types": "^7.16.0",
+    "url-parse": "^1.5.10",
+    "validate.io-array": "^1.0.6",
+    "validate.io-function": "^1.0.2",
+    "validate.io-integer": "^1.0.5",
+    "validate.io-integer-array": "^1.0.0",
+    "validate.io-number": "^1.0.3",
+    "ws": "^8.19.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.29"
+    ,
+    "cross-fetch": "^3.1.5"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "build": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser",
+    "watch": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
