@@ -124,6 +124,13 @@ class ggb_comm:
         self.enable_widget_bridge = False
         # Debug flag: when False, suppress non-actionable diagnostic log entries
         self.debug = False
+        # Out-of-band response watchdog timeout (seconds). Can be overridden
+        # via the environment variable GGB_OOB_TIMEOUT or by setting the
+        # instance attribute `oob_timeout` at runtime. Default is 30 seconds.
+        try:
+            self.oob_timeout = float(os.environ.get('GGB_OOB_TIMEOUT', '30'))
+        except Exception:
+            self.oob_timeout = 30.0
 
     # oob websocket (unix_domain socket in posix)
     def start(self):
@@ -666,7 +673,10 @@ class ggb_comm:
         4. Raises GeoGebraAppletError if error events are received
         5. Returns the response payload
         
-        The 3-second timeout is sufficient for interactive operations.
+        The out-of-band response wait is governed by `self.oob_timeout` (in
+        seconds). The default is 30 seconds but this can be overridden via
+        the environment variable `GGB_OOB_TIMEOUT` or by setting the
+        instance attribute `oob_timeout` before calling `send_recv`.
         For long-running operations, decompose into smaller steps.
         
         Args:
@@ -732,7 +742,8 @@ class ggb_comm:
                         with self.thread_lock:
                             self.logs.append(f"_watchdog: failed to set exception on future: {e}")
 
-            handle = loop.call_later(3.0, _watchdog)
+            # Schedule watchdog using the instance-configurable timeout
+            handle = loop.call_later(getattr(self, 'oob_timeout', 30.0), _watchdog)
 
             # Await the future (it will be set by client_handle or by watchdog)
             try:

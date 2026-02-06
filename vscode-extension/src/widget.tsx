@@ -497,9 +497,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         window.addEventListener('close', resources.closeHandler);
 
         // Register simple listeners exposed by the API (add/remove/etc.)
-        try {
+          try {
           const addListener = async function (data: any) {
-            const msg = { type: 'add', payload: data };
+            const msg = { type: 'add', ts: Date.now(), payload: data };
             const s = JSON.stringify(msg);
             try {
               if (resources.widgetComm) { resources.widgetComm.send(s); return; }
@@ -507,9 +507,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
             try { await callRemoteSocketSend(s); } catch (e) { dbg('socket send add failed', e); }
           };
           api.registerAddListener?.(addListener);
-          api.registerRemoveListener?.(async (data: any) => { const s = JSON.stringify({ type: 'remove', payload: data }); await callRemoteSocketSend(s); });
-          api.registerRenameListener?.(async (data: any) => { const s = JSON.stringify({ type: 'rename', payload: data }); await callRemoteSocketSend(s); });
-          api.registerClearListener?.(async (data: any) => { const s = JSON.stringify({ type: 'clear', payload: data }); await callRemoteSocketSend(s); });
+          api.registerRemoveListener?.(async (data: any) => { const s = JSON.stringify({ type: 'remove', ts: Date.now(), payload: data }); await callRemoteSocketSend(s); });
+          api.registerRenameListener?.(async (data: any) => { const s = JSON.stringify({ type: 'rename', ts: Date.now(), payload: data }); await callRemoteSocketSend(s); });
+          api.registerClearListener?.(async (data: any) => { const s = JSON.stringify({ type: 'clear', ts: Date.now(), payload: data }); await callRemoteSocketSend(s); });
         } catch (e) { dbg('register listeners failed', e); }
 
         resources.observer = new MutationObserver(mutations => {

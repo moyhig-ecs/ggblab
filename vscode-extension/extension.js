@@ -171,7 +171,15 @@ function activate(context) {
         }
       }
 
-      // Also probe process.cwd() and a few parent directories (best-effort)
+      // Also include extension install path and active editor folder, then
+      // probe process.cwd() and a few parent directories (best-effort)
+      try { if (context && context.extensionPath) candidates.push(context.extensionPath); } catch (e) {}
+      try {
+        const ae = vscode.window.activeTextEditor;
+        if (ae && ae.document && ae.document.uri && ae.document.uri.fsPath) {
+          candidates.push(path.dirname(ae.document.uri.fsPath));
+        }
+      } catch (e) {}
       try { candidates.push(process.cwd()); } catch (e) {}
       try {
         let p = process.cwd();
@@ -183,6 +191,8 @@ function activate(context) {
         }
       } catch (e) {}
 
+      try { ggblabOutput?.appendLine('ggblab.json search paths: ' + JSON.stringify(candidates)); } catch (e) {}
+
       for (const base of candidates) {
         if (!base) continue;
         const f = path.join(base, '.vscode', 'ggblab.json');
@@ -192,13 +202,14 @@ function activate(context) {
           try {
             const txt = fs.readFileSync(f, 'utf8');
             const data = JSON.parse(txt || '{}');
-            ggblabOutput?.appendLine('.vscode/ggblab.json found: ' + f);
+            try { ggblabOutput?.appendLine('ggblab.json loaded from: ' + f); } catch (e) {}
             return { path: f, data };
           } catch (e) {
             ggblabOutput?.appendLine('Failed to parse .vscode/ggblab.json (' + f + '): ' + String(e));
           }
         }
       }
+      try { ggblabOutput?.appendLine('ggblab.json not found in search paths'); } catch (e) {}
     } catch (e) {
       // ignore
     }

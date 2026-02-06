@@ -28,6 +28,9 @@ ggblab/_version.py
 xsd/common.xsd
 .vscode/settings.json
 *.parquet
+**/.vscode/ggblab.json
+.vscode/ggblab.json
+settings.json
 
 # Integration tests
 ui-tests/test-results/
