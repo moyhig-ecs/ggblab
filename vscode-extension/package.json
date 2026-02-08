@@ -67,8 +67,8 @@
   },
   "devDependencies": {},
   "scripts": {
-    "build": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser",
-    "watch": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --watch",
+    "build": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --sourcemap=inline",
+    "watch": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --sourcemap=inline --watch",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepare-vsix": "node ./scripts/sync-version.js && npm run build",
     "package:vsce": "npm run prepare-vsix && vsce package"

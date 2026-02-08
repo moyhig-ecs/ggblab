@@ -39,6 +39,9 @@ if (typeof document !== 'undefined' && document.getElementById('root')) {
     // ignore
   }
   try {
+    // Temporary breakpoint to force debugger to pause when the webview
+    // auto-mounts the widget during development. Remove before committing.
+    // eslint-disable-next-line no-debugger
     mountGeoGebra('root');
   } catch (e) {
     // eslint-disable-next-line no-console

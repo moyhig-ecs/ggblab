@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { injectGeoGebraApplet } from '../../src/shared/createApplet';
 import setupKernelResources, { isArrayOfArrays } from '../../src/components/jupyterlab';
+import { registerWidgetCommTargets } from '../../src/widgets';
 
 export interface GeoGebraWidgetProps {
   elementId?: string;
@@ -69,6 +70,8 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       comm: any = null;
       widgetComm: any = null;
       appletApi: any = null;
+      // unregister function returned by `registerWidgetCommTargets`
+      unregisterWidgetCommTargets: (() => void) | null = null;
       injectCleanup: (() => void) | null = null;
       observer: MutationObserver | null = null;
       appletStyleObserver: MutationObserver | null = null;
@@ -108,6 +111,14 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
     }
 
     const resources = new Resources(kernelId || '', commTarget || '', socketPath || null, wsPort || 8888);
+    // Normalize socketPath/ wsUrl on the resources bag so kernel-side helpers
+    // always see a defined value when available. Avoid leaving a literal null
+    // which complicates downstream checks; prefer undefined for "not set".
+    try {
+      (resources as any).socketPath = socketPath || undefined;
+      // Ensure a wsUrl field exists for kernel_comm to prefer over wsPort
+      (resources as any).wsUrl = (resources as any).wsUrl || `ws://localhost:${resources.wsPort}/`;
+    } catch (e) { /* ignore normalization errors */ }
     resourcesRef.current = resources;
 
     // Prevent double-initialization if the component is re-rendered
@@ -129,6 +140,15 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         const res = await setupKernelResources(resources, { kernelId: resources.kernelId, serverSettings }, dbg);
         callRemoteSocketSend = res.callRemoteSocketSend;
         makeIncomingHandler = res.makeIncomingHandler;
+        // Ensure resources.socketPath is populated from any available source
+        try {
+          const fromResSettings = res && res.serverSettings && (res.serverSettings.socketPath || res.serverSettings.socket_path);
+          const fromProps = (serverSettings && (serverSettings.socketPath || (serverSettings as any).socket_path)) || undefined;
+          (resources as any).socketPath = (resources as any).socketPath || fromResSettings || fromProps || undefined;
+          dbg('Normalized resources.socketPath', (resources as any).socketPath);
+        } catch (e) {
+          dbg('Failed to normalize resources.socketPath', e);
+        }
         // try {
           dbg('setupKernelResources returned', {
             hasCallRemoteSocketSend: typeof callRemoteSocketSend === 'function',
@@ -141,6 +161,31 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           try { (window as any).__GGBlab_makeIncomingHandler = makeIncomingHandler; } catch (e) {}
         // } catch (e) { /* ignore logging errors */ }
         // kernelConn attached to resources by setupKernelResources
+        // Widget comm passthrough registration (webview)
+        try {
+          if ((props as any).widgetManager) {
+            dbg('widgetManager present; skipping raw jupyter.widget comm registration in webview');
+          } else {
+            const opts = {
+              callRemoteSocketSend,
+              kernel2: resources.kernel2,
+              socketPath: resources.socketPath,
+              wsUrl: `ws://localhost:${resources.wsPort}/`,
+              getAppletApi: () => resources.appletApi,
+              isArrayOfArrays: isArrayOfArrays,
+              dbg
+            };
+
+            try {
+              const unregisterFn = registerWidgetCommTargets(resources.kernelConn, opts as any);
+              resources.unregisterWidgetCommTargets = unregisterFn;
+            } catch (e) {
+              dbg('registerWidgetCommTargets failed in webview', e);
+            }
+          }
+        } catch (e) {
+          dbg('Widget comm target registration skipped or failed (webview)', e);
+        }
       // } catch (e) {
       //   dbg('setupKernelResources failed or not applicable in this environment', e);
       // }

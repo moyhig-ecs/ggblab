@@ -10,8 +10,12 @@
         "--extensionDevelopmentPath=${workspaceFolder}/vscode-extension"
       ],
       "stopOnEntry": false,
-      "outFiles": [],
-      "preLaunchTask": ""
+      "outFiles": [
+        "${workspaceFolder}/vscode-extension/dist/**/*.js",
+        "${workspaceFolder}/vscode-extension/**/*.js"
+      ],
+      "sourceMaps": true,
+      "preLaunchTask": "Build extension (py314)"
     }
   ]
 }

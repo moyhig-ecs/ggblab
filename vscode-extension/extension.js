@@ -478,6 +478,29 @@ function activate(context) {
 
   });
 
+  // Register a serializer so the webview panel can be restored after
+  // a window reload / extension reload. VS Code will call
+  // `deserializeWebviewPanel` with the previously saved state (if any).
+  try {
+    if (vscode.window.registerWebviewPanelSerializer) {
+      vscode.window.registerWebviewPanelSerializer('ggblabApplet', {
+        async deserializeWebviewPanel(panel, state) {
+          try {
+            ggblabOutput?.appendLine('Restoring ggblabApplet webview');
+            const bundlePath = path.join(context.extensionPath, 'dist', 'bundle.js');
+            const bundleUri = fs.existsSync(bundlePath) ? panel.webview.asWebviewUri(vscode.Uri.file(bundlePath)) : null;
+            const serverSettingsJson = state && state.serverSettings ? JSON.stringify(state.serverSettings) : null;
+            const autoInit = state && state.autoInit;
+            panel.webview.html = getWebviewContent(bundleUri ? bundleUri.toString() : null, serverSettingsJson, autoInit);
+            try { panel.webview.postMessage({ type: 'restoreState', state }); } catch (e) {}
+          } catch (e) {
+            ggblabOutput?.appendLine('Failed to deserialize ggblabApplet: ' + String(e));
+          }
+        }
+      });
+    }
+  } catch (e) {}
+
   context.subscriptions.push(disposable);
 }
 

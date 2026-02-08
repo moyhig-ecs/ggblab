@@ -16,10 +16,7 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 
   // (kernel-only mode) browser WebSocket fallback removed: sending is via kernel2
 
-  // batching for object_update messages
-  let batchBuffer: Array<[any, any]> = [];
-  let batchTimer: any = null;
-  // batching for action messages (add/remove/rename/clear)
+  // batching for action messages (add/remove/rename/clear and object_update)
   let actionBatchBuffer: Array<{ type: string; payload: any; ts?: number }> = [];
   let actionBatchTimer: any = null;
   const batchInterval = (resources && resources.batchInterval) ? resources.batchInterval : 30;
@@ -27,14 +24,21 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
   const log = dbg || (() => {});
 
   async function performSend(msgToSend: string) {
-    const wsUrl = `ws://localhost:${resources.wsPort || 0}/`;
-    const socketPath = resources.socketPath;
+    const wsUrl = (resources && resources.wsUrl) ? resources.wsUrl : undefined;
+    const socketPath = (resources && resources.socketPath) ? resources.socketPath : undefined;
 
     if (resources && resources.kernel2 && typeof resources.kernel2.requestExecute === 'function') {
       try {
-        const code = socketPath
-          ? `\nwith unix_connect(${JSON.stringify(socketPath)}) as ws:\n\tws.send(r"""${msgToSend}""")\n`
-          : `\nwith connect(${JSON.stringify(wsUrl)}) as ws:\n\tws.send(r"""${msgToSend}""")\n`;
+        try { log && log('performSend: using kernel2.requestExecute', { kernel2: !!resources.kernel2, socketPath: socketPath || undefined, wsUrlPreview: wsUrl || undefined }); } catch (e) {}
+        let code: string;
+        if (socketPath) {
+          code = `\nwith unix_connect(${JSON.stringify(socketPath)}) as ws:\n\tws.send(r"""${msgToSend}""")\n`;
+        } else if (wsUrl) {
+          code = `\nwith connect(${JSON.stringify(wsUrl)}) as ws:\n\tws.send(r"""${msgToSend}""")\n`;
+        } else {
+          // Neither socketPath nor wsUrl configured — fail fast rather than guessing
+          throw new Error('No socketPath or wsUrl configured in resources for performSend');
+        }
         const exec = resources.kernel2.requestExecute({ code });
         // fire-and-forget mode avoids awaiting exec.done
         if (resources.kernel2FireAndForget) {
@@ -61,15 +65,6 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
     return next;
   };
 
-  const flushBatch = () => {
-    if (!batchBuffer.length) return;
-    const toSend = batchBuffer.slice();
-    batchBuffer = [];
-    if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
-    const batchMsg = JSON.stringify({ type: 'object_update', payload: toSend });
-    enqueueSend(batchMsg).catch(() => {});
-  };
-
   const flushActionBatch = () => {
     if (!actionBatchBuffer.length) return;
     const toSend = actionBatchBuffer.slice();
@@ -79,10 +74,7 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
     enqueueSend(batchMsg).catch(() => {});
   };
 
-  const scheduleBatchFlush = () => {
-    if (batchTimer) { return; }
-    batchTimer = setTimeout(() => { try { flushBatch(); } catch (e) { log('flushBatch failed', e); } }, batchInterval);
-  };
+  
 
   const scheduleActionBatchFlush = () => {
     if (actionBatchTimer) { return; }
@@ -91,29 +83,25 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 
   async function callRemoteSocketSend(message: string): Promise<void> {
     try {
-      // Batch object_update messages
+      // Debug: trace incoming messages to help diagnose why sends may be missing
+      try { log && log('callRemoteSocketSend received', message); } catch (e) {}
+
       try {
         const parsed = JSON.parse(message as string);
-        if (parsed && parsed.type === 'object_update') {
-          const p = parsed.payload;
-          if (Array.isArray(p) && p.length && Array.isArray(p[0])) {
-            for (const pair of p) { if (Array.isArray(pair) && pair.length >= 2) batchBuffer.push([pair[0], pair[1]]); }
-          } else if (Array.isArray(p) && p.length >= 2 && !Array.isArray(p[0])) {
-            batchBuffer.push([p[0], p[1]]);
-          } else if (p && typeof p === 'object' && ('name' in p || 'value' in p)) {
-            const name = (p as any).name ?? (Array.isArray(p) && p[0]);
-            const value = (p as any).value ?? (Array.isArray(p) && p[1]) ?? null;
-            batchBuffer.push([name, value]);
-          }
-          scheduleBatchFlush();
-          return;
-        }
-        // Batch UI action messages into bulk_actions
-        if (parsed && (parsed.type === 'add' || parsed.type === 'remove' || parsed.type === 'rename' || parsed.type === 'clear')) {
+        // Treat object_update the same as UI action messages (add/remove/rename/clear)
+        // and batch them into `bulk_actions` for kernel-side processing.
+        if (parsed && (parsed.type === 'add' || parsed.type === 'remove' || parsed.type === 'rename' || parsed.type === 'clear' || parsed.type === 'object_update')) {
           try {
             const entry = { type: parsed.type, payload: parsed.payload, ts: parsed.ts ?? Date.now() };
             actionBatchBuffer.push(entry);
-            scheduleActionBatchFlush();
+            try { log && log('Queued bulk action entry', entry, { actionBatchBufferLength: actionBatchBuffer.length }); } catch (e) {}
+            // For object_update we prefer immediate delivery rather than waiting
+            // for the action batch timer to fire, to reduce perceived latency.
+            if (parsed.type === 'object_update') {
+              try { flushActionBatch(); } catch (e) { log('Immediate flushActionBatch failed', e); }
+            } else {
+              scheduleActionBatchFlush();
+            }
             return;
           } catch (e) { log('Batch queue failed', e); }
         }

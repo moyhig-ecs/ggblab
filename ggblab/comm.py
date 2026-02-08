@@ -218,12 +218,16 @@ class ggb_comm:
             async for msg in client_id:
                 # _data = ast.literal_eval(msg)
                 _data = json.loads(msg)
-                # If this is an `object_update` event, update the shared_objects
-                # class-level mapping so other consumers can read the latest
-                # object values. Payloads may be a single pair [name, value]
-                # or a list of pairs.
-                if isinstance(_data, dict) and _data.get('type') == 'object_update':
-                    payload = _data.get('payload')
+                # Log incoming message type for diagnostics
+                try:
+                    t = _data.get('type') if isinstance(_data, dict) else None
+                    with self.thread_lock:
+                        self.logs.append(f"recv:type={t}")
+                except Exception as _e:
+                    with self.thread_lock:
+                        self.logs.append(f"recv:type:logging_failed {_e}")
+                # Helper to process object_update payloads (shared_objects update + notify listeners)
+                async def _handle_object_update(payload):
                     try:
                         changes = {}
                         with self.thread_lock:
@@ -287,6 +291,58 @@ class ggb_comm:
                                 except Exception:
                                     with self.thread_lock:
                                         self.logs.append('Error invoking shared_objects listener')
+                    except Exception as e:
+                        with self.thread_lock:
+                            self.logs.append(f'Failed to process object_update payload: {e}')
+
+                # If this is a `bulk_actions` message, unpack and process entries
+                if isinstance(_data, dict) and _data.get('type') == 'bulk_actions':
+                    payload = _data.get('payload')
+                    try:
+                        if isinstance(payload, list):
+                            try:
+                                with self.thread_lock:
+                                    self.logs.append(f'bulk_actions: packaged_count={len(payload)}')
+                            except Exception:
+                                pass
+                            for entry in payload:
+                                try:
+                                    if not isinstance(entry, dict):
+                                        # Skip malformed entries
+                                        continue
+                                    etype = entry.get('type')
+                                    epayload = entry.get('payload')
+                                    # Handle object_update entries specially
+                                    if etype == 'object_update':
+                                        try:
+                                            await _handle_object_update(epayload)
+                                        except Exception:
+                                            with self.thread_lock:
+                                                self.logs.append('Error handling object_update entry in bulk_actions')
+                                    else:
+                                        # Queue other action entries as individual events
+                                        try:
+                                            self.recv_events.put(entry)
+                                        except Exception:
+                                            with self.thread_lock:
+                                                self.logs.append('Failed to enqueue bulk action entry')
+                                except Exception:
+                                    with self.thread_lock:
+                                        self.logs.append('Error processing entry in bulk_actions')
+                    except Exception as e:
+                        with self.thread_lock:
+                            self.logs.append(f'Failed to process bulk_actions payload: {e}')
+                    # After unpacking we continue to next message
+                    continue
+
+                # If this is an `object_update` event, update the shared_objects
+                # class-level mapping so other consumers can read the latest
+                # object values. Payloads may be a single pair [name, value]
+                # or a list of pairs.
+                if isinstance(_data, dict) and _data.get('type') == 'object_update':
+                    payload = _data.get('payload')
+                    try:
+                        await _handle_object_update(payload)
                     except Exception as e:
                         with self.thread_lock:
                             self.logs.append(f'Failed to process object_update payload: {e}')
