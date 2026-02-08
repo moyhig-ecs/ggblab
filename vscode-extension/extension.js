@@ -72,86 +72,65 @@ function activate(context) {
   // Probe for MS Jupyter extension or workspace jupyter settings to infer
   // remote kernel connection info (best-effort). This allows us to prefill
   // baseUrl/token or a serverUrl so users don't need to re-enter them.
+  // Lightweight probe for MS Jupyter extension. Keep minimal and stable so
+  // future work can re-introduce deeper heuristics without noisy output.
   const probeMsJupyter = async () => {
     try {
       const candidates = ['ms-toolsai.jupyter', 'ms-toolsai.vscode-jupyter'];
+      ggblabOutput?.appendLine('probeMsJupyter: probing jupyter extensions');
       for (const id of candidates) {
         try {
           const ext = vscode.extensions.getExtension(id);
           if (!ext) continue;
-          const api = await ext.activate();
+          let api = null;
+          try { api = await ext.activate(); } catch (e) { ggblabOutput?.appendLine(`probeMsJupyter: activate ${id} failed: ${String(e)}`); }
           if (!api) continue;
-          // Try common shapes — many extension APIs vary. Prefer full
-          // server URI if exposed, else attempt to read base/token fields.
-          if (api.serverUri) return { serverUrl: api.serverUri };
+
+          // Prefer notebook-scoped API if available
+          if (typeof api.getServerUriForNotebook === 'function') {
+            try {
+              const uri = await api.getServerUriForNotebook();
+              if (uri) return (typeof uri === 'string') ? { serverUrl: uri } : { serverUrl: uri.serverUrl || uri.serverUri || uri.baseUrl || null, token: uri.token || uri.authToken || null };
+            } catch (e) {}
+          }
+
           if (typeof api.getServerUri === 'function') {
             try {
               const uri = await api.getServerUri();
-              if (uri) return { serverUrl: uri.toString ? uri.toString() : uri };
-            } catch (e) {}
-          }
-          // Some APIs expose connection objects
-          if (api.connections) {
-            try {
-              const conn = api.connections.active || api.connections[0];
-              if (conn) {
-                const out = {};
-                if (conn.serverUrl) out.serverUrl = conn.serverUrl;
-                if (conn.baseUrl) out.baseUrl = conn.baseUrl;
-                if (conn.token) out.token = conn.token;
-                if (Object.keys(out).length) return out;
-              }
+              if (uri) return (typeof uri === 'string') ? { serverUrl: uri } : { serverUrl: uri.serverUrl || uri.serverUri || uri.baseUrl || null, token: uri.token || uri.authToken || null };
             } catch (e) {}
           }
         } catch (e) {
-          // activation may fail for some extension versions; ignore
+          // ignore and try next candidate
         }
       }
 
-      // Best-effort: execute well-known commands the Jupyter extension or
-      // related powertoys might register. If any return connection info,
-      // use that.
-      try {
-        const commandCandidates = [
-          'jupyter.getServerUri',
-          'jupyter.getServerUriForNotebook',
-          'jupyter.getConnectionInfo',
-          'jupyter.getActiveConnections',
-          'jupyter.requestServer',
-          'jupyter.server.getUri',
-          'jupyter.pw.getRemoteConnection',
-          'jupyter.powertoys.getConnectionInfo',
-          'jupyter.getRemoteKernelInfo'
-        ];
-        for (const cmd of commandCandidates) {
-          try {
-            const res = await vscode.commands.executeCommand(cmd);
-            if (!res) continue;
-            try { ggblabOutput?.appendLine('commandProbe ' + cmd + ': ' + JSON.stringify(res)); } catch (e) { ggblabOutput?.appendLine('commandProbe ' + cmd + ': [unserializable]'); }
-            const out = {};
-            if (typeof res === 'string') out.serverUrl = res;
-            else {
-              if (res.serverUri) out.serverUrl = res.serverUri;
-              if (res.serverUrl) out.serverUrl = res.serverUrl;
-              if (res.baseUrl) out.baseUrl = res.baseUrl;
-              if (res.token) out.token = res.token;
-              if (res.authToken) out.token = res.authToken;
-            }
-            if (Object.keys(out).length) return out;
-          } catch (e) {
-            // command may not be registered; ignore
-          }
+      // Try a small set of well-known command probes
+      const commandCandidates = [
+        'jupyter.getServerUri',
+        'jupyter.getServerUriForNotebook',
+        'jupyter.getConnectionInfo',
+        'python.datascience.getServerUri',
+        'python.getServerUri'
+      ];
+      for (const cmd of commandCandidates) {
+        try {
+          const res = await vscode.commands.executeCommand(cmd);
+          if (!res) continue;
+          if (typeof res === 'string') return { serverUrl: res };
+          const out = { serverUrl: res.serverUrl || res.serverUri || res.baseUrl || null, token: res.token || res.authToken || null };
+          if (out.serverUrl || out.token) return out;
+        } catch (e) {
+          // command not available — skip
         }
-      } catch (e) {}
+      }
 
-      // Fallback: check workspace settings under `jupyter` for common keys
+      // Fallback to workspace configuration
       const jc = vscode.workspace.getConfiguration('jupyter');
       const jsrv = jc.get('serverUri') || jc.get('serverUrl') || jc.get('jupyterServerUrl') || null;
-      const jbase = jc.get('baseUrl') || null;
       const jtoken = jc.get('token') || jc.get('authToken') || null;
       const res = {};
       if (jsrv) res.serverUrl = jsrv;
-      if (jbase) res.baseUrl = jbase;
       if (jtoken) res.token = jtoken;
       return Object.keys(res).length ? res : null;
     } catch (err) {
@@ -384,35 +363,59 @@ function activate(context) {
       return { error: String(err) };
     }
   };
-  let disposable = vscode.commands.registerCommand('ggblab.openApplet', async function () {
-    try {
-      // Do not automatically reveal the Output panel; keep it closed unless
-      // the user explicitly opens it for debugging.
-      const panel = vscode.window.createWebviewPanel(
-        'ggblabApplet',
-        'GGBlab Applet (Debug)',
-        vscode.ViewColumn.One,
-        { enableScripts: true, retainContextWhenHidden: true }
-      );
-
+  let disposable = vscode.commands.registerCommand('ggblab.openApplet', function () {
+    (async () => {
       try {
-        const bundlePath = path.join(context.extensionPath, 'dist', 'bundle.js');
-        ggblabOutput?.appendLine(`Checking for bundle at ${bundlePath}`);
-        if (fs.existsSync(bundlePath)) {
-          const bundleUri = panel.webview.asWebviewUri(vscode.Uri.file(bundlePath));
-          ggblabOutput?.appendLine(`Loading bundle: ${bundleUri.toString()}`);
+        // Do not automatically reveal the Output panel; keep it closed unless
+        // the user explicitly opens it for debugging.
+        const panel = vscode.window.createWebviewPanel(
+          'ggblabApplet',
+          'GGBlab Applet (Debug)',
+          vscode.ViewColumn.One,
+          { enableScripts: true, retainContextWhenHidden: true }
+        );
+
+        try {
+          const bundlePath = path.join(context.extensionPath, 'dist', 'bundle.js');
+          ggblabOutput?.appendLine(`Checking for bundle at ${bundlePath}`);
+          // Guard: track if panel gets disposed while async prompts are running
+          let panelDisposed = false;
+          panel.onDidDispose(() => { panelDisposed = true; try { ggblabOutput?.appendLine('ggblab: panel disposed'); } catch (e) {} });
+          if (fs.existsSync(bundlePath)) {
+            const bundleUri = panel.webview.asWebviewUri(vscode.Uri.file(bundlePath));
+            ggblabOutput?.appendLine(`Loading bundle: ${bundleUri.toString()}`);
           const config = vscode.workspace.getConfiguration('ggblab');
           // Start with configured serverSettings, but allow probe results to
           // fill missing defaults so input boxes are prefilled when possible.
           const cfgServerSettings = config.get('serverSettings') || {};
           let discovered = null;
-          try { discovered = await probeMsJupyter(); } catch (e) { discovered = null; }
+
+          try {
+            discovered = await probeMsJupyter();
+          } catch (e) {
+            discovered = null;
+          }
           // Try to obtain notebook-scoped settings (prefer this when a notebook
           // or editor is active so kernels/tokens can be discovered per-notebook).
           try {
-            const activeEditor = vscode.window.activeTextEditor || null;
-            const notebookUri = activeEditor && activeEditor.document && activeEditor.document.uri ? activeEditor.document.uri : null;
-            const discoveredNotebook = notebookUri ? await getServerSettingsForNotebook(notebookUri) : null;
+            // Robustly detect an active notebook/document. Prefer Notebook API,
+            // then text editor, visible editors, and other fallbacks.
+            let activeEditor = null;
+            let notebookUri = null;
+            if (vscode.window.activeNotebookEditor && vscode.window.activeNotebookEditor.document) {
+              activeEditor = vscode.window.activeNotebookEditor;
+              notebookUri = vscode.window.activeNotebookEditor.document.uri;
+            } else if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document) {
+              activeEditor = vscode.window.activeTextEditor;
+              notebookUri = vscode.window.activeTextEditor.document.uri;
+            } else if (vscode.window.visibleTextEditors && vscode.window.visibleTextEditors.length) {
+              activeEditor = vscode.window.visibleTextEditors[0];
+              notebookUri = activeEditor.document && activeEditor.document.uri ? activeEditor.document.uri : null;
+            } else if (vscode.window.visibleNotebookEditors && vscode.window.visibleNotebookEditors.length) {
+              activeEditor = vscode.window.visibleNotebookEditors[0];
+              notebookUri = activeEditor.document && activeEditor.document.uri ? activeEditor.document.uri : null;
+            }
+            const discoveredNotebook = (notebookUri && !panelDisposed) ? await getServerSettingsForNotebook(notebookUri) : null;
             if (discoveredNotebook) {
               try { ggblabOutput?.appendLine('discovered (notebook): ' + JSON.stringify(discoveredNotebook)); } catch (e) {}
               discovered = Object.assign({}, discoveredNotebook, discovered || {});
@@ -467,10 +470,12 @@ function activate(context) {
             if (serverSettings && serverSettings.kernelId && serverSettings.socketPath) {
               _sendSettings = Object.assign({}, serverSettings);
               const serverSettingsJson = JSON.stringify(_sendSettings);
-              panel.webview.html = getWebviewContent(bundleUri.toString(), serverSettingsJson, autoInit);
+              if (!panelDisposed) panel.webview.html = getWebviewContent(bundleUri.toString(), serverSettingsJson, autoInit);
               ggblabOutput?.appendLine(`Using workspace/server settings; connecting without prompts`);
             } else {
               const defaultKernel = serverSettings.kernelId || '';
+              // If panel was disposed while discovering, abort before prompting
+              if (panelDisposed) throw new Error('panel-disposed-before-prompts');
               const kernelId = await vscode.window.showInputBox({
                 prompt: 'Enter notebook kernel id to connect (optional)',
                 value: defaultKernel,
@@ -528,7 +533,7 @@ function activate(context) {
                 token: token || null
               });
               const serverSettingsJson = Object.keys(_sendSettings).length ? JSON.stringify(_sendSettings) : null;
-              panel.webview.html = getWebviewContent(bundleUri.toString(), serverSettingsJson, autoInit);
+              if (!panelDisposed) panel.webview.html = getWebviewContent(bundleUri.toString(), serverSettingsJson, autoInit);
               ggblabOutput?.appendLine(`Using kernel id: ${kernelId || '<none>'} socketPath: ${socketPath || '<none>'}`);
             }
           } catch (e) {
@@ -586,6 +591,10 @@ function activate(context) {
     } catch (e) {
       try { ggblabOutput?.appendLine('Unhandled error opening applet: ' + (e && e.stack ? e.stack : String(e))); } catch (ee) {}
     }
+    })().catch((err) => {
+      try { ggblabOutput?.appendLine('ggblab.openApplet async error: ' + (err && err.stack ? err.stack : String(err))); } catch (e) {}
+      try { vscode.window.showErrorMessage('GGBlab: failed to open applet — check Output: ggblab for details'); } catch (e) {}
+    });
 
   });
 
