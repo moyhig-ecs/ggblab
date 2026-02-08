@@ -158,6 +158,104 @@ function activate(context) {
       return null;
     }
   };
+
+  // Attempt to obtain server settings scoped to a notebook URI. This prefers
+  // the Jupyter extension's API (`getServerUriForNotebook`) when available
+  // and falls back to executing common commands that powertoys or the
+  // Jupyter extension may register. Returns a normalized serverSettings
+  // object or null.
+  const getServerSettingsForNotebook = async (notebookUri) => {
+    try {
+      let res = null;
+      const tryExt = async () => {
+        try {
+          const candidates = ['ms-toolsai.jupyter', 'ms-toolsai.vscode-jupyter'];
+          for (const id of candidates) {
+            try {
+              const ext = vscode.extensions.getExtension(id);
+              if (!ext) continue;
+              const api = await ext.activate();
+              if (!api) continue;
+              if (typeof api.getServerUriForNotebook === 'function' && notebookUri) {
+                try { return await api.getServerUriForNotebook(notebookUri); } catch (e) {}
+              }
+              if (typeof api.getServerUri === 'function') {
+                try { return await api.getServerUri(); } catch (e) {}
+              }
+            } catch (e) {
+              // ignore activation errors
+            }
+          }
+        } catch (e) {}
+        return null;
+      };
+
+      // 1) try extension API
+      try { res = await tryExt(); } catch (e) { res = null; }
+
+      // 2) fallback to running known commands (powertoys / jupyter extension)
+      if (!res) {
+        const cmdCandidates = [
+          'jupyter.getServerUriForNotebook',
+          'jupyter.getServerUri',
+          'jupyter.getConnectionInfo',
+          'jupyter.requestServer'
+        ];
+        for (const cmd of cmdCandidates) {
+          try {
+            const out = await vscode.commands.executeCommand(cmd, notebookUri);
+            if (out) {
+              res = out;
+              break;
+            }
+          } catch (e) {
+            // command not registered or failed; skip
+          }
+        }
+      }
+
+      if (!res) return null;
+
+      // Normalize result to an object with common fields
+      const normalize = (raw) => {
+        if (!raw) return null;
+        if (typeof raw === 'string') {
+          try {
+            const u = new URL(raw);
+            const token = u.searchParams.get('token') || null;
+            return { serverUrl: raw, token };
+          } catch (e) {
+            return { serverUrl: raw };
+          }
+        }
+        return {
+          serverUrl: raw.serverUrl || raw.serverUri || raw.baseUrl || null,
+          baseUrl: raw.baseUrl || null,
+          token: raw.token || raw.authToken || raw.tokenString || null,
+          kernelId: raw.kernelId || raw.kernel || null,
+          socketPath: raw.socketPath || raw.socket_path || null
+        };
+      };
+
+      const normalized = normalize(res);
+
+      // If a token is present, store it in SecretStorage for safer handling
+      try {
+        if (normalized && normalized.token) {
+          await context.secrets.store('ggblab.token', String(normalized.token));
+          try { ggblabOutput?.appendLine('Stored token in SecretStorage (ggblab.token)'); } catch (e) {}
+          // Remove token from normalized object to avoid accidental exposure
+          delete normalized.token;
+        }
+      } catch (e) {
+        try { ggblabOutput?.appendLine('Failed to store token in SecretStorage: ' + String(e)); } catch (ee) {}
+      }
+
+      return normalized;
+    } catch (err) {
+      return null;
+    }
+  };
   // Read workspace .vscode/ggblab.json (if present) and return {path,data}
   const readWorkspaceGgblab = async () => {
     try {
@@ -309,6 +407,19 @@ function activate(context) {
           const cfgServerSettings = config.get('serverSettings') || {};
           let discovered = null;
           try { discovered = await probeMsJupyter(); } catch (e) { discovered = null; }
+          // Try to obtain notebook-scoped settings (prefer this when a notebook
+          // or editor is active so kernels/tokens can be discovered per-notebook).
+          try {
+            const activeEditor = vscode.window.activeTextEditor || null;
+            const notebookUri = activeEditor && activeEditor.document && activeEditor.document.uri ? activeEditor.document.uri : null;
+            const discoveredNotebook = notebookUri ? await getServerSettingsForNotebook(notebookUri) : null;
+            if (discoveredNotebook) {
+              try { ggblabOutput?.appendLine('discovered (notebook): ' + JSON.stringify(discoveredNotebook)); } catch (e) {}
+              discovered = Object.assign({}, discoveredNotebook, discovered || {});
+            }
+          } catch (e) {
+            // ignore notebook-scoped discovery failures
+          }
           try {
             try { ggblabOutput?.appendLine('discovered: ' + JSON.stringify(discovered)); } catch (e) { ggblabOutput?.appendLine('discovered: [unserializable]'); }
             try {
