@@ -2,7 +2,7 @@ import { ReactWidget } from '@jupyterlab/ui-components';
 import React from 'react';
 import { Widget } from '@lumino/widgets';
 import { Message } from '@lumino/messaging';
-import GeoGebraApplet, { IGeoGebraAppletProps } from './GeoGebraApplet';
+import GeoGebraApplet, { IGeoGebraAppletProps } from './widget';
 
 /**
  * Lumino wrapper that renders the React `GeoGebraApplet` inside a widget.

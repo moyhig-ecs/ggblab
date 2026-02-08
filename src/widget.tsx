@@ -1,5 +1,5 @@
 // Backwards-compatible entrypoint: delegate to split component files.
-export { default } from './components/GeoGebraApplet';
+export { default } from './components/widget';
 export { GeoGebraWidget } from './components/lumino';
 
 // Note: the original monolithic implementation was moved to
