@@ -90,3 +90,23 @@ display(HTML(f'<a href="{url}">Open GGBlab Applet (Webview)</a>'))
 Notes:
 - Keep the payload minimal and avoid embedding secrets (tokens) directly in the URI.
 - The extension will prompt for missing connection details when needed and will post `serverSettings` to the webview once it is ready.
+
+Important notes about VS Code / Notebook integration
+--------------------------------------------------
+
+Due to platform constraints, the VS Code extension cannot always obtain per-notebook kernel connection details automatically. There are two supported ways to pass connection settings to the extension:
+
+- Clipboard: copy a JSON blob containing the connection info (e.g. `{"kernelId":"...","socketPath":"...","serverUrl":"..."}`) into the clipboard, then click the extension's **GGBlab Open** status item in VS Code. The extension prefers clipboard JSON when present.
+- Workspace file: write a `.vscode/ggblab.json` in your workspace containing the same JSON. The extension will search workspace folders for this file and use it as a fallback.
+
+Why this is required
+--------------------
+VS Code's built-in Notebook link handling does not always pass complex JSON payloads through `command:` URIs in all environments. Where available, the Microsoft `vscode-jupyter` extension exposes APIs such as `getServerUriForNotebook` that can supply notebook-scoped server information. If Microsoft provides an API key or your environment supports `vscode-jupyter`’s notebook-scoped API, the extension can be integrated to obtain settings automatically — contact Microsoft or watch the repo for updates.
+
+How to use clipboard flow from a notebook
+----------------------------------------
+In a notebook cell, run the small helper that prints and copies the connection JSON (the `GeoGebra().init(use_vscode=True)` helper attempts to write `.vscode/ggblab.json` and copy settings to the clipboard when available). Alternatively, generate and copy the JSON manually and then click **GGBlab Open** in VS Code.
+
+Security note
+-------------
+Do not place long-lived tokens in clipboard or checked-in workspace files. Prefer ephemeral CLI tokens or secrets stored in VS Code `SecretStorage` when possible. The extension moves tokens from `.vscode/ggblab.json` into SecretStorage when available.
