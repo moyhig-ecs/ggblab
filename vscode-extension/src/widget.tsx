@@ -1,8 +1,10 @@
 /* eslint-disable */
 import React, { useEffect, useRef } from 'react';
 import { injectGeoGebraApplet } from '../../src/shared/createApplet';
-import setupKernelResources, { isArrayOfArrays } from '../../src/components/jupyterlab';
+import setupKernelResources from '../../src/components/jupyterlab';
 import { registerWidgetCommTargets } from '../../src/widgets';
+import { isArrayOfArrays, createProcessCommandMessage } from '../../src/shared/geoGebraCommon';
+import setupAppletOnLoadCommon from '../../src/shared/appletOnLoadCommon';
 
 export interface GeoGebraWidgetProps {
   elementId?: string;
@@ -190,237 +192,10 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       //   dbg('setupKernelResources failed or not applicable in this environment', e);
       // }
 
-      const processCommandMessage = async (command: any): Promise<string> => {
-        let rmsg: any = null;
-
-        // Handler dictionary for command types. Keep each handler focused
-        // on producing the reply payload; the common send/mirroring logic
-        // is handled by the caller.
-        const handlers: { [k: string]: (cmd: any) => Promise<any> } = {
-          command: async (cmd: any) => {
-            if (resources.appletApi && typeof resources.appletApi.evalCommandGetLabels === 'function') {
-              const label = resources.appletApi.evalCommandGetLabels(cmd.payload);
-              return JSON.stringify({
-                type: 'created',
-                id: cmd.id,
-                payload: label
-              });
-            }
-            return JSON.stringify({
-              type: 'error',
-              id: cmd.id,
-              payload: { message: 'applet API not available' }
-            });
-          },
-          function: async (cmd: any) => {
-            const apiName = cmd.payload.name;
-            dbg('apiName:', apiName);
-            let value: any[] = [];
-            const args = cmd.payload.args;
-            value = [];
-            (Array.isArray(apiName) ? apiName : [apiName]).forEach(
-              (f: string) => {
-                dbg('call', f, args);
-                if (isArrayOfArrays(args)) {
-                  const value2: any[] = [];
-                  args.forEach((arg2: any[]) => {
-                    if (resources.appletApi && typeof resources.appletApi[f] === 'function') {
-                      value2.push(resources.appletApi[f](...arg2) || null);
-                    } else {
-                      value2.push(null);
-                    }
-                  });
-                  value.push(value2);
-                } else {
-                  if (args) {
-                    value.push(
-                      resources.appletApi && typeof resources.appletApi[f] === 'function'
-                        ? resources.appletApi[f](...args) || null
-                        : null
-                    );
-                  } else {
-                    value.push(
-                      resources.appletApi && typeof resources.appletApi[f] === 'function'
-                        ? resources.appletApi[f]() || null
-                        : null
-                    );
-                  }
-                }
-              }
-            );
-            value = Array.isArray(apiName) ? value : value[0];
-            dbg('Function value:', value);
-            return JSON.stringify({
-              type: 'value',
-              id: cmd.id,
-              payload: { value: value }
-            });
-          },
-          // Lightweight listen handler: acknowledge subscription. More
-          // elaborate listener registration can be added later if needed.
-          listen: async (cmd: any) => {
-            dbg('Register listen request:', cmd.payload);
-            try {
-              // Accept multiple payload shapes: [name, enabled],
-              // {name, enabled}, or a simple string (enabled=true).
-              let name: string | null = null;
-              let enabled = true;
-              const p = cmd.payload;
-              if (Array.isArray(p)) {
-                name = p[0];
-                enabled = !!p[1];
-              } else if (p && typeof p === 'object') {
-                if (typeof p.name === 'string') {
-                  name = p.name;
-                }
-                if (p.enabled !== undefined) {
-                  enabled = !!p.enabled;
-                } else if (p.enable !== undefined) {
-                  enabled = !!p.enable;
-                }
-              } else if (typeof p === 'string') {
-                name = p;
-                enabled = true;
-              }
-
-              if (!name) {
-                throw new Error('listen payload must include object name');
-              }
-
-              let result: any = null;
-              if (enabled) {
-                if (
-                  resources.appletApi && typeof resources.appletApi.registerObjectUpdateListener === 'function'
-                ) {
-                  try {
-                    // Provide a callback that forwards updates to the
-                    // remote socket; keep it lightweight and non-blocking.
-                    // Listener callback: no update argument is provided by the
-                    // applet runtime. Instead, call `appletApi.getValueString`
-                    // to obtain a serializable representation of the object's
-                    // current value and forward it as the event payload.
-                    const cb = () => {
-                      try {
-                        let value: any = null;
-                        try {
-                          if (resources.appletApi && typeof resources.appletApi.getValueString === 'function') {
-                            value = (resources.appletApi.getValueString as any)(name);
-                          } else {
-                            value = null;
-                          }
-                        } catch (e) {
-                          dbg('getValueString failed', e);
-                          value = null;
-                        }
-                        // Suppress sending when the string value hasn't changed since last send.
-                        try {
-                          const last = resources._lastValues[name] ?? null;
-                          const cur = value === null || value === undefined ? null : String(value);
-                          if (last !== null && last === cur) {
-                            // unchanged, skip notification
-                            dbg('Suppressing unchanged value for', name, ':', cur);
-                            return;
-                          }
-                          // update last seen value
-                          resources._lastValues[name] = cur;
-                        } catch (e) {
-                          dbg('value-comparison in object update failed', e);
-                        }
-
-                        const msg = JSON.stringify({
-                          type: 'object_update',
-                          // id: cmd.id, // intentionally omitted: object_update events are
-                          // queued as asynchronous events and should not carry a
-                          // request/response id.
-                          payload: { name, value }
-                        });
-                        // fire-and-forget
-                        callRemoteSocketSend(msg).catch((e: any) => dbg('object_update send failed', e));
-                      } catch (e) {
-                        dbg('Error in object update callback', e);
-                      }
-                    };
-                    // Some implementations may return a listener token.
-                    result = await Promise.resolve(
-                      (resources.appletApi.registerObjectUpdateListener as any)(name, cb)
-                    );
-                    // Ensure the current value is delivered immediately after registration
-                    try {
-                      cb();
-                    } catch (e) {
-                      dbg('initial object_update send failed', e);
-                    }
-                  } catch (e) {
-                    dbg('registerObjectUpdateListener failed', e);
-                    result = { ok: false, error: String(e) };
-                  }
-                } else {
-                  result = {
-                    ok: false,
-                    error: 'registerObjectUpdateListener not available'
-                  };
-                }
-              } else {
-                if (
-                  resources.appletApi && typeof resources.appletApi.unregisterObjectUpdateListener === 'function'
-                ) {
-                  try {
-                    result = await Promise.resolve(
-                      (resources.appletApi.unregisterObjectUpdateListener as any)(name)
-                    );
-                  } catch (e) {
-                    dbg('unregisterObjectUpdateListener failed', e);
-                    result = { ok: false, error: String(e) };
-                  }
-                } else {
-                  result = {
-                    ok: false,
-                    error: 'unregisterObjectUpdateListener not available'
-                  };
-                }
-              }
-
-              return JSON.stringify({
-                type: 'listen',
-                id: cmd.id,
-                payload: { result }
-              });
-            } catch (e) {
-              dbg('Error in listen handler', e);
-              return JSON.stringify({
-                type: 'error',
-                id: cmd.id,
-                payload: { message: String(e) }
-              });
-            }
-          }
-        };
-
-        try {
-          const h = handlers[command.type];
-          if (h) {
-            rmsg = await h(command);
-          } else {
-            dbg('No handler for command type', command.type);
-            rmsg = JSON.stringify({
-              type: 'error',
-              id: command.id,
-              payload: { message: 'Unsupported command type' }
-            });
-          }
-        } catch (e) {
-          dbg('Handler error for command type', command.type, e);
-          rmsg = JSON.stringify({
-            type: 'error',
-            id: command.id,
-            payload: { message: 'Handler execution failed' }
-          });
-        }
-
-        return rmsg;
-      };
+      const processCommandMessage = createProcessCommandMessage(resources, callRemoteSocketSend, isArrayOfArrays, dbg);
 
       const handleIncomingCommMessage = makeIncomingHandler(processCommandMessage);
+
 
       async function ggbOnLoad(api: any) {
         dbg('GeoGebra applet loaded (vscode):', api);
@@ -429,6 +204,13 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           const msg = { type: 'start', payload: {} };
           try { await callRemoteSocketSend(JSON.stringify(msg)); } catch (e) { dbg('callRemoteSocketSend failed', e); }
         })();
+
+        // Run shared common setup (comm, listeners, dialog observer, close handler)
+        try {
+          await setupAppletOnLoadCommon(api, resources, callRemoteSocketSend, handleIncomingCommMessage, dbg);
+        } catch (e) {
+          dbg('setupAppletOnLoadCommon failed (vscode)', e);
+        }
 
         // Prefer ResizeObserver to detect size changes of the container.
         const targetElem = widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
@@ -507,73 +289,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         // Initial apply
         applySize();
 
-        if (resources.kernelConn && resources.commTarget) {
-          try {
-            resources.comm = resources.kernelConn.createComm(resources.commTarget);
-            try { resources.comm.open('HELO from GGB'); } catch (e) { dbg('Comm open failed', e); }
-          } catch (e) {
-            dbg('Failed to create kernel comm', e);
-            resources.comm = null;
-          }
-          try {
-            resources.comm.onMsg = handleIncomingCommMessage;
-          } catch (e) { dbg('attach onMsg failed', e); }
-          try {
-            // attach onClose to surface kernel-side close events
-            (resources.comm as any).onClose = (m: any) => {
-              try {
-                const closedId = (m && m.content && m.content.comm_id) || (resources.comm as any)?.comm_id || (resources.comm as any)?.commId || null;
-                dbg('Comm closed (webview side)', { target: resources.commTarget, closedId, message: m });
-              } catch (ee) {
-                dbg('Comm closed (webview side, no id available)', resources.commTarget, m);
-              }
-            };
-          } catch (e) { dbg('attach onClose failed', e); }
-        } else {
-          dbg('No kernelConn available; using remote socket only');
-        }
-
-        resources.closeHandler = () => {
-          try { resources.comm?.close?.(); } catch (e) { dbg('close comm failed', e); }
-          try { resources.kernel2?.shutdown?.(); } catch (e) { dbg('shutdown helper failed', e); }
-          if (resources.resizeHandler) { try { window.removeEventListener('resize', resources.resizeHandler); } catch (e) {} resources.resizeHandler = null; }
-          try { if (resources.observer) { (resources.observer as ResizeObserver).disconnect(); resources.observer = null; } } catch (e) { dbg('disconnect observer failed', e); }
-        };
-        window.addEventListener('close', resources.closeHandler);
-
-        // Register simple listeners exposed by the API (add/remove/etc.)
-          try {
-          const addListener = async function (data: any) {
-            const msg = { type: 'add', ts: Date.now(), payload: data };
-            const s = JSON.stringify(msg);
-            try {
-              if (resources.widgetComm) { resources.widgetComm.send(s); return; }
-            } catch (e) { dbg('widgetComm send failed', e); }
-            try { await callRemoteSocketSend(s); } catch (e) { dbg('socket send add failed', e); }
-          };
-          api.registerAddListener?.(addListener);
-          api.registerRemoveListener?.(async (data: any) => { const s = JSON.stringify({ type: 'remove', ts: Date.now(), payload: data }); await callRemoteSocketSend(s); });
-          api.registerRenameListener?.(async (data: any) => { const s = JSON.stringify({ type: 'rename', ts: Date.now(), payload: data }); await callRemoteSocketSend(s); });
-          api.registerClearListener?.(async (data: any) => { const s = JSON.stringify({ type: 'clear', ts: Date.now(), payload: data }); await callRemoteSocketSend(s); });
-        } catch (e) { dbg('register listeners failed', e); }
-
-        resources.observer = new MutationObserver(mutations => {
-          mutations.forEach(mutation => {
-            mutation.addedNodes.forEach(node => {
-              try {
-                (node as HTMLElement).querySelectorAll && (node as HTMLElement)
-                  .querySelectorAll('div.dialogMainPanel > div.dialogTitle')
-                  .forEach(n => {
-                    (node as HTMLElement).querySelector('div.dialogContent')?.querySelectorAll("[class$='Label']").forEach(async n2 => {
-                      const msg = JSON.stringify({ type: n.textContent, payload: n2.textContent });
-                      await callRemoteSocketSend(msg);
-                    });
-                  });
-              } catch (e) { /* ignore per-node errors */ }
-            });
-          });
-        });
-        resources.observer.observe(document.body, { childList: true, subtree: true });
+        // Note: kernel comm, basic listeners, close handler and dialog observer
+        // are installed by `setupAppletOnLoadCommon` above. Here we keep
+        // the resize/stylesheet behavior specific to the webview.
       }
 
       // Inject the applet using the measured container size and allow upscaling

@@ -9,6 +9,8 @@ import type { WidgetManagerType } from '../widgets';
 // widgetManager registration is handled inside `setupKernelResources`
 import type { IGeoGebraAppletApi, IGeoGebraResources } from '../types';
 import { injectGeoGebraApplet } from '../shared/createApplet';
+import { isArrayOfArrays, createProcessCommandMessage } from '../shared/geoGebraCommon';
+import setupAppletOnLoadCommon from '../shared/appletOnLoadCommon';
 
 // Global typings are provided in src/declarations.d.ts; avoid duplicate declarations here.
 
@@ -20,10 +22,6 @@ function dbg(...args: any) {
 		// eslint-disable-next-line no-console
 		console.log(...args);
 	}
-}
-
-export function isArrayOfArrays(value: any): boolean {
-	return Array.isArray(value) && value.every((subArray: any) => Array.isArray(subArray));
 }
 
 /**
@@ -54,13 +52,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 	//     });
 	//   }, []);
 
-	dbg(
-		'Component props: ',
-		props.kernelId,
-		props.commTarget,
-		props.socketPath,
-		props.wsPort
-	);
+	dbg('Component props: ', props.kernelId, props.commTarget, props.socketPath, props.wsPort);
 	// window.dispatchEvent(new Event('resize'));
 
 	const elementId = 'ggb-element-' + (props?.kernelId || '').substring(0, 8);
@@ -226,10 +218,14 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 		const resources: IGeoGebraResources = new Resources(props.kernelId || '', props.commTarget || '', props.socketPath || null, props.wsPort || 8888);
 
 		// Quick debug probe: confirm the IIFE below is entered at runtime.
-		dbg('useEffect: created Resources, about to run setup IIFE', {
-			kernelId: props.kernelId,
-			commTarget: props.commTarget
-		}, []);
+		dbg(
+			'useEffect: created Resources, about to run setup IIFE',
+			{
+				kernelId: props.kernelId,
+				commTarget: props.commTarget
+			},
+			[]
+		);
 
 		(async () => {
 			dbg('IIFE: entered - calling setupKernelResources');
@@ -242,235 +238,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			// called from multiple places (including outside
 			// `handleIncomingCommMessage`). It captures `appletApi` and other
 			// surrounding variables as needed.
-			const processCommandMessage = async (command: any): Promise<string> => {
-				let rmsg: any = null;
-
-				// Handler dictionary for command types. Keep each handler focused
-				// on producing the reply payload; the common send/mirroring logic
-				// is handled by the caller.
-				const handlers: { [k: string]: (cmd: any) => Promise<any> } = {
-					command: async (cmd: any) => {
-						if (resources.appletApi && typeof resources.appletApi.evalCommandGetLabels === 'function') {
-							const label = resources.appletApi.evalCommandGetLabels(cmd.payload);
-							return JSON.stringify({
-								type: 'created',
-								id: cmd.id,
-								payload: label
-							});
-						}
-						return JSON.stringify({
-							type: 'error',
-							id: cmd.id,
-							payload: { message: 'applet API not available' }
-						});
-					},
-					function: async (cmd: any) => {
-						const apiName = cmd.payload.name;
-						dbg('apiName:', apiName);
-						let value: any[] = [];
-						const args = cmd.payload.args;
-						value = [];
-						(Array.isArray(apiName) ? apiName : [apiName]).forEach(
-							(f: string) => {
-								dbg('call', f, args);
-								if (isArrayOfArrays(args)) {
-									const value2: any[] = [];
-									args.forEach((arg2: any[]) => {
-										if (resources.appletApi && typeof resources.appletApi[f] === 'function') {
-											value2.push(resources.appletApi[f](...arg2) || null);
-										} else {
-											value2.push(null);
-										}
-									});
-									value.push(value2);
-								} else {
-									if (args) {
-											value.push(
-											resources.appletApi && typeof resources.appletApi[f] === 'function'
-												? resources.appletApi[f](...args) || null
-												: null
-										);
-									} else {
-										value.push(
-											resources.appletApi && typeof resources.appletApi[f] === 'function'
-												? resources.appletApi[f]() || null
-												: null
-										);
-									}
-								}
-							}
-						);
-						value = Array.isArray(apiName) ? value : value[0];
-						dbg('Function value:', value);
-						return JSON.stringify({
-							type: 'value',
-							id: cmd.id,
-							payload: { value: value }
-						});
-					},
-					// Lightweight listen handler: acknowledge subscription. More
-					// elaborate listener registration can be added later if needed.
-					listen: async (cmd: any) => {
-						dbg('Register listen request:', cmd.payload);
-						try {
-							// Accept multiple payload shapes: [name, enabled],
-							// {name, enabled}, or a simple string (enabled=true).
-							let name: string | null = null;
-							let enabled = true;
-							const p = cmd.payload;
-							if (Array.isArray(p)) {
-								name = p[0];
-								enabled = !!p[1];
-							} else if (p && typeof p === 'object') {
-								if (typeof p.name === 'string') {
-									name = p.name;
-								}
-								if (p.enabled !== undefined) {
-									enabled = !!p.enabled;
-								} else if (p.enable !== undefined) {
-									enabled = !!p.enable;
-								}
-							} else if (typeof p === 'string') {
-								name = p;
-								enabled = true;
-							}
-
-							if (!name) {
-								throw new Error('listen payload must include object name');
-							}
-
-							let result: any = null;
-							if (enabled) {
-								if (
-									resources.appletApi && typeof resources.appletApi.registerObjectUpdateListener === 'function'
-								) {
-									try {
-										// Provide a callback that forwards updates to the
-										// remote socket; keep it lightweight and non-blocking.
-										// Listener callback: no update argument is provided by the
-										// applet runtime. Instead, call `appletApi.getValueString`
-										// to obtain a serializable representation of the object's
-										// current value and forward it as the event payload.
-										const cb = () => {
-											try {
-												let value: any = null;
-													try {
-														if (resources.appletApi && typeof resources.appletApi.getValueString === 'function') {
-															value = (resources.appletApi.getValueString as any)(name);
-														} else {
-															value = null;
-														}
-													} catch (e) {
-														dbg('getValueString failed', e);
-														value = null;
-													}
-												// Suppress sending when the string value hasn't changed since last send.
-												try {
-													const last = resources._lastValues[name] ?? null;
-													const cur = value === null || value === undefined ? null : String(value);
-													if (last !== null && last === cur) {
-														// unchanged, skip notification
-														dbg('Suppressing unchanged value for', name, ':', cur);
-														return;
-													}
-													// update last seen value
-													resources._lastValues[name] = cur;
-												} catch (e) {
-													dbg('value-comparison in object update failed', e);
-												}
-
-												const msg = JSON.stringify({
-													type: 'object_update',
-													// id: cmd.id, // intentionally omitted: object_update events are
-													// queued as asynchronous events and should not carry a
-													// request/response id.
-													payload: { name, value }
-												});
-												// fire-and-forget
-												callRemoteSocketSend(msg).catch((e: any) => dbg('object_update send failed', e));
-											} catch (e) {
-												dbg('Error in object update callback', e);
-											}
-										};
-										// Some implementations may return a listener token.
-										result = await Promise.resolve(
-											(resources.appletApi.registerObjectUpdateListener as any)(name, cb)
-										);
-										// Ensure the current value is delivered immediately after registration
-										try {
-											cb();
-										} catch (e) {
-											dbg('initial object_update send failed', e);
-										}
-									} catch (e) {
-										dbg('registerObjectUpdateListener failed', e);
-										result = { ok: false, error: String(e) };
-									}
-								} else {
-									result = {
-										ok: false,
-										error: 'registerObjectUpdateListener not available'
-									};
-								}
-							} else {
-								if (
-									resources.appletApi && typeof resources.appletApi.unregisterObjectUpdateListener === 'function'
-								) {
-									try {
-										result = await Promise.resolve(
-											(resources.appletApi.unregisterObjectUpdateListener as any)(name)
-										);
-									} catch (e) {
-										dbg('unregisterObjectUpdateListener failed', e);
-										result = { ok: false, error: String(e) };
-									}
-								} else {
-									result = {
-										ok: false,
-										error: 'unregisterObjectUpdateListener not available'
-									};
-								}
-							}
-
-							return JSON.stringify({
-								type: 'listen',
-								id: cmd.id,
-								payload: { result }
-							});
-						} catch (e) {
-							dbg('Error in listen handler', e);
-							return JSON.stringify({
-								type: 'error',
-								id: cmd.id,
-								payload: { message: String(e) }
-							});
-						}
-					}
-				};
-
-				try {
-					const h = handlers[command.type];
-					if (h) {
-						rmsg = await h(command);
-					} else {
-						dbg('No handler for command type', command.type);
-						rmsg = JSON.stringify({
-							type: 'error',
-							id: command.id,
-							payload: { message: 'Unsupported command type' }
-						});
-					}
-				} catch (e) {
-					dbg('Handler error for command type', command.type, e);
-					rmsg = JSON.stringify({
-						type: 'error',
-						id: command.id,
-						payload: { message: 'Handler execution failed' }
-					});
-				}
-
-				return rmsg;
-			};
+			const processCommandMessage = createProcessCommandMessage(resources, callRemoteSocketSend, isArrayOfArrays, dbg);
 
 			// Handler for incoming messages on the kernel-created comm; defined
 			// via kernel_comm helper so it can reuse the shared logic.
@@ -498,274 +266,64 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			    ensures correct behavior in those cases while remaining no-op when a
 			    real manager is present (`props.widgetManager` guard).
 			*/
-					try {
-						if (props.widgetManager) {
-							dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
-						} else {
-							const opts = {
-								callRemoteSocketSend,
-								kernel2: resources.kernel2,
-								socketPath: resources.socketPath,
-								wsUrl: `ws://localhost:${resources.wsPort}/`,
-								getAppletApi: () => resources.appletApi,
-								isArrayOfArrays: isArrayOfArrays,
-								dbg
-							};
+			try {
+				if (props.widgetManager) {
+					dbg('widgetManager present; skipping raw jupyter.widget comm registration to avoid stealing widget opens');
+				} else {
+					const opts = {
+						callRemoteSocketSend,
+						kernel2: resources.kernel2,
+						socketPath: resources.socketPath,
+						wsUrl: `ws://localhost:${resources.wsPort}/`,
+						getAppletApi: () => resources.appletApi,
+						isArrayOfArrays: isArrayOfArrays,
+						dbg
+					};
 
-							const unregisterFn = registerWidgetCommTargets(resources.kernelConn, opts as any);
-							resources.unregisterWidgetCommTargets = unregisterFn;
-						}
-					} catch (e: any) {
-						dbg('Widget comm target registration skipped or failed', e);
-					}
-      
+					const unregisterFn = registerWidgetCommTargets(resources.kernelConn, opts as any);
+					resources.unregisterWidgetCommTargets = unregisterFn;
+				}
+			} catch (e: any) {
+				dbg('Widget comm target registration skipped or failed', e);
+			}
+
 			async function ggbOnLoad(api: any) {
 				dbg('GeoGebra applet loaded:', api);
-				// expose applet API to other handlers (widgetComm etc.)
-				resources.appletApi = api;
-				(async function () {
-					const msg = { type: 'start', payload: {} };
-					await callRemoteSocketSend(JSON.stringify(msg));
-				})();
+				// Run shared common setup and wiring for ggbOnLoad
+				try {
+					await setupAppletOnLoadCommon(api, resources, callRemoteSocketSend, handleIncomingCommMessage, dbg);
+				} catch (e) {
+					dbg('setupAppletOnLoadCommon failed', e);
+				}
 
+				// Environment-specific resize handler (JupyterLab/Lumino)
 				resources.resizeHandler = function () {
 					try {
 						const wrapperDiv = document.getElementById(elementId) as HTMLElement | null;
 						const target = wrapperDiv?.parentElement ?? wrapperDiv;
-						if (!target) return;
+						if (!target) {
+							return;
+						}
 						// Prefer measured size over style strings
 						const rect = target.getBoundingClientRect();
 						const width = Math.max(1, Math.floor(rect.width));
 						const height = Math.max(1, Math.floor(rect.height));
-						try { api.recalculateEnvironments(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-						try { api.setSize(width, height); } catch (e) { dbg('setSize failed', e); }
+						try {
+							api.recalculateEnvironments();
+						} catch (e) {
+							dbg('recalculateEnvironments failed', e);
+						}
+						try {
+							api.setSize(width, height);
+						} catch (e) {
+							dbg('setSize failed', e);
+						}
 					} catch (e) {
 						dbg('resizeHandler error', e);
 					}
 				};
 				window.addEventListener('resize', resources.resizeHandler);
 				resources.resizeHandler();
-
-				// // Observe size changes of the widget's DOM element
-				// // but not working as expected in Lumino
-				// const widgetElemnt = window.document.querySelector('div.lm-DockPanel-widget');
-				// const widgetElemnt = window.document.querySelector('div.lm-SplitPanel-child');
-				// const widgetElemnt = window.document.querySelector('div[class*="Panel"]');
-				// if (widgetElemnt) {
-				// if (widgetRef.current) {
-				//     const resizeObserver = new ResizeObserver(() => {
-				//         console.log("Panel resized.");
-				//         resize();
-				//     });
-				//     resizeObserver.observe(widgetRef.current); //widgetElemnt);
-				// }
-
-				if (resources.commTarget) {
-					resources.comm = resources.kernelConn.createComm(resources.commTarget);
-					try {
-						// Log comm creation details for debugging 'Comm not found' issues
-						try {
-							const maybeId =
-								(resources.comm as any)?.comm_id ||
-								(resources.comm as any)?.commId ||
-								(resources.comm as any)?.id ||
-								null;
-							dbg('Created kernel comm', {
-								target: resources.commTarget,
-								commObject: resources.comm,
-								commId: maybeId
-							});
-						} catch {
-							dbg('Created kernel comm (unable to read id)', resources.commTarget, resources.comm);
-						}
-						resources.comm.open('HELO from GGB').done;
-					} catch (e) {
-						dbg('Failed to open kernel comm for', resources.commTarget, e);
-					}
-					// Attach close handler to surface unexpected closes
-					try {
-						resources.comm.onClose = (m: any) => {
-							try {
-								const closedId =
-									(m && m.content && m.content.comm_id) ||
-									(resources.comm as any)?.comm_id ||
-									(resources.comm as any)?.commId ||
-									null;
-								dbg('Kernel comm closed', {
-									target: resources.commTarget,
-									commId: closedId,
-									message: m
-								});
-							} catch (e) {
-								dbg('Kernel comm closed (no id available)', resources.commTarget, m);
-							}
-						};
-					} catch (e) {
-						dbg('Unable to attach onClose to kernel comm', e);
-					}
-				} else {
-					// No kernel-level comm target provided: rely on remote socket
-					resources.comm = null;
-					dbg('No commTarget provided; skipping kernel comm creation');
-				}
-				// comm.send('HELO2').done
-
-				// kernel.registerCommTarget('test', (comm, commMsg) => {
-				// console.log("Comm opened from kernel with message:", commMsg['content']['data']);
-
-				resources.closeHandler = () => {
-					// Attempt to close comm and shutdown helper kernel
-					try {
-						resources.comm?.close?.();
-					} catch (e) {
-						console.error(e);
-					}
-					resources.kernel2?.shutdown().catch((err: any) => console.error(err));
-					dbg('Kernel and comm closed.');
-					if (resources.resizeHandler) {
-						window.removeEventListener('resize', resources.resizeHandler);
-					}
-				};
-				window.addEventListener('close', resources.closeHandler);
-				if (resources.comm) {
-					try {
-						resources.comm.onMsg = handleIncomingCommMessage;
-					} catch (e) {
-						dbg('Failed to attach handleIncomingCommMessage to comm', e);
-					}
-				} else {
-					dbg(
-						'No kernel comm available; messages will be sent via remote socket only'
-					);
-				}
-
-					const addListener = async function (data: any) {
-					dbg('Add listener triggered for:', data);
-					const msg = {
-						type: 'add',
-						payload: data
-					};
-					// console.log("Add detected:", JSON.stringify(msg));
-					// Prefer to send via widget comm bridge if available
-					const s = JSON.stringify(msg);
-					if (resources.widgetComm) {
-						try {
-							resources.widgetComm.send(s);
-							return;
-						} catch (e) {
-							dbg('widgetComm.send failed, falling back', e);
-						}
-					}
-					await callRemoteSocketSend(s);
-				};
-				api.registerAddListener(addListener);
-
-					const removeListener = async function (data: any) {
-					dbg('Remove listener triggered for:', data);
-					const msg = {
-						type: 'remove',
-						payload: data
-					};
-					// console.log("Remove detected:", JSON.stringify(msg));
-					const s = JSON.stringify(msg);
-					if (resources.widgetComm) {
-						try {
-							resources.widgetComm.send(s);
-							return;
-						} catch (e) {
-							dbg('widgetComm.send failed, falling back', e);
-						}
-					}
-					await callRemoteSocketSend(s);
-				};
-				api.registerRemoveListener(removeListener);
-
-				const renameListener = async function (data: any) {
-					dbg('Rename listener triggered for:', data);
-					const msg = {
-						type: 'rename',
-						payload: data
-					};
-					// console.log("Rename detected:", JSON.stringify(msg));
-					const s = JSON.stringify(msg);
-					if (resources.widgetComm) {
-						try {
-							resources.widgetComm.send(s);
-							return;
-						} catch (e) {
-							dbg('widgetComm.send failed, falling back', e);
-						}
-					}
-					await callRemoteSocketSend(s);
-				};
-				api.registerRenameListener(renameListener);
-
-				const clearListener = async function (data: any) {
-					dbg('Clear listener triggered for:', data);
-					const msg = {
-						type: 'clear',
-						payload: data
-					};
-					// console.log("Rename detected:", JSON.stringify(msg));
-					const s = JSON.stringify(msg);
-					if (resources.widgetComm) {
-						try {
-							resources.widgetComm.send(s);
-							return;
-						} catch (e) {
-							dbg('widgetComm.send failed, falling back', e);
-						}
-					}
-					await callRemoteSocketSend(s);
-				};
-				api.registerClearListener(clearListener);
-
-				// The `clientListener` example below is kept commented out as a
-				// reference for future event types. It's disabled because it
-				// was not used in production and could generate noisy traffic.
-				// // nothing triggered?
-				// var clientListener = async function(data: any) {
-				// // console.log("Add listener triggered for:", data);
-				//     var msg = {
-				//         "type": "client",
-				//         "payload": data
-				//     }
-				//     console.log("Client detected:", JSON.stringify(msg));
-				//     await callRemoteSocketSend(kernel2, JSON.stringify(msg), socketPath, wsUrl);
-				// }
-				// api.registerClearListener(clientListener);
-
-				resources.observer = new MutationObserver(mutations => {
-					mutations.forEach(mutation => {
-						mutation.addedNodes.forEach(node => {
-							try {
-								(node as HTMLElement)
-									.querySelectorAll('div.dialogMainPanel > div.dialogTitle')
-									.forEach(n => {
-										dbg(n.textContent); // detect titles like 'Error'
-										(
-											(node as HTMLElement).querySelector(
-												'div.dialogContent'
-											) as HTMLElement
-										)
-											.querySelectorAll("[class$='Label']")
-											.forEach(async n2 => {
-												dbg(n2.textContent);
-												const msg = JSON.stringify({
-													type: n.textContent,
-													payload: n2.textContent
-												});
-												// comm.send(msg);
-												await callRemoteSocketSend(msg);
-											});
-									});
-							} catch (e) {
-								// console.log(e, node);
-							}
-						});
-					});
-				});
-				resources.observer.observe(document.body, { childList: true, subtree: true });
 			}
 
 			// Use shared injector to create the GeoGebra applet and manage
@@ -806,68 +364,107 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				// capture the created applet instance for later cleanup and
 				// apply measured sizing. Reapply size after short delays to
 				// override any internal resets performed by the runtime.
-				appletPromise.then((a: any) => {
-					applet = a;
-					try {
-						const api = a;
-						// measure current container again for accuracy
-						const wrapperDiv2 = widgetRef.current ?? document.getElementById(elementId);
-						const target2 = wrapperDiv2?.parentElement ?? wrapperDiv2;
-						let w = measuredWidth;
-						let h = measuredHeight;
+				appletPromise
+					.then((a: any) => {
+						applet = a;
 						try {
-							if (target2) {
-								const rect2 = (target2 as HTMLElement).getBoundingClientRect();
-								w = Math.max(1, Math.floor(rect2.width));
-								h = Math.max(1, Math.floor(rect2.height));
+							const api = a;
+							// measure current container again for accuracy
+							const wrapperDiv2 = widgetRef.current ?? document.getElementById(elementId);
+							const target2 = wrapperDiv2?.parentElement ?? wrapperDiv2;
+							let w = measuredWidth;
+							let h = measuredHeight;
+							try {
+								if (target2) {
+									const rect2 = (target2 as HTMLElement).getBoundingClientRect();
+									w = Math.max(1, Math.floor(rect2.width));
+									h = Math.max(1, Math.floor(rect2.height));
+								}
+							} catch (e) {
+								dbg('Failed to re-measure container for sizing', e);
+							}
+							try {
+								api.recalculateEnvironments?.();
+							} catch (e) {
+								dbg('recalculateEnvironments failed', e);
+							}
+							try {
+								api.setSize(w, h);
+								dbg('Applied initial applet size', w, h);
+							} catch (e) {
+								dbg('api.setSize failed', e);
+							}
+							// Force applet DOM to use exact width/height and remove any
+							// transform-based scaling that preserves initial aspect ratio.
+							try {
+								const appletNode = document.getElementById('ggbApplet-' + elementId);
+								if (appletNode) {
+									(appletNode as HTMLElement).style.width = '100%';
+									(appletNode as HTMLElement).style.height = '100%';
+									(appletNode as HTMLElement).style.maxWidth = '100%';
+									(appletNode as HTMLElement).style.transform = 'none';
+									(appletNode as HTMLElement).style.transformOrigin = '0 0';
+								}
+							} catch (e) {
+								dbg('Failed to override applet DOM styles', e);
+							}
+							// reapply after short delays to outlast internal resets
+							setTimeout(() => {
+								try {
+									api.setSize(w, h);
+									dbg('Reapplied size (250ms)');
+								} catch (e) {
+									dbg('reapply failed', e);
+								}
+							}, 250);
+							setTimeout(() => {
+								try {
+									api.setSize(w, h);
+									dbg('Reapplied size (1000ms)');
+								} catch (e) {
+									dbg('reapply failed', e);
+								}
+							}, 1000);
+
+							// Observe the applet node for style/attribute changes and
+							// reapply our desired styles immediately when the runtime
+							// attempts to change them.
+							try {
+								const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
+								if (appletNode) {
+									const observer = new MutationObserver(mutations => {
+										try {
+											// On any attribute change, enforce styles & size
+											const rect3 = (appletNode.parentElement ?? appletNode).getBoundingClientRect();
+											const ww = Math.max(1, Math.floor(rect3.width));
+											const hh = Math.max(1, Math.floor(rect3.height));
+											try {
+												api.setSize(ww, hh);
+											} catch (e) {
+												/* ignore */
+											}
+											try {
+												appletNode.style.transform = 'none';
+												appletNode.style.width = '100%';
+												appletNode.style.height = '100%';
+											} catch (e) {
+												/* ignore */
+											}
+										} catch (e) {
+											dbg('appletStyleObserver handler error', e);
+										}
+									});
+									observer.observe(appletNode, { attributes: true, attributeFilter: ['style', 'class'], subtree: false });
+									resources.appletStyleObserver = observer;
+								}
+							} catch (e) {
+								dbg('Failed to create appletStyleObserver', e);
 							}
 						} catch (e) {
-							dbg('Failed to re-measure container for sizing', e);
+							dbg('Error applying size to applet', e);
 						}
-						try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-						try { api.setSize(w, h); dbg('Applied initial applet size', w, h); } catch (e) { dbg('api.setSize failed', e); }
-						// Force applet DOM to use exact width/height and remove any
-						// transform-based scaling that preserves initial aspect ratio.
-						try {
-							const appletNode = document.getElementById('ggbApplet-' + elementId);
-							if (appletNode) {
-								(appletNode as HTMLElement).style.width = '100%';
-								(appletNode as HTMLElement).style.height = '100%';
-								(appletNode as HTMLElement).style.maxWidth = '100%';
-								(appletNode as HTMLElement).style.transform = 'none';
-								(appletNode as HTMLElement).style.transformOrigin = '0 0';
-							}
-						} catch (e) { dbg('Failed to override applet DOM styles', e); }
-						// reapply after short delays to outlast internal resets
-						setTimeout(() => { try { api.setSize(w, h); dbg('Reapplied size (250ms)'); } catch (e) { dbg('reapply failed', e); } }, 250);
-						setTimeout(() => { try { api.setSize(w, h); dbg('Reapplied size (1000ms)'); } catch (e) { dbg('reapply failed', e); } }, 1000);
-
-						// Observe the applet node for style/attribute changes and
-						// reapply our desired styles immediately when the runtime
-						// attempts to change them.
-						try {
-							const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
-							if (appletNode) {
-								const observer = new MutationObserver(mutations => {
-									try {
-										// On any attribute change, enforce styles & size
-										const rect3 = (appletNode.parentElement ?? appletNode).getBoundingClientRect();
-										const ww = Math.max(1, Math.floor(rect3.width));
-										const hh = Math.max(1, Math.floor(rect3.height));
-										try { api.setSize(ww, hh); } catch (e) { /* ignore */ }
-										try { appletNode.style.transform = 'none'; appletNode.style.width = '100%'; appletNode.style.height = '100%'; } catch (e) { /* ignore */ }
-									} catch (e) {
-										dbg('appletStyleObserver handler error', e);
-									}
-								});
-								observer.observe(appletNode, { attributes: true, attributeFilter: ['style', 'class'], subtree: false });
-								resources.appletStyleObserver = observer;
-							}
-						} catch (e) { dbg('Failed to create appletStyleObserver', e); }
-					} catch (e) {
-						dbg('Error applying size to applet', e);
-					}
-				}).catch((e: any) => dbg('Applet creation failed', e));
+					})
+					.catch((e: any) => dbg('Applet creation failed', e));
 			} catch (e) {
 				dbg('injectGeoGebraApplet failed', e);
 			}
@@ -939,13 +536,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 		};
 	}, []);
 
-	return (
-		<div
-			id={elementId}
-			ref={widgetRef}
-			style={{ width: '100%', height: '100%' }}
-		></div>
-	);
+	return <div id={elementId} ref={widgetRef} style={{ width: '100%', height: '100%' }}></div>;
 };
 
 export interface IGeoGebraAppletProps {
@@ -975,4 +566,3 @@ export interface IGeoGebraAppletProps {
 // });
 
 export default GeoGebraApplet;
-
