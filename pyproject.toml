@@ -30,6 +30,7 @@ dependencies = [
     "xmlschema",
     "networkx",
     "ipykernel",
+    "pyperclip",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 

@@ -63,12 +63,9 @@ npx esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --
 }
 
 function activate(context) {
-  try {
-    ggblabOutput = vscode.window.createOutputChannel('ggblab');
-    ggblabOutput.appendLine('ggblab extension activated');
-  } catch (e) {
-    console.error('Failed to create ggblab output channel', e);
-  }
+  // For production use do not create an Output channel or auto-open it.
+  // Provide a no-op stub so remaining debug calls are harmless.
+  ggblabOutput = { appendLine: () => {} };
   // Probe for MS Jupyter extension or workspace jupyter settings to infer
   // remote kernel connection info (best-effort). This allows us to prefill
   // baseUrl/token or a serverUrl so users don't need to re-enter them.
@@ -293,6 +290,27 @@ function activate(context) {
     return null;
   };
 
+  // Read clipboard and parse JSON if present. Returns object or null.
+  const readClipboardSettings = async () => {
+    try {
+      const txt = await vscode.env.clipboard.readText();
+      if (!txt || !txt.trim()) return null;
+      try {
+        const parsed = JSON.parse(txt);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+          try { ggblabOutput?.appendLine('ggblab: clipboard settings parsed: ' + JSON.stringify(parsed)); } catch (e) {}
+          return parsed;
+        }
+      } catch (e) {
+        // not JSON — ignore
+        try { ggblabOutput?.appendLine('ggblab: clipboard does not contain valid JSON'); } catch (ee) {}
+      }
+    } catch (e) {
+      try { ggblabOutput?.appendLine('ggblab: failed to read clipboard: ' + String(e)); } catch (ee) {}
+    }
+    return null;
+  };
+
   // If a token exists in the workspace file, move it into SecretStorage and
   // rewrite the file without the token for safety. Returns true if moved.
   const storeTokenFromWorkspaceFile = async (fileEntry) => {
@@ -364,7 +382,26 @@ function activate(context) {
     }
   };
   let disposable = vscode.commands.registerCommand('ggblab.openApplet', function () {
+    const commandArgs = Array.prototype.slice.call(arguments || []);
     (async () => {
+      // Parse incoming command arguments (e.g. from command: URI). The
+      // first argument may be a JSON object or an array containing the
+      // object. We prefer values provided by the command over discovered
+      // workspace settings so notebook links can open a specific kernel.
+      let incomingSettings = null;
+      try {
+        if (commandArgs && commandArgs.length) {
+          let a = commandArgs[0];
+          if (typeof a === 'string') {
+            try { a = JSON.parse(a); } catch (e) { /* keep as string */ }
+          }
+          if (Array.isArray(a) && a.length) a = a[0];
+          if (a && typeof a === 'object') incomingSettings = a;
+        }
+        try { ggblabOutput?.appendLine('ggblab.openApplet args: ' + JSON.stringify(incomingSettings)); } catch (e) {}
+      } catch (e) {
+        try { ggblabOutput?.appendLine('Failed to parse openApplet args: ' + String(e)); } catch (ee) {}
+      }
       try {
         // Do not automatically reveal the Output panel; keep it closed unless
         // the user explicitly opens it for debugging.
@@ -454,8 +491,27 @@ function activate(context) {
             // use it directly. Token management left to workspace policy.
           }
 
-          // Merge sources: prefer discovered -> workspace file -> extension config
-          const serverSettings = Object.assign({}, discovered || {}, (wsGg && wsGg.data) || {}, cfgServerSettings);
+          // Merge sources. Order of precedence (later entries override earlier):
+          // discovered -> workspace file -> extension config -> clipboard -> incoming command args
+          let serverSettings = Object.assign({}, discovered || {}, (wsGg && wsGg.data) || {}, cfgServerSettings);
+          // Prefer clipboard JSON if present (user-requested behaviour)
+          try {
+            const clipboardSettings = await readClipboardSettings();
+            if (clipboardSettings) {
+              serverSettings = Object.assign({}, serverSettings, clipboardSettings);
+              try { ggblabOutput?.appendLine('Applied clipboard settings: ' + JSON.stringify(clipboardSettings)); } catch (e) {}
+            }
+          } catch (e) {
+            try { ggblabOutput?.appendLine('Failed to read/apply clipboard settings: ' + String(e)); } catch (ee) {}
+          }
+          // If the command provided explicit settings (from a command: URI),
+          // prefer those values (override everything else).
+          try {
+            if (incomingSettings && typeof incomingSettings === 'object') {
+              serverSettings = Object.assign({}, serverSettings, incomingSettings);
+              try { ggblabOutput?.appendLine('Applied incoming command settings: ' + JSON.stringify(incomingSettings)); } catch (e) {}
+            }
+          } catch (e) {}
           // If secret token exists, prefer it
           try {
             const secretToken = await context.secrets.get('ggblab.token');
@@ -470,6 +526,14 @@ function activate(context) {
             if (serverSettings && serverSettings.kernelId && serverSettings.socketPath) {
               _sendSettings = Object.assign({}, serverSettings);
               const serverSettingsJson = JSON.stringify(_sendSettings);
+              try { ggblabOutput?.appendLine('serverSettings (sent to webview): ' + serverSettingsJson); } catch (e) {}
+              // Set webview title to first 8 chars of kernelId when available
+              try {
+                if (_sendSettings && _sendSettings.kernelId) {
+                  const pfx = String(_sendSettings.kernelId).slice(0, 8);
+                  panel.title = `GeoGebra (${pfx})`;
+                }
+              } catch (e) {}
               if (!panelDisposed) panel.webview.html = getWebviewContent(bundleUri.toString(), serverSettingsJson, autoInit);
               ggblabOutput?.appendLine(`Using workspace/server settings; connecting without prompts`);
             } else {
@@ -532,7 +596,16 @@ function activate(context) {
                 baseUrl: baseUrl || null,
                 token: token || null
               });
+              // Update panel title to kernelId prefix when provided by prompts
+              try {
+                const k = _sendSettings && _sendSettings.kernelId ? String(_sendSettings.kernelId) : null;
+                if (k) {
+                  const pfx = k.slice(0, 8);
+                  panel.title = `GeoGebra (${pfx})`;
+                }
+              } catch (e) {}
               const serverSettingsJson = Object.keys(_sendSettings).length ? JSON.stringify(_sendSettings) : null;
+              try { ggblabOutput?.appendLine('serverSettings (after prompts): ' + serverSettingsJson); } catch (e) {}
               if (!panelDisposed) panel.webview.html = getWebviewContent(bundleUri.toString(), serverSettingsJson, autoInit);
               ggblabOutput?.appendLine(`Using kernel id: ${kernelId || '<none>'} socketPath: ${socketPath || '<none>'}`);
             }
@@ -553,6 +626,7 @@ function activate(context) {
               // extension-host proxy by default here — for debug we avoid
               // enabling the proxy so the webview uses direct fetch paths.
               const enhanced = Object.assign({}, payloadSettings || {});
+                try { ggblabOutput?.appendLine('Posting serverSettings payload to webview: ' + JSON.stringify(enhanced)); } catch (e) {}
               panel.webview.postMessage({ type: 'serverSettings', serverSettings: enhanced, autoInit: !!autoInit });
               return;
             }
@@ -611,6 +685,12 @@ function activate(context) {
             const bundleUri = fs.existsSync(bundlePath) ? panel.webview.asWebviewUri(vscode.Uri.file(bundlePath)) : null;
             const serverSettingsJson = state && state.serverSettings ? JSON.stringify(state.serverSettings) : null;
             const autoInit = state && state.autoInit;
+            try {
+              if (state && state.serverSettings && state.serverSettings.kernelId) {
+                const pfx = String(state.serverSettings.kernelId).slice(0, 8);
+                panel.title = `GeoGebra (${pfx})`;
+              }
+            } catch (e) {}
             panel.webview.html = getWebviewContent(bundleUri ? bundleUri.toString() : null, serverSettingsJson, autoInit);
             try { panel.webview.postMessage({ type: 'restoreState', state }); } catch (e) {}
           } catch (e) {
@@ -622,6 +702,59 @@ function activate(context) {
   } catch (e) {}
 
   context.subscriptions.push(disposable);
+
+  // Create a status bar button so users can open the applet with one click
+  try {
+    const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusItem.text = '$(plug) GGBlab';
+    statusItem.command = 'ggblab.openApplet';
+    statusItem.tooltip = 'Open GGBlab Applet';
+    statusItem.show();
+    context.subscriptions.push(statusItem);
+    try { ggblabOutput?.appendLine('ggblab: status bar button created'); } catch (e) {}
+  } catch (e) {
+    try { ggblabOutput?.appendLine('ggblab: failed to create status bar item: ' + String(e)); } catch (ee) {}
+  }
+
+  // Single 'Open' status item that uses clipboard -> workspace -> probe
+  try {
+    const openWithArgsItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 98);
+    openWithArgsItem.text = '$(rocket) GGBlab Open';
+    openWithArgsItem.tooltip = 'Open GGBlab using detected/workspace/clipboard settings';
+    openWithArgsItem.command = 'ggblab.openAppletWithArgs';
+    openWithArgsItem.show();
+    context.subscriptions.push(openWithArgsItem);
+
+    const obtainSettings = async () => {
+      try {
+        try {
+          const clip = await readClipboardSettings();
+          if (clip) return clip;
+        } catch (e) {}
+        let ws = null;
+        try { ws = await readWorkspaceGgblab(); } catch (e) { ws = null; }
+        if (ws && ws.data) return ws.data;
+        try {
+          const probed = await probeMsJupyter();
+          if (probed) return probed;
+        } catch (e) {}
+        return {};
+      } catch (e) { return {}; }
+    };
+
+    const OPEN_WITH_ARGS_CMD = 'ggblab.openAppletWithArgs';
+    context.subscriptions.push(vscode.commands.registerCommand(OPEN_WITH_ARGS_CMD, async () => {
+      try {
+        const settings = await obtainSettings();
+        await vscode.commands.executeCommand('ggblab.openApplet', settings);
+      } catch (e) {
+        // show a simple error without verbose debug
+        vscode.window.showErrorMessage('GGBlab: failed to open with args');
+      }
+    }));
+  } catch (e) {
+    // ignore status bar creation failures in restricted hosts
+  }
 }
 
 function deactivate() {}

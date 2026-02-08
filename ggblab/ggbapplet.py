@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, urlunsplit
 from IPython.display import display, JSON
+import subprocess
 # Note: import `ipylab` lazily inside `init()` to avoid hard dependency
 # and accidental panel injection when running in non-JupyterLab hosts.
 from IPython.core.getipython import get_ipython
@@ -108,6 +109,90 @@ class GeoGebra:
         self.check_syntax = False
         self.check_semantics = False
         self._applet_objects = set()  # Cache of known objects
+
+    async def copy_connection_to_clipboard(self) -> None:
+        """Build a minimal connection JSON and copy it to the system clipboard.
+
+        Intended usage from a notebook (macOS):
+            ggb = GeoGebra()
+            await ggb.init(use_vscode=True)
+            await ggb.copy_connection_to_clipboard()
+
+        This writes a JSON object like:
+            {"kernelId": "...", "socketPath": "...", "connection_file": "...", "baseUrl": "...", "token": "..."}
+
+        Uses `pbcopy` on macOS; falls back to printing the JSON if clipboard is unavailable.
+        """
+        try:
+            payload = {'kernelId': getattr(self, 'kernel_id', None) or '', 'socketPath': getattr(self.comm, 'socketPath', None) or ''}
+            # connection file
+            try:
+                cf = ipykernel.connect.get_connection_file()
+                if cf:
+                    payload['connection_file'] = cf
+            except Exception:
+                pass
+
+            # try to discover running server info (best-effort)
+            try:
+                from jupyter_server.serverapp import list_running_servers
+                servers = list(list_running_servers())
+                if servers:
+                    srv = servers[0]
+                    base_url = srv.get('base_url') or srv.get('baseUrl') or None
+                    raw_url = srv.get('url') or srv.get('server_url') or None
+                    token = srv.get('token') or srv.get('password') or None
+                    if raw_url:
+                        parts = urlsplit(raw_url)
+                        qs = parse_qs(parts.query)
+                        for k in ('token', 'access_token'):
+                            if k in qs and qs[k]:
+                                token = token or qs[k][0]
+                        base_no_q = urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
+                        if (not base_url) or (str(base_url).strip() == '/'):
+                            base_url = base_no_q
+                    if base_url:
+                        payload['baseUrl'] = base_url
+                    payload['token'] = token or ''
+            except Exception:
+                # ignore if jupyter_server not present
+                pass
+
+            txt = json.dumps(payload)
+            # Prefer pyperclip if available (cross-platform). Fallback to pbcopy on macOS.
+            wrote = False
+            try:
+                import pyperclip
+                try:
+                    pyperclip.copy(txt)
+                    display(JSON(payload))
+                    wrote = True
+                except Exception:
+                    wrote = False
+            except Exception:
+                wrote = False
+
+            if not wrote:
+                try:
+                    p = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
+                    p.communicate(txt.encode('utf8'))
+                    display(JSON(payload))
+                    wrote = True
+                except Exception:
+                    wrote = False
+
+            if not wrote:
+                # Fallback: print the JSON so user can copy manually
+                try:
+                    display(JSON(payload))
+                    print('ggblab: clipboard write failed; connection JSON printed above')
+                except Exception:
+                    print(txt)
+        except Exception as e:
+            try:
+                print('ggblab: failed to copy connection to clipboard:', e)
+            except Exception:
+                pass
   
     async def init(self, appName: str = 'suite', use_vscode: Optional[bool] = None):
         """Initialize the GeoGebra widget and communication channels.
@@ -180,103 +265,79 @@ class GeoGebra:
             # If `use_vscode` is requested, skip ipylab and publish kernel/socket
             if use_vscode:
                 try:
-                    display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
-                    # Best-effort: write workspace .vscode/ggblab.json so the
-                    # VS Code extension can pick up server connection info.
+                    # display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
+
+                    # Build payload to write for the extension. Include kernelId
+                    # and socketPath so the extension can connect without prompts.
+                    payload = {'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}
+
+                    # connection file path
                     try:
-                        # Build payload to write for the extension. Include kernelId
-                        # and socketPath so the extension can connect without prompts.
-                        payload = {'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}
+                        conn_file = ipykernel.connect.get_connection_file()
+                        payload['connection_file'] = conn_file
+                    except Exception:
+                        conn_file = None
 
-                        # connection file path
-                        try:
-                            conn_file = ipykernel.connect.get_connection_file()
-                            payload['connection_file'] = conn_file
-                        except Exception:
-                            conn_file = None
-
-                        # Try to discover a running Jupyter server and token
-                        try:
-                            from jupyter_server.serverapp import list_running_servers
-                            servers = list(list_running_servers())
-                            if servers:
-                                # If we have a kernel connection file, prefer the
-                                # server entry that matches its host/port.
-                                srv = None
-                                try:
-                                    if conn_file and Path(conn_file).exists():
-                                        try:
-                                            with open(conn_file, 'r', encoding='utf8') as cf:
-                                                conn_json = json.load(cf)
-                                        except Exception:
-                                            conn_json = {}
-                                        conn_ip = conn_json.get('ip') or conn_json.get('ip')
-                                        # no direct port in connection file; try to infer
-                                        conn_port = None
-                                        # iterate servers to find best match
-                                        for s in servers:
-                                            raw_url = s.get('url') or s.get('server_url') or ''
-                                            if not raw_url:
-                                                continue
-                                            parts = urlsplit(raw_url)
-                                            host = parts.hostname
-                                            port = parts.port
-                                            if conn_ip and host and (conn_ip == host or (conn_ip in ('127.0.0.1', '::1') and host in ('localhost', '127.0.0.1'))):
-                                                srv = s
-                                                break
-                                except Exception:
-                                    srv = None
-
-                                if srv is None:
-                                    srv = servers[0]
-
-                                # prefer explicit base_url if provided by server
-                                base_url = srv.get('base_url') or srv.get('baseUrl') or None
-                                raw_url = srv.get('url') or srv.get('server_url') or None
-                                token = srv.get('token') or srv.get('password') or None
-
-                                # If raw_url contains token query, extract it
-                                if raw_url:
-                                    parts = urlsplit(raw_url)
-                                    qs = parse_qs(parts.query)
-                                    # common token keys
-                                    token_keys = ['token', 'access_token']
-                                    found_token = None
-                                    for k in token_keys:
-                                        if k in qs and qs[k]:
-                                            found_token = qs[k][0]
+                    # Try to discover a running Jupyter server and token (best-effort)
+                    try:
+                        from jupyter_server.serverapp import list_running_servers
+                        servers = list(list_running_servers())
+                        if servers:
+                            srv = None
+                            try:
+                                if conn_file and Path(conn_file).exists():
+                                    try:
+                                        with open(conn_file, 'r', encoding='utf8') as cf:
+                                            conn_json = json.load(cf)
+                                    except Exception:
+                                        conn_json = {}
+                                    conn_ip = conn_json.get('ip') or conn_json.get('ip')
+                                    for s in servers:
+                                        raw_url = s.get('url') or s.get('server_url') or ''
+                                        if not raw_url:
+                                            continue
+                                        parts = urlsplit(raw_url)
+                                        host = parts.hostname
+                                        if conn_ip and host and (conn_ip == host or (conn_ip in ('127.0.0.1', '::1') and host in ('localhost', '127.0.0.1'))):
+                                            srv = s
                                             break
-                                    if found_token and not token:
-                                        token = found_token
-                                    # rebuild base url without query (scheme+host[:port]+path)
-                                    base_no_q = urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
-                                    # prefer explicit host+port URL over a bare '/' base_url
-                                    if (not base_url) or (str(base_url).strip() == '/'):
-                                        base_url = base_no_q
+                            except Exception:
+                                srv = None
 
-                                if base_url:
-                                    payload['baseUrl'] = base_url
-                                # Always include a token key so workspace consumers
-                                # (e.g. the VS Code extension) see the field even
-                                # when no token is available. Use empty string as
-                                # a sentinel for "no token".
-                                payload['token'] = token or ''
-                        except Exception:
-                            # ignore if jupyter_server not available
-                            pass
+                            if srv is None:
+                                srv = servers[0]
 
-                        # Write to .vscode/ggblab.json in cwd (best-effort workspace)
-                        try:
-                            ws_file = Path.cwd() / '.vscode' / 'ggblab.json'
-                            ws_file.parent.mkdir(parents=True, exist_ok=True)
-                            # Write payload; token may be present — extension will
-                            # move token to SecretStorage and sanitize the file.
-                            with open(ws_file, 'w', encoding='utf8') as fh:
-                                json.dump(payload, fh, indent=2)
-                        except Exception:
-                            pass
+                            base_url = srv.get('base_url') or srv.get('baseUrl') or None
+                            raw_url = srv.get('url') or srv.get('server_url') or None
+                            token = srv.get('token') or srv.get('password') or None
+                            if raw_url:
+                                parts = urlsplit(raw_url)
+                                qs = parse_qs(parts.query)
+                                for k in ('token', 'access_token'):
+                                    if k in qs and qs[k]:
+                                        token = token or qs[k][0]
+                                base_no_q = urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
+                                if (not base_url) or (str(base_url).strip() == '/'):
+                                    base_url = base_no_q
+                            if base_url:
+                                payload['baseUrl'] = base_url
+                            payload['token'] = token or ''
+                    except Exception:
+                        # ignore if jupyter_server is not available
+                        pass
+
+                    # Write to .vscode/ggblab.json in cwd (best-effort workspace)
+                    try:
+                        ws_file = Path.cwd() / '.vscode' / 'ggblab.json'
+                        ws_file.parent.mkdir(parents=True, exist_ok=True)
+                        with open(ws_file, 'w', encoding='utf8') as fh:
+                            json.dump(payload, fh, indent=2)
                     except Exception:
                         pass
+
+                    # Also copy the connection JSON to the clipboard (best-effort)
+                    try:
+                        await self.copy_connection_to_clipboard()
                     except Exception:
                         pass
                 except Exception:
