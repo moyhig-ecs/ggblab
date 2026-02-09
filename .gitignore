@@ -32,6 +32,9 @@ xsd/common.xsd
 .vscode/ggblab.json
 settings.json
 
+# Ignore VS Code extension packages
+*.vsix
+
 # Integration tests
 ui-tests/test-results/
 ui-tests/playwright-report/
