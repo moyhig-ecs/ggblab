@@ -63,9 +63,15 @@ npx esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --
 }
 
 function activate(context) {
-  // For production use do not create an Output channel or auto-open it.
-  // Provide a no-op stub so remaining debug calls are harmless.
-  ggblabOutput = { appendLine: () => {} };
+  // Create an OutputChannel so debug logs are visible in Output > ggblab.
+  // In production this is lightweight; keep enabled to aid debugging.
+  try {
+    ggblabOutput = vscode.window.createOutputChannel('ggblab');
+    ggblabOutput.appendLine('ggblab: activate');
+  } catch (e) {
+    // Fallback to no-op if OutputChannel creation fails in restricted hosts
+    ggblabOutput = { appendLine: () => {} };
+  }
   // Probe for MS Jupyter extension or workspace jupyter settings to infer
   // remote kernel connection info (best-effort). This allows us to prefill
   // baseUrl/token or a serverUrl so users don't need to re-enter them.

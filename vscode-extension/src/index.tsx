@@ -1,7 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import GeoGebraWidget from './widget';
-import { setupKernelResources } from '../../src/components/jupyterlab';
+// Note: do not import host-only helpers from the extension bundle; keep entry small
+// import { setupKernelResources } from '../../src/components/jupyterlab';
 
 // Mount the widget into a given container id. This is the entry point
 // that should be bundled and referenced from the webview HTML.

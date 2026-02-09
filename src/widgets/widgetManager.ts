@@ -68,6 +68,17 @@ export function createWidgetManager(): WidgetManagerType | undefined {
 }
 
 export function registerWidgetCommTargets(kernelConn: any, opts: IRegisterWidgetCommOptions): () => void {
+	// Defensive: if no kernelConn is provided, skip and surface debug info
+	try {
+		if (!kernelConn) {
+			(opts && opts.dbg) && opts.dbg('registerWidgetCommTargets: kernelConn is null or undefined — skipping registration');
+			return () => { /* noop */ };
+		}
+	} catch (e) {
+		try { (opts && opts.dbg) && opts.dbg('registerWidgetCommTargets: error checking kernelConn', e); } catch (ee) {}
+		return () => { /* noop */ };
+	}
+
 	const managerAvailable = Boolean(createWidgetManager());
 	const ENABLE_WIDGET_COMM_PASSTHROUGH = !managerAvailable;
 

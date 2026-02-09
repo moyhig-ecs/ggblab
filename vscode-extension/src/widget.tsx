@@ -132,7 +132,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
     }
     initializedRef.current = true;
 
-    let applet: any = null;
+    let _applet: any = null;
 
     (async () => {
       dbg('VSCode widget: calling setupKernelResources', { kernelId: resources.kernelId, socketPath: resources.socketPath });
@@ -140,6 +140,17 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       let makeIncomingHandler: (h: any) => any = (h: any) => null;
       // try {
         const res = await setupKernelResources(resources, { kernelId: resources.kernelId, serverSettings }, dbg);
+
+        // Inform the extension host that the webview is ready to receive messages
+        try {
+          // @ts-ignore
+          if (typeof (window as any).acquireVsCodeApi === 'function') {
+            try {
+              const _vscode = (window as any).acquireVsCodeApi();
+              _vscode.postMessage({ type: 'ready' });
+            } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore */ }
         callRemoteSocketSend = res.callRemoteSocketSend;
         makeIncomingHandler = res.makeIncomingHandler;
         // Ensure resources.socketPath is populated from any available source
@@ -165,9 +176,10 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         // kernelConn attached to resources by setupKernelResources
         // Widget comm passthrough registration (webview)
         try {
-          if ((props as any).widgetManager) {
-            dbg('widgetManager present; skipping raw jupyter.widget comm registration in webview');
-          } else {
+          // if ((props as any).widgetManager) {
+          //   dbg('widgetManager present; skipping raw jupyter.widget comm registration in webview');
+          // } else
+          {
             const opts = {
               callRemoteSocketSend,
               kernel2: resources.kernel2,
@@ -184,6 +196,16 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
             } catch (e) {
               dbg('registerWidgetCommTargets failed in webview', e);
             }
+            // Post explicit comm registration status to the extension host
+            try {
+              // @ts-ignore
+              if (typeof (window as any).acquireVsCodeApi === 'function') {
+                try {
+                  const _vscode = (window as any).acquireVsCodeApi();
+                  _vscode.postMessage({ type: 'commStatus', registered: !!resources.unregisterWidgetCommTargets, kernelConn: !!resources.kernelConn, kernelId: resources.kernelId || null });
+                } catch (e) { /* ignore */ }
+              }
+            } catch (e) { /* ignore */ }
           }
         } catch (e) {
           dbg('Widget comm target registration skipped or failed (webview)', e);
@@ -274,8 +296,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         let ro: ResizeObserver | null = null;
         try {
           if (typeof (window as any).ResizeObserver === 'function' && targetElem) {
-            ro = new (window as any).ResizeObserver(() => applySize());
-            ro.observe(targetElem);
+            const roInstance = new (window as any).ResizeObserver(() => applySize());
+            roInstance.observe(targetElem);
+            ro = roInstance;
             resources.observer = ro as any;
           }
         } catch (e) {
@@ -351,7 +374,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           resources.styleTag = styleTag;
         } catch (e) { dbg('Failed to insert forcing stylesheet', e); }
         appletPromise.then((a: any) => {
-          applet = a;
+          _applet = a;
           try {
             const api = a;
             // apply size and reapply after short delays to override internal resets

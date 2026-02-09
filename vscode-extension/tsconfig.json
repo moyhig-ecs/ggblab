@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2018",
+    "module": "ESNext",
+    "jsx": "react",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "rootDir": "..",
+    "outDir": "dist",
+    "types": []
+  },
+  "include": ["src/**/*", "../src/**/*"]
+}
