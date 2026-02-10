@@ -6,7 +6,7 @@ let ggblabOutput = null;
 
 function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
   // If a bundleScriptUrl is provided, load the bundle which should mount
-  // the React widget into `#root`. Otherwise fall back to the inline
+  // the React widget into `#ggb-mount`. Otherwise fall back to the inline
   // minimal HTML that injects deployggb.js directly.
   if (bundleScriptUrl) {
     return `<!doctype html>
@@ -16,8 +16,9 @@ function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GGBlab Applet</title>
     <script>window.ggblabDebugMessages = true;</script>
+    <script>window.ggblabDebugMessages = true;</script>
     <style>
-      html,body,#root{height:100%;margin:0;padding:0}
+      html,body,#ggb-container{height:100%;margin:0;padding:0}
       /* Stretch the applet vertically to fill the webview area and center horizontally */
       #ggb-container{width:100%;height:100%;display:flex;align-items:stretch;justify-content:center}
       /* Make applet container responsive so the applet can grow with the panel */
@@ -25,11 +26,11 @@ function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
     </style>
   </head>
   <body>
-    <div id="root">
+      <!-- root removed: mounting uses #ggb-mount instead -->
       <div id="ggb-container">
-        <div id="ggb-element-debug" class="applet-wrapper"></div>
+        <div id="ggb-mount" class="ggb-mount"></div>
       </div>
-    </div>
+    
     ${serverSettingsJson ? `<script>window.__GGBlab_ServerSettings = ${serverSettingsJson}; window.__GGBlab_AutoInit = ${autoInit ? 'true' : 'false'};</script>` : ''}
     <script src="${bundleScriptUrl}"></script>
   </body>
@@ -42,6 +43,7 @@ function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GGBlab Applet - Bundle Missing</title>
+    
     <style>
       body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:24px}
       pre{background:#f6f8fa;padding:12px;border-radius:6px}
@@ -708,7 +710,6 @@ function activate(context) {
   } catch (e) {}
 
   context.subscriptions.push(disposable);
-  
 
   // Single 'Open' status item that uses clipboard -> workspace -> probe
   try {
