@@ -167,7 +167,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           dbg('Failed to normalize resources.socketPath', e);
         }
         // try {
-          dbg('setupKernelResources returned', {
+          try { dbg('setupKernelResources returned', {
             hasCallRemoteSocketSend: typeof callRemoteSocketSend === 'function',
             hasMakeIncomingHandler: typeof makeIncomingHandler === 'function',
             kernelConn: !!res.kernelConn,
@@ -175,7 +175,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           });
           // expose helpers for interactive debugging
           try { (window as any).__GGBlab_callRemoteSocketSend = callRemoteSocketSend; } catch (e) {}
-          try { dbg('Initial measurement (vscode):', { targetForSize: targetForSize.id || targetForSize.className || targetForSize.tagName, measuredWidth, measuredHeight }); } catch (e) {}
+          try { dbg('Initial measurement (vscode): basic setup complete'); } catch (e) {}
           // Listen for messages from the extension host (e.g. setUserScaleFactor)
           try {
             window.addEventListener('message', (ev: MessageEvent) => {
@@ -185,7 +185,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
                   const f = parseFloat(String(data.scale || 1)) || 1;
                   (resources as any).userScaleFactor = f;
                   dbg('Received setUserScaleFactor (vscode):', f);
-                  try { applySize(); } catch (e) { /* ignore */ }
+                  try { if (!((window as any).__GGBlab_applySize && (window as any).__GGBlab_applySize())) { window.dispatchEvent(new Event('resize')); } } catch (e) { try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignore */ } }
                 }
               } catch (e) { /* ignore message handler errors */ }
             });
@@ -272,9 +272,12 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           dbg('setupAppletOnLoadCommon failed (vscode)', e);
         }
 
-        // Prefer ResizeObserver to detect size changes of the container.
+        // Minimal resize handling: observe the mount/root element and apply
+        // a simple size to the applet API. Keep logic small to avoid races
+        // and devicePixelRatio/transform confusion inside VS Code webviews.
         const outerRootElem = document.getElementById('ggb-root');
         const targetElem = outerRootElem || widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
+
         const applySize = () => {
           try {
             const el = targetElem;
@@ -285,93 +288,44 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
             const scaleF = (resources as any).userScaleFactor || 1;
             const targetWidthPx = Math.max(1, Math.floor(widthV * scaleF));
             const targetHeightPx = Math.max(1, Math.floor(heightV * scaleF));
-            try { dbg('applySize (vscode): targetElem info', { id: el.id, className: el.className, bounding: { width: rect.width, height: rect.height } }); } catch (e) {}
-                try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-                try {
-                  // Temporarily apply explicit pixel dimensions to the wrapper so
-                  // GeoGebra recreates its backing canvas at the intended size.
-                  try {
-                    if (wrapperRootForSizing) {
-                      // Use CSS pixel sizes for layout but set backing-pixel
-                      // target via setSize below. Keep wrapper CSS at logical
-                      // pixels to avoid layout jumps.
-                      wrapperRootForSizing.style.width = widthV + 'px';
-                      wrapperRootForSizing.style.height = heightV + 'px';
-                    }
-                  } catch (e) { /* ignore */ }
-
-                  // Prefer setSize when available (forces width+height), fall
-                  // back to setHeight for older APIs. Use scaled pixel targets
-                  // so the applet's backing canvas matches the device/user scale.
-                  if (typeof api?.setSize === 'function') {
-                    dbg('Calling api.setSize (vscode) with', targetWidthPx, targetHeightPx);
-                    api.setSize?.(targetWidthPx, targetHeightPx);
-                  } else if (typeof api?.setHeight === 'function') {
-                    dbg('Calling api.setHeight (vscode) with', targetHeightPx);
-                    api.setHeight(targetHeightPx);
-                  } else {
-                    dbg('No setSize/setHeight available on applet API');
-                  }
-
-                  // Clear our temporary inline dimensions shortly after to allow
-                  // responsive layout to resume.
-                  setTimeout(() => {
-                    try {
-                      if (wrapperRootForSizing) {
-                        wrapperRootForSizing.style.width = '';
-                        wrapperRootForSizing.style.height = '';
-                      }
-                    } catch (e) { /* ignore */ }
-                  }, 120);
-                } catch (e) { dbg('set size/height failed', e); }
-              // Force the injected applet DOM to avoid transform scaling and fill
-              // the measured container exactly (avoid letterbox due to aspect ratio).
-              try {
-                const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
-                if (appletNode) {
-                  const applyImportant = (node: HTMLElement) => {
-                    try {
-                      node.style.setProperty('width', '100%', 'important');
-                      node.style.setProperty('height', '100%', 'important');
-                      node.style.setProperty('max-width', '100%', 'important');
-                      node.style.setProperty('transform', 'none', 'important');
-                      node.style.setProperty('transform-origin', '0 0', 'important');
-                    } catch (e) {
-                      // best-effort fallback
-                      try { node.style.width = '100%'; } catch (e) {}
-                      try { node.style.height = '100%'; } catch (e) {}
-                      try { node.style.maxWidth = '100%'; } catch (e) {}
-                      try { node.style.transform = 'none'; } catch (e) {}
-                      try { node.style.transformOrigin = '0 0'; } catch (e) {}
-                    }
-                  };
-
-                  // Apply to the applet node itself only. Avoid traversing and
-                  // mutating ancestor nodes to reduce DOM churn and races.
-                  applyImportant(appletNode);
-                }
-              } catch (e) { dbg('Failed to override applet DOM styles (vscode)', e); }
+            try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
+            try {
+              const runtimeApi = resources.appletApi || api;
+              if (typeof runtimeApi?.setSize === 'function') {
+                runtimeApi.setSize(targetWidthPx, targetHeightPx);
+              } else if (typeof runtimeApi?.setHeight === 'function') {
+                runtimeApi.setHeight(targetHeightPx);
+              }
+            } catch (e) { dbg('set size/height failed', e); }
+            // Ensure the applet container itself uses no CSS transform and fills
+            // its container to avoid browser-level scaling effects.
+            try {
+              const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
+              const node = appletNode || (document.getElementById(elementId) as HTMLElement | null);
+              if (node) {
+                node.style.transform = 'none';
+                node.style.transformOrigin = '0 0';
+                node.style.width = '100%';
+                node.style.height = '100%';
+                node.style.maxWidth = '100%';
+              }
+            } catch (e) { /* best-effort */ }
           } catch (e) { dbg('applySize failed', e); }
         };
 
-        let ro: ResizeObserver | null = null;
+        // Simple ResizeObserver-driven updates; fallback to window resize.
         try {
           if (typeof (window as any).ResizeObserver === 'function' && targetElem) {
             const roInstance = new (window as any).ResizeObserver(() => applySize());
             roInstance.observe(targetElem);
-            ro = roInstance;
-            resources.observer = ro as any;
+            resources.observer = roInstance as any;
           }
-        } catch (e) {
-          dbg('ResizeObserver unavailable or failed', e);
-          ro = null;
-        }
-
-        // Fallback to window resize events
-        resources.resizeHandler = () => applySize();
+        } catch (e) { dbg('ResizeObserver unavailable or failed', e); }
+        resources.resizeHandler = applySize;
         try { window.addEventListener('resize', resources.resizeHandler); } catch (e) { dbg('addEventListener resize failed', e); }
         // Initial apply
         applySize();
+        try { (window as any).__GGBlab_applySize = applySize; } catch (e) {}
 
         // After initial sizing, remove our temporary explicit wrapper dimensions
         // so normal responsive layout can resume. Rely on ResizeObserver to
@@ -514,12 +468,13 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           }
         } catch (e) { /* best-effort */ }
 
+        const scaleContainerClass = document.getElementById('root') ? 'root' : 'ggb-root';
         const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
           elementId,
           appName,
           width: measuredWidth,
           height: measuredHeight,
-          scaleContainerClass: 'ggb-root',
+          scaleContainerClass,
           allowUpscale: false,
           autoHeight: false,
           appletOnLoad: ggbOnLoad,
@@ -531,103 +486,12 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         // Webview-side forcing stylesheet and canvas re-scaling removed.
         appletPromise.then((a: any) => {
           _applet = a;
+          resources.appletApi = a;
           try {
-            const attemptApplySize = async () => {
-              // Prefer the API provided via ggbOnLoad when available
-              let api: any = resources.appletApi || a;
-              const start = Date.now();
-              while (typeof api?.setHeight !== 'function' && typeof api?.setSize !== 'function' && Date.now() - start < 1500) {
-                await new Promise((r) => setTimeout(r, 100));
-                api = resources.appletApi || a;
-              }
-                if (typeof api?.setHeight === 'function' || typeof api?.setSize === 'function') {
-                try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-                try {
-                  if (typeof api.setHeight === 'function') {
-                    api.setHeight(measuredHeight);
-                    dbg('Applied initial applet height (vscode)', measuredHeight);
-                  } else {
-                    api.setSize(measuredWidth, measuredHeight);
-                    dbg('Applied initial applet size (vscode)', measuredWidth, measuredHeight);
-                  }
-                } catch (e) { dbg('api.setHeight/setSize failed', e); }
-                // No timed reapply — rely on ResizeObserver and MutationObserver.
-              } else {
-                dbg('applet API setHeight/setSize unavailable after wait; skipping apply', { haveApi: !!api, api });
-              }
-            };
-            attemptApplySize().catch((e) => dbg('attemptApplySize failed', e));
-                // Immediately clear temporary inline dimensions and let observers handle later resizes.
-            try {
-              if (wrapperRootForSizing) {
-                wrapperRootForSizing.style.width = '';
-                wrapperRootForSizing.style.height = '';
-              }
-              try { applySize(); } catch (e) { /* ignore */ }
-            } catch (e) { /* ignore */ }
-                // No canvas mount-time polling—scaling disabled in webview.
-            // Observe the injected applet node for attribute/style changes
-            try {
-              const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
-              if (appletNode) {
-                const aobserver = new MutationObserver(mutations => {
-                  try {
-                    const rect3 = (appletNode.parentElement ?? appletNode).getBoundingClientRect();
-                    const ww = Math.max(1, Math.floor(rect3.width));
-                    const hh = Math.max(1, Math.floor(rect3.height));
-                    try {
-                      const runtimeApi = resources.appletApi || a;
-                      if (typeof runtimeApi?.setHeight === 'function') {
-                        dbg('MutationObserver: calling setHeight (vscode) with', hh);
-                        runtimeApi.setHeight(hh);
-                      } else {
-                        dbg('MutationObserver: calling setSize (vscode) with', ww, hh);
-                        runtimeApi.setSize?.(ww, hh);
-                      }
-                    } catch (e) { /* ignore */ }
-                    try {
-                      const applyImportant = (node: HTMLElement) => {
-                        try {
-                          node.style.setProperty('transform', 'none', 'important');
-                          node.style.setProperty('width', '100%', 'important');
-                          node.style.setProperty('height', '100%', 'important');
-                          node.style.setProperty('max-width', '100%', 'important');
-                          node.style.setProperty('transform-origin', '0 0', 'important');
-                        } catch (e) {
-                          try { node.style.transform = 'none'; } catch (e) {}
-                          try { node.style.width = '100%'; } catch (e) {}
-                          try { node.style.height = '100%'; } catch (e) {}
-                        }
-                      };
-                      applyImportant(appletNode);
-                      // If the applet contains iframes, try injecting styles there too
-                      try {
-                        const root = appletNode;
-                        if (root) {
-                          const iframes = root.querySelectorAll('iframe');
-                          iframes.forEach((f: HTMLIFrameElement) => {
-                            try {
-                              const doc = f.contentDocument || (f as any).contentWindow?.document;
-                              if (doc && doc.head) {
-                                const st = doc.createElement('style');
-                                st.appendChild(doc.createTextNode(css));
-                                doc.head.appendChild(st);
-                              }
-                            } catch (e) {
-                              // ignore cross-origin
-                            }
-                          });
-                        }
-                      } catch (e) { /* ignore iframe injection errors */ }
-                      // Schedule a debounced reapply to adjust canvases if needed.
-                      try { scheduleCanvasReapply(); } catch (e) {}
-                    } catch (e) { /* ignore */ }
-                  } catch (e) { dbg('appletStyleObserver handler error (vscode)', e); }
-                });
-                aobserver.observe(appletNode, { attributes: true, attributeFilter: ['style', 'class'], subtree: false });
-                resources.appletStyleObserver = aobserver;
-              }
-            } catch (e) { dbg('Failed to create appletStyleObserver (vscode)', e); }
+            // Try to apply size immediately; API may become available shortly
+            try { applySize(); } catch (e) { /* ignore */ }
+            // One more short retry in case API wasn't ready on first pass
+            setTimeout(() => { try { applySize(); } catch (e) { /* ignore */ } }, 200);
           } catch (e) { dbg('Error applying size to applet', e); }
         }).catch((e: any) => dbg('Applet creation failed', e));
       } catch (e) {
