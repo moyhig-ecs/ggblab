@@ -29,14 +29,13 @@ export function mountGeoGebra(containerId = 'ggb-mount') {
 // DOM children managed by host code.
 if (typeof document !== 'undefined' && document.getElementById('ggb-mount')) {
   try {
-    // Enable verbose debug messages for development builds / webview.
-    // Consumers may set this globally as well; only set if not already true.
+    // Default debug messages to false in webview unless explicitly enabled.
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    if (!(window as any).ggblabDebugMessages) {
+    if (typeof (window as any).ggblabDebugMessages === 'undefined') {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      (window as any).ggblabDebugMessages = true;
+      (window as any).ggblabDebugMessages = false;
     }
   } catch (e) {
     // ignore

@@ -15,7 +15,7 @@ function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GGBlab Applet</title>
-    <script>window.ggblabDebugMessages = true;</script>
+    <script>window.ggblabDebugMessages = false;</script>
     <style>
       html,body,#ggb-container{height:100%;margin:0;padding:0}
       /* Stretch the applet vertically to fill the webview area and center horizontally */
