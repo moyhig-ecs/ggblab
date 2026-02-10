@@ -77,6 +77,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       appletStyleObserver: MutationObserver | null = null;
       globalResizeObserver: ResizeObserver | null = null;
       visualViewportHandler: (() => void) | null = null;
+      pollerId: number | null = null;
       styleTag: HTMLStyleElement | null = null;
       resizeHandler: (() => void) | null = null;
       closeHandler: (() => void) | null = null;
@@ -101,6 +102,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           try { this.observer?.disconnect(); } catch (e) { dbg('Error disconnecting observer', e); }
           try { this.globalResizeObserver?.disconnect(); } catch (e) { dbg('Error disconnecting globalResizeObserver', e); }
           try { if (this.visualViewportHandler && (window as any).visualViewport) { (window as any).visualViewport.removeEventListener('resize', this.visualViewportHandler); } } catch (e) { dbg('Error removing visualViewport handler', e); }
+          try { if (this.pollerId) { clearInterval(this.pollerId); this.pollerId = null; } } catch (e) { dbg('Error clearing poller', e); }
           if (this.resizeHandler) { try { window.removeEventListener('resize', this.resizeHandler); } catch (e) {} }
           if (this.closeHandler) { try { window.removeEventListener('close', this.closeHandler); } catch (e) {} }
           if (this.metaViewport && this.metaViewport.parentNode) { this.metaViewport.parentNode.removeChild(this.metaViewport); }
@@ -435,21 +437,21 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         })();
 
         // Prefer ResizeObserver to detect size changes of the container.
-        // Prefer an explicit host container (`#ggb-container`) when present
-        // (the host can provide a stable mount node outside React-managed DOM).
-        const targetElem = (document.getElementById('ggb-container') as HTMLElement | null) || widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
+        // Measurement target is evaluated on every apply so that layout
+        // changes (panel open/close, DevTools toggles) are always reflected.
         const applySize = () => {
           try {
-            const el = targetElem;
+            const el = (document.getElementById('ggb-container') as HTMLElement | null) || widgetRef.current || document.getElementById(elementId) as HTMLElement | null || document.documentElement;
             if (!el) return;
             const rect = el.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-            let widthV = Math.max(1, Math.floor(rect.width * dpr));
-            let heightV = Math.max(1, Math.floor(rect.height * dpr));
+            // Use CSS pixels for the applet API; avoid multiplying by devicePixelRatio
+            // here because the applet expects CSS pixel dimensions.
+            let widthV = Math.max(1, Math.floor(rect.width));
+            let heightV = Math.max(1, Math.floor(rect.height));
             // Cap reported size by the visible document/client size to avoid
             // inflated measurements from offscreen/overflowing elements.
-            const maxW = Math.max(1, Math.floor(document.documentElement.clientWidth * dpr));
-            const maxH = Math.max(1, Math.floor(document.documentElement.clientHeight * dpr));
+            const maxW = Math.max(1, Math.floor(document.documentElement.clientWidth));
+            const maxH = Math.max(1, Math.floor(document.documentElement.clientHeight));
             widthV = Math.min(widthV, maxW);
             heightV = Math.min(heightV, maxH);
               try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
@@ -545,6 +547,28 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           dbg('visualViewport listener setup failed', e);
         }
 
+        // Polling fallback: some host layout changes (e.g. VSCode panel toggles)
+        // may not reliably fire ResizeObserver/visualViewport events in this
+        // environment. Use a lightweight interval to detect client size changes
+        // and reapply sizing when needed.
+        try {
+          let lastW = document.documentElement.clientWidth;
+          let lastH = document.documentElement.clientHeight;
+          const id = window.setInterval(() => {
+            try {
+              const cw = document.documentElement.clientWidth;
+              const ch = document.documentElement.clientHeight;
+              if (cw !== lastW || ch !== lastH) {
+                lastW = cw; lastH = ch;
+                applySize();
+              }
+            } catch (e) { /* ignore per-tick errors */ }
+          }, 250);
+          resources.pollerId = id as any;
+        } catch (e) {
+          dbg('poller setup failed', e);
+        }
+
         if (resources.kernelConn && resources.commTarget) {
           try {
             resources.comm = resources.kernelConn.createComm(resources.commTarget);
@@ -625,12 +649,11 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         try {
           if (targetForSize) {
             const rect = (targetForSize as HTMLElement).getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-            measuredWidth = Math.max(1, Math.floor(rect.width * dpr));
-            measuredHeight = Math.max(1, Math.floor(rect.height * dpr));
+            measuredWidth = Math.max(1, Math.floor(rect.width));
+            measuredHeight = Math.max(1, Math.floor(rect.height));
             // Cap by visible client size to avoid oversized values
-            const maxW = Math.max(1, Math.floor(document.documentElement.clientWidth * dpr));
-            const maxH = Math.max(1, Math.floor(document.documentElement.clientHeight * dpr));
+            const maxW = Math.max(1, Math.floor(document.documentElement.clientWidth));
+            const maxH = Math.max(1, Math.floor(document.documentElement.clientHeight));
             measuredWidth = Math.min(measuredWidth, maxW);
             measuredHeight = Math.min(measuredHeight, maxH);
           }
