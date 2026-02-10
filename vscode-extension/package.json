@@ -3,7 +3,7 @@
   "displayName": "GeoGebra Injector (GGBlab)",
   "publisher": "moyhig",
   "description": "A simple VS Code extension that opens a webview and injects a GeoGebra applet for debugging.",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/ggblab/ggblab"
@@ -65,7 +65,9 @@
     ,
     "cross-fetch": "^3.1.5"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "vsce": "^2.15.0"
+  },
   "scripts": {
     "build": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --sourcemap=inline",
     "watch": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --loader:.tsx=tsx --platform=browser --sourcemap=inline --watch",

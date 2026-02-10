@@ -708,19 +708,7 @@ function activate(context) {
   } catch (e) {}
 
   context.subscriptions.push(disposable);
-
-  // Create a status bar button so users can open the applet with one click
-  try {
-    const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusItem.text = '$(plug) GGBlab';
-    statusItem.command = 'ggblab.openApplet';
-    statusItem.tooltip = 'Open GGBlab Applet';
-    statusItem.show();
-    context.subscriptions.push(statusItem);
-    try { ggblabOutput?.appendLine('ggblab: status bar button created'); } catch (e) {}
-  } catch (e) {
-    try { ggblabOutput?.appendLine('ggblab: failed to create status bar item: ' + String(e)); } catch (ee) {}
-  }
+  
 
   // Single 'Open' status item that uses clipboard -> workspace -> probe
   try {
