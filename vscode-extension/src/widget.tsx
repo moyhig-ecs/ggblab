@@ -456,6 +456,19 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
             heightV = Math.min(heightV, maxH);
               try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
               try { api.setSize(widthV, heightV); } catch (e) { dbg('setSize failed', e); }
+              // Force a minimal reflow of the applet internals: call setSize again
+              // on the next animation frame and dispatch a window resize event.
+              try {
+                requestAnimationFrame(() => {
+                  try {
+                    try { api.recalculateEnvironments?.(); } catch (e) { /* ignore */ }
+                    try { api.setSize(widthV, heightV); } catch (e) { /* ignore */ }
+                    try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignore */ }
+                  } catch (e) {
+                    dbg('rAF reflow failed', e);
+                  }
+                });
+              } catch (e) { dbg('Failed scheduling reflow rAF', e); }
               // Force the injected applet DOM to avoid transform scaling and fill
               // the measured container exactly (avoid letterbox due to aspect ratio).
               try {
