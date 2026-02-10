@@ -431,14 +431,23 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         })();
 
         // Prefer ResizeObserver to detect size changes of the container.
-        const targetElem = widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
+        // Prefer an explicit host container (`#ggb-container`) when present
+        // (the host can provide a stable mount node outside React-managed DOM).
+        const targetElem = (document.getElementById('ggb-container') as HTMLElement | null) || widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
         const applySize = () => {
           try {
             const el = targetElem;
             if (!el) return;
             const rect = el.getBoundingClientRect();
-            const widthV = Math.max(1, Math.floor(rect.width));
-            const heightV = Math.max(1, Math.floor(rect.height));
+            const dpr = window.devicePixelRatio || 1;
+            let widthV = Math.max(1, Math.floor(rect.width * dpr));
+            let heightV = Math.max(1, Math.floor(rect.height * dpr));
+            // Cap reported size by the visible document/client size to avoid
+            // inflated measurements from offscreen/overflowing elements.
+            const maxW = Math.max(1, Math.floor(document.documentElement.clientWidth * dpr));
+            const maxH = Math.max(1, Math.floor(document.documentElement.clientHeight * dpr));
+            widthV = Math.min(widthV, maxW);
+            heightV = Math.min(heightV, maxH);
               try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
               try { api.setSize(widthV, heightV); } catch (e) { dbg('setSize failed', e); }
               // Force the injected applet DOM to avoid transform scaling and fill
@@ -578,24 +587,30 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
 
       // Inject the applet using the measured container size and allow upscaling
       try {
+        const hostContainer = document.getElementById('ggb-container') as HTMLElement | null;
         const wrapperDiv = widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
-        // Prefer measuring the widget element itself so height is based on the
-        // element that is styled to fill the webview; fallback to parent.
-        const targetForSize = wrapperDiv ?? (wrapperDiv as HTMLElement | null)?.parentElement ?? null;
+        // Prefer host-provided container, then the widget node, then the widget's parent
+        const targetForSize = hostContainer || wrapperDiv || (wrapperDiv as HTMLElement | null)?.parentElement || document.documentElement;
         let measuredWidth = 800;
         let measuredHeight = 600;
-        // noop
         try {
           if (targetForSize) {
             const rect = (targetForSize as HTMLElement).getBoundingClientRect();
-            measuredWidth = Math.max(1, Math.floor(rect.width));
-            measuredHeight = Math.max(1, Math.floor(rect.height));
+            const dpr = window.devicePixelRatio || 1;
+            measuredWidth = Math.max(1, Math.floor(rect.width * dpr));
+            measuredHeight = Math.max(1, Math.floor(rect.height * dpr));
+            // Cap by visible client size to avoid oversized values
+            const maxW = Math.max(1, Math.floor(document.documentElement.clientWidth * dpr));
+            const maxH = Math.max(1, Math.floor(document.documentElement.clientHeight * dpr));
+            measuredWidth = Math.min(measuredWidth, maxW);
+            measuredHeight = Math.min(measuredHeight, maxH);
           }
         } catch (e) {
           dbg('Failed to measure container for initial size, falling back to defaults', e);
         }
 
-        const scaleContainerClass = document.getElementById('root') ? 'root' : 'ggb-root';
+        // Use a stable class name for the scale container (not a DOM element)
+        const scaleContainerClass = 'applet-wrapper';
         const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
           elementId,
           appName,
@@ -634,14 +649,12 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           resources.styleTag = styleTag;
         } catch (e) { dbg('Failed to insert forcing stylesheet', e); }
         appletPromise.then((a: any) => {
-          applet = a;
+            applet = a;
           try {
             const api = a;
-            // apply size and reapply after short delays to override internal resets
+            // apply size once; rely on ResizeObserver / MutationObserver for subsequent changes
             try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-            try { api.setSize(measuredWidth, measuredHeight); dbg('Applied initial applet size (vscode)', measuredWidth, measuredHeight); } catch (e) { dbg('api.setSize failed', e); }
-            setTimeout(() => { try { api.setSize(measuredWidth, measuredHeight); dbg('Reapplied size (250ms)'); } catch (e) { dbg('reapply failed', e); } }, 250);
-            setTimeout(() => { try { api.setSize(measuredWidth, measuredHeight); dbg('Reapplied size (1000ms)'); } catch (e) { dbg('reapply failed', e); } }, 1000);
+            try { api.setSize(measuredWidth, measuredHeight); } catch (e) { dbg('api.setSize failed', e); }
             // Observe the injected applet node for attribute/style changes
             try {
               const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
