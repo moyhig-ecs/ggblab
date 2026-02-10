@@ -75,6 +75,8 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       injectCleanup: (() => void) | null = null;
       observer: MutationObserver | null = null;
       appletStyleObserver: MutationObserver | null = null;
+      globalResizeObserver: ResizeObserver | null = null;
+      visualViewportHandler: (() => void) | null = null;
       styleTag: HTMLStyleElement | null = null;
       resizeHandler: (() => void) | null = null;
       closeHandler: (() => void) | null = null;
@@ -97,6 +99,8 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           this.appletApi = null;
           try { await this.kernelManager?.shutdown?.(); } catch (e) { dbg('Error shutting down kernelManager', e); }
           try { this.observer?.disconnect(); } catch (e) { dbg('Error disconnecting observer', e); }
+          try { this.globalResizeObserver?.disconnect(); } catch (e) { dbg('Error disconnecting globalResizeObserver', e); }
+          try { if (this.visualViewportHandler && (window as any).visualViewport) { (window as any).visualViewport.removeEventListener('resize', this.visualViewportHandler); } } catch (e) { dbg('Error removing visualViewport handler', e); }
           if (this.resizeHandler) { try { window.removeEventListener('resize', this.resizeHandler); } catch (e) {} }
           if (this.closeHandler) { try { window.removeEventListener('close', this.closeHandler); } catch (e) {} }
           if (this.metaViewport && this.metaViewport.parentNode) { this.metaViewport.parentNode.removeChild(this.metaViewport); }
@@ -515,6 +519,31 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         try { window.addEventListener('resize', resources.resizeHandler); } catch (e) { dbg('addEventListener resize failed', e); }
         // Initial apply
         applySize();
+
+        // Also observe root/body for layout changes (DevTools open/close can
+        // change document geometry without affecting the widget element). Use a
+        // separate global ResizeObserver and visualViewport listener to detect
+        // those cases and trigger a re-measure.
+        try {
+          if (typeof (window as any).ResizeObserver === 'function') {
+            const gro = new (window as any).ResizeObserver(() => applySize());
+            try { gro.observe(document.documentElement); } catch (e) { /* ignore */ }
+            try { gro.observe(document.body); } catch (e) { /* ignore */ }
+            resources.globalResizeObserver = gro as any;
+          }
+        } catch (e) {
+          dbg('global ResizeObserver unavailable or failed', e);
+        }
+
+        try {
+          if ((window as any).visualViewport && typeof (window as any).visualViewport.addEventListener === 'function') {
+            const vvHandler = () => applySize();
+            (window as any).visualViewport.addEventListener('resize', vvHandler);
+            resources.visualViewportHandler = vvHandler;
+          }
+        } catch (e) {
+          dbg('visualViewport listener setup failed', e);
+        }
 
         if (resources.kernelConn && resources.commTarget) {
           try {
