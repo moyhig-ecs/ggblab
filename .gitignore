@@ -4,6 +4,7 @@ ggblab_extra/
 examples/*.json
 examples/*.xml
 examples/*.png
+examples/tmp.*
 
 scripts/
 

@@ -60,6 +60,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
   }
 
   useEffect(() => {
+    // user-scale adjustments disabled — keep only ggb-scale-container tagging
     // Resources bag (lightweight)
     class Resources {
       kernelId: string;
@@ -83,6 +84,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       metaViewport: HTMLMetaElement | null = null;
       scriptTag: HTMLScriptElement | null = null;
       _lastValues: { [name: string]: string | null } = {};
+      // Optional override for device/user scale factor sent from the
+      // extension host. Defaults to 1.
+      userScaleFactor: number = 1;
 
       constructor(kernelId: string, commTarget: string, socketPath: string | null, wsPort: number) {
         this.kernelId = kernelId;
@@ -123,6 +127,8 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
     } catch (e) { /* ignore normalization errors */ }
     resourcesRef.current = resources;
 
+    // Canvas reapplication disabled (webview-side scaling removed).
+
     // Prevent double-initialization if the component is re-rendered
     if (initializedRef.current) {
       dbg('GeoGebraWidget: already initialized, skipping re-initialization');
@@ -135,22 +141,20 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
     let _applet: any = null;
 
     (async () => {
+      let wrapperRootForSizing: HTMLElement | null = null;
       dbg('VSCode widget: calling setupKernelResources', { kernelId: resources.kernelId, socketPath: resources.socketPath });
       let callRemoteSocketSend: (m: string) => Promise<void> = async () => {};
       let makeIncomingHandler: (h: any) => any = (h: any) => null;
-      // try {
-        const res = await setupKernelResources(resources, { kernelId: resources.kernelId, serverSettings }, dbg);
-
-        // Inform the extension host that the webview is ready to receive messages
-        try {
-          // @ts-ignore
-          if (typeof (window as any).acquireVsCodeApi === 'function') {
-            try {
-              const _vscode = (window as any).acquireVsCodeApi();
-              _vscode.postMessage({ type: 'ready' });
-            } catch (e) { /* ignore */ }
-          }
-        } catch (e) { /* ignore */ }
+      const res = await setupKernelResources(resources, { kernelId: resources.kernelId, serverSettings }, dbg);
+      try {
+        // Do not change applet DOM font-size here; setter only persists value.
+        if (typeof (window as any).acquireVsCodeApi === 'function') {
+          try {
+            const _vscode = (window as any).acquireVsCodeApi();
+            _vscode.postMessage({ type: 'ready' });
+          } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
         callRemoteSocketSend = res.callRemoteSocketSend;
         makeIncomingHandler = res.makeIncomingHandler;
         // Ensure resources.socketPath is populated from any available source
@@ -171,6 +175,21 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           });
           // expose helpers for interactive debugging
           try { (window as any).__GGBlab_callRemoteSocketSend = callRemoteSocketSend; } catch (e) {}
+          try { dbg('Initial measurement (vscode):', { targetForSize: targetForSize.id || targetForSize.className || targetForSize.tagName, measuredWidth, measuredHeight }); } catch (e) {}
+          // Listen for messages from the extension host (e.g. setUserScaleFactor)
+          try {
+            window.addEventListener('message', (ev: MessageEvent) => {
+              try {
+                const data = ev.data || {};
+                if (data && data.type === 'setUserScaleFactor') {
+                  const f = parseFloat(String(data.scale || 1)) || 1;
+                  (resources as any).userScaleFactor = f;
+                  dbg('Received setUserScaleFactor (vscode):', f);
+                  try { applySize(); } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore message handler errors */ }
+            });
+          } catch (e) { /* ignore */ }
           try { (window as any).__GGBlab_makeIncomingHandler = makeIncomingHandler; } catch (e) {}
         // } catch (e) { /* ignore logging errors */ }
         // kernelConn attached to resources by setupKernelResources
@@ -220,7 +239,26 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
 
 
       async function ggbOnLoad(api: any) {
-        dbg('GeoGebra applet loaded (vscode):', api);
+            dbg('GeoGebra applet loaded (vscode):', api);
+            // Diagnostic: log container & canvas info to help determine which
+            // DOM node GeoGebra uses to compute device scaling.
+            try {
+              const appletNode = document.getElementById('ggbApplet-' + elementId) || document.getElementById(elementId) || null;
+              dbg('ggbOnLoad: elementId=', elementId);
+              dbg('ggbOnLoad: found appletNode', appletNode && { id: appletNode.id, className: appletNode.className });
+              try { dbg('ggbOnLoad: applet computedStyle', appletNode && window.getComputedStyle(appletNode)); } catch (e) { dbg('ggbOnLoad: computedStyle failed', e); }
+              try {
+                const canvases = appletNode ? Array.from(appletNode.querySelectorAll('canvas')) as HTMLCanvasElement[] : [];
+                dbg('ggbOnLoad: canvases count', canvases.length);
+                canvases.forEach((c, i) => {
+                  try {
+                    const cs = window.getComputedStyle(c);
+                    dbg('ggbOnLoad: canvas', i, { cssW: cs.width, cssH: cs.height, backingW: c.width, backingH: c.height });
+                  } catch (e) { dbg('ggbOnLoad: canvas diag failed', i, e); }
+                });
+              } catch (e) { dbg('ggbOnLoad: canvases inspect failed', e); }
+              dbg('ggbOnLoad: devicePixelRatio', window.devicePixelRatio);
+            } catch (e) { dbg('ggbOnLoad: diag top-level failed', e); }
         resources.appletApi = api;
         (async () => {
           const msg = { type: 'start', payload: {} };
@@ -235,7 +273,8 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         }
 
         // Prefer ResizeObserver to detect size changes of the container.
-        const targetElem = widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
+        const outerRootElem = document.getElementById('ggb-root');
+        const targetElem = outerRootElem || widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
         const applySize = () => {
           try {
             const el = targetElem;
@@ -243,8 +282,48 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
             const rect = el.getBoundingClientRect();
             const widthV = Math.max(1, Math.floor(rect.width));
             const heightV = Math.max(1, Math.floor(rect.height));
-              try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-              try { api.setSize(widthV, heightV); } catch (e) { dbg('setSize failed', e); }
+            const scaleF = (resources as any).userScaleFactor || 1;
+            const targetWidthPx = Math.max(1, Math.floor(widthV * scaleF));
+            const targetHeightPx = Math.max(1, Math.floor(heightV * scaleF));
+            try { dbg('applySize (vscode): targetElem info', { id: el.id, className: el.className, bounding: { width: rect.width, height: rect.height } }); } catch (e) {}
+                try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
+                try {
+                  // Temporarily apply explicit pixel dimensions to the wrapper so
+                  // GeoGebra recreates its backing canvas at the intended size.
+                  try {
+                    if (wrapperRootForSizing) {
+                      // Use CSS pixel sizes for layout but set backing-pixel
+                      // target via setSize below. Keep wrapper CSS at logical
+                      // pixels to avoid layout jumps.
+                      wrapperRootForSizing.style.width = widthV + 'px';
+                      wrapperRootForSizing.style.height = heightV + 'px';
+                    }
+                  } catch (e) { /* ignore */ }
+
+                  // Prefer setSize when available (forces width+height), fall
+                  // back to setHeight for older APIs. Use scaled pixel targets
+                  // so the applet's backing canvas matches the device/user scale.
+                  if (typeof api?.setSize === 'function') {
+                    dbg('Calling api.setSize (vscode) with', targetWidthPx, targetHeightPx);
+                    api.setSize?.(targetWidthPx, targetHeightPx);
+                  } else if (typeof api?.setHeight === 'function') {
+                    dbg('Calling api.setHeight (vscode) with', targetHeightPx);
+                    api.setHeight(targetHeightPx);
+                  } else {
+                    dbg('No setSize/setHeight available on applet API');
+                  }
+
+                  // Clear our temporary inline dimensions shortly after to allow
+                  // responsive layout to resume.
+                  setTimeout(() => {
+                    try {
+                      if (wrapperRootForSizing) {
+                        wrapperRootForSizing.style.width = '';
+                        wrapperRootForSizing.style.height = '';
+                      }
+                    } catch (e) { /* ignore */ }
+                  }, 120);
+                } catch (e) { dbg('set size/height failed', e); }
               // Force the injected applet DOM to avoid transform scaling and fill
               // the measured container exactly (avoid letterbox due to aspect ratio).
               try {
@@ -267,27 +346,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
                     }
                   };
 
-                  // Apply to the applet node itself
+                  // Apply to the applet node itself only. Avoid traversing and
+                  // mutating ancestor nodes to reduce DOM churn and races.
                   applyImportant(appletNode);
-
-                  // Also apply to nearby ancestors that may carry the transform
-                  // (look for computed transform != 'none' or data-scalex attributes).
-                  try {
-                    let p: HTMLElement | null = appletNode.parentElement;
-                    let depth = 0;
-                    while (p && depth < 6) {
-                      try {
-                        const cs = window.getComputedStyle(p);
-                        if ((cs && cs.transform && cs.transform !== 'none') || p.hasAttribute('data-scalex') || p.classList.contains('applet-wrapper') || p.id?.startsWith('ggbApplet')) {
-                          applyImportant(p);
-                        }
-                      } catch (e) {
-                        /* ignore per-ancestor errors */
-                      }
-                      p = p.parentElement;
-                      depth += 1;
-                    }
-                  } catch (e) { /* ignore ancestor application errors */ }
                 }
               } catch (e) { dbg('Failed to override applet DOM styles (vscode)', e); }
           } catch (e) { dbg('applySize failed', e); }
@@ -312,6 +373,43 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         // Initial apply
         applySize();
 
+        // After initial sizing, remove our temporary explicit wrapper dimensions
+        // so normal responsive layout can resume. Rely on ResizeObserver to
+        // drive subsequent size updates rather than timers.
+        try {
+          try {
+            if (wrapperRootForSizing) {
+              wrapperRootForSizing.style.width = '';
+              wrapperRootForSizing.style.height = '';
+            }
+          } catch (e) { /* ignore */ }
+          // Immediately apply size once more after clearing inline dims.
+          try { applySize(); } catch (e) { /* ignore */ }
+        } catch (e) { /* ignore */ }
+
+        // Diagnostic: collect computed font sizes inside the applet and report
+        try {
+          setTimeout(() => {
+            try {
+              const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
+              if (!appletNode) return;
+              const els = Array.from(appletNode.querySelectorAll('div,span,p,label,td,th')) as HTMLElement[];
+              const sizes: { [k: string]: number } = {};
+              for (let i = 0; i < Math.min(els.length, 80); i++) {
+                try {
+                  const el = els[i];
+                  const cs = window.getComputedStyle(el);
+                  const fs = parseFloat(cs.fontSize || '0') || 0;
+                  const key = `${cs.fontFamily || 'unknown'}|${Math.round(fs)}`;
+                  if (!sizes[key]) sizes[key] = 0;
+                  sizes[key] += 1;
+                } catch (e) { /* ignore per-element errors */ }
+              }
+              dbg('applet: computed font-size samples', { samples: Object.keys(sizes).slice(0, 10), counts: sizes });
+            } catch (e) { dbg('font-size diagnostic failed', e); }
+          }, 500);
+        } catch (e) { /* ignore */ }
+
         // Note: kernel comm, basic listeners, close handler and dialog observer
         // are installed by `setupAppletOnLoadCommon` above. Here we keep
         // the resize/stylesheet behavior specific to the webview.
@@ -320,12 +418,83 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       // Inject the applet using the measured container size and allow upscaling
       try {
         const wrapperDiv = widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
-        // Prefer measuring the widget element itself so height is based on the
-        // element that is styled to fill the webview; fallback to parent.
-        const targetForSize = wrapperDiv ?? (wrapperDiv as HTMLElement | null)?.parentElement ?? null;
+        // Prefer measuring a known outer root if available (in the webview we
+        // expose #ggb-root), otherwise fall back to the widget element or its parent.
+        const outerRoot = document.getElementById('ggb-root');
+        const targetForSize = outerRoot ?? wrapperDiv ?? (wrapperDiv as HTMLElement | null)?.parentElement ?? null;
+
+        // Ensure the wrapper is tagged before GeoGebra inspects ancestors.
+        let wrapperRootForSizing: HTMLElement | null = null;
+          try {
+            wrapperRootForSizing = widgetRef.current || document.getElementById(elementId);
+            // Do not tag wrapper with a scale container class; avoid triggering
+            // GeoGebra's container-scaling behavior which applies CSS transforms.
+          } catch (e) { /* best effort */ }
+
+        // Wait briefly for the container size to stabilise before injecting
+        // the applet — this ensures GeoGebra reads the final dimensions.
+        const waitForStableSize = async (target: HTMLElement | null, timeout = 1500) => {
+          if (!target) return;
+          return new Promise<void>((resolve) => {
+            try {
+              if (typeof (window as any).ResizeObserver === 'function') {
+                let lastW = -1;
+                let lastH = -1;
+                let stableSince = Date.now();
+                const ro = new (window as any).ResizeObserver(() => {
+                  try {
+                    const r = target.getBoundingClientRect();
+                    const w = Math.max(1, Math.floor(r.width));
+                    const h = Math.max(1, Math.floor(r.height));
+                    if (w === lastW && h === lastH) {
+                      if (Date.now() - stableSince > 120) {
+                        try { ro.disconnect(); } catch (e) {}
+                        resolve();
+                      }
+                    } else {
+                      lastW = w; lastH = h; stableSince = Date.now();
+                    }
+                  } catch (e) {
+                    // ignore per-observe errors
+                  }
+                });
+                ro.observe(target);
+                setTimeout(() => { try { ro.disconnect(); } catch (e) {} ; resolve(); }, timeout);
+                return;
+              }
+            } catch (e) {
+              /* ignore */
+            }
+            // Fallback polling
+            let lastKey = '';
+            let stableSince = Date.now();
+            const iv = setInterval(() => {
+              try {
+                const r = target.getBoundingClientRect();
+                const w = Math.max(1, Math.floor(r.width));
+                const h = Math.max(1, Math.floor(r.height));
+                const key = `${w}x${h}`;
+                if (key === lastKey) {
+                  if (Date.now() - stableSince > 120) {
+                    clearInterval(iv);
+                    resolve();
+                  }
+                } else {
+                  lastKey = key;
+                  stableSince = Date.now();
+                }
+              } catch (e) {
+                // ignore
+              }
+            }, 60);
+            setTimeout(() => { try { clearInterval(iv); } catch (e) {}; resolve(); }, timeout + 10);
+          });
+        };
+
+        try { await waitForStableSize(targetForSize, 1500); } catch (e) { /* best-effort */ }
+
         let measuredWidth = 800;
         let measuredHeight = 600;
-        // noop
         try {
           if (targetForSize) {
             const rect = (targetForSize as HTMLElement).getBoundingClientRect();
@@ -336,52 +505,67 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           dbg('Failed to measure container for initial size, falling back to defaults', e);
         }
 
+        // Temporarily set explicit pixel dimensions on the wrapper so
+        // GeoGebra can read a container with concrete sizes at creation time.
+        try {
+          if (wrapperRootForSizing) {
+            wrapperRootForSizing.style.width = measuredWidth + 'px';
+            wrapperRootForSizing.style.height = measuredHeight + 'px';
+          }
+        } catch (e) { /* best-effort */ }
+
         const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
           elementId,
           appName,
           width: measuredWidth,
           height: measuredHeight,
-          // Use the same responsive class as the webview container so
-          // the applet's internal scaling math stays consistent.
-          scaleContainerClass: 'applet-wrapper',
-          // allow the applet to upscale when the panel grows
-          allowUpscale: true,
+          scaleContainerClass: 'ggb-root',
+          allowUpscale: false,
+          autoHeight: false,
           appletOnLoad: ggbOnLoad,
           dbg
         } as any);
         resources.scriptTag = scriptTag || null;
         resources.metaViewport = metaViewport || null;
         resources.injectCleanup = cleanup || null;
-        try {
-          // Insert a forcing stylesheet to override runtime transforms and sizing
-          const css = `
-            .applet_scaler.ggbTransform, #ggbApplet, .applet-wrapper, .GeoGebraFrame, [id^="ggbApplet-"] {
-              width: 100% !important;
-              height: 100% !important;
-              max-width: 100% !important;
-              transform: none !important;
-              transform-origin: 0 0 !important;
-            }
-            .applet_scaler.ggbTransform canvas, #ggbApplet canvas, .applet-wrapper canvas, .GeoGebraFrame canvas, [id^="ggbApplet-"] canvas {
-              width: 100% !important;
-              height: 100% !important;
-            }
-          `;
-          const styleTag = document.createElement('style');
-          styleTag.id = 'ggblab-force-applet-styles';
-          styleTag.appendChild(document.createTextNode(css));
-          (document.head || document.documentElement).appendChild(styleTag);
-          resources.styleTag = styleTag;
-        } catch (e) { dbg('Failed to insert forcing stylesheet', e); }
+        // Webview-side forcing stylesheet and canvas re-scaling removed.
         appletPromise.then((a: any) => {
           _applet = a;
           try {
-            const api = a;
-            // apply size and reapply after short delays to override internal resets
-            try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
-            try { api.setSize(measuredWidth, measuredHeight); dbg('Applied initial applet size (vscode)', measuredWidth, measuredHeight); } catch (e) { dbg('api.setSize failed', e); }
-            setTimeout(() => { try { api.setSize(measuredWidth, measuredHeight); dbg('Reapplied size (250ms)'); } catch (e) { dbg('reapply failed', e); } }, 250);
-            setTimeout(() => { try { api.setSize(measuredWidth, measuredHeight); dbg('Reapplied size (1000ms)'); } catch (e) { dbg('reapply failed', e); } }, 1000);
+            const attemptApplySize = async () => {
+              // Prefer the API provided via ggbOnLoad when available
+              let api: any = resources.appletApi || a;
+              const start = Date.now();
+              while (typeof api?.setHeight !== 'function' && typeof api?.setSize !== 'function' && Date.now() - start < 1500) {
+                await new Promise((r) => setTimeout(r, 100));
+                api = resources.appletApi || a;
+              }
+                if (typeof api?.setHeight === 'function' || typeof api?.setSize === 'function') {
+                try { api.recalculateEnvironments?.(); } catch (e) { dbg('recalculateEnvironments failed', e); }
+                try {
+                  if (typeof api.setHeight === 'function') {
+                    api.setHeight(measuredHeight);
+                    dbg('Applied initial applet height (vscode)', measuredHeight);
+                  } else {
+                    api.setSize(measuredWidth, measuredHeight);
+                    dbg('Applied initial applet size (vscode)', measuredWidth, measuredHeight);
+                  }
+                } catch (e) { dbg('api.setHeight/setSize failed', e); }
+                // No timed reapply — rely on ResizeObserver and MutationObserver.
+              } else {
+                dbg('applet API setHeight/setSize unavailable after wait; skipping apply', { haveApi: !!api, api });
+              }
+            };
+            attemptApplySize().catch((e) => dbg('attemptApplySize failed', e));
+                // Immediately clear temporary inline dimensions and let observers handle later resizes.
+            try {
+              if (wrapperRootForSizing) {
+                wrapperRootForSizing.style.width = '';
+                wrapperRootForSizing.style.height = '';
+              }
+              try { applySize(); } catch (e) { /* ignore */ }
+            } catch (e) { /* ignore */ }
+                // No canvas mount-time polling—scaling disabled in webview.
             // Observe the injected applet node for attribute/style changes
             try {
               const appletNode = document.getElementById('ggbApplet-' + elementId) as HTMLElement | null;
@@ -391,7 +575,16 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
                     const rect3 = (appletNode.parentElement ?? appletNode).getBoundingClientRect();
                     const ww = Math.max(1, Math.floor(rect3.width));
                     const hh = Math.max(1, Math.floor(rect3.height));
-                    try { api.setSize(ww, hh); } catch (e) { /* ignore */ }
+                    try {
+                      const runtimeApi = resources.appletApi || a;
+                      if (typeof runtimeApi?.setHeight === 'function') {
+                        dbg('MutationObserver: calling setHeight (vscode) with', hh);
+                        runtimeApi.setHeight(hh);
+                      } else {
+                        dbg('MutationObserver: calling setSize (vscode) with', ww, hh);
+                        runtimeApi.setSize?.(ww, hh);
+                      }
+                    } catch (e) { /* ignore */ }
                     try {
                       const applyImportant = (node: HTMLElement) => {
                         try {
@@ -407,20 +600,27 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
                         }
                       };
                       applyImportant(appletNode);
+                      // If the applet contains iframes, try injecting styles there too
                       try {
-                        let p: HTMLElement | null = appletNode.parentElement;
-                        let depth = 0;
-                        while (p && depth < 6) {
-                          try {
-                            const cs = window.getComputedStyle(p);
-                            if ((cs && cs.transform && cs.transform !== 'none') || p.hasAttribute('data-scalex') || p.classList.contains('applet-wrapper') || p.id?.startsWith('ggbApplet')) {
-                              applyImportant(p);
+                        const root = appletNode;
+                        if (root) {
+                          const iframes = root.querySelectorAll('iframe');
+                          iframes.forEach((f: HTMLIFrameElement) => {
+                            try {
+                              const doc = f.contentDocument || (f as any).contentWindow?.document;
+                              if (doc && doc.head) {
+                                const st = doc.createElement('style');
+                                st.appendChild(doc.createTextNode(css));
+                                doc.head.appendChild(st);
+                              }
+                            } catch (e) {
+                              // ignore cross-origin
                             }
-                          } catch (e) { /* ignore */ }
-                          p = p.parentElement;
-                          depth += 1;
+                          });
                         }
-                      } catch (e) { /* ignore ancestor errors */ }
+                      } catch (e) { /* ignore iframe injection errors */ }
+                      // Schedule a debounced reapply to adjust canvases if needed.
+                      try { scheduleCanvasReapply(); } catch (e) {}
                     } catch (e) { /* ignore */ }
                   } catch (e) { dbg('appletStyleObserver handler error (vscode)', e); }
                 });

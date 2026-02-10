@@ -195,13 +195,16 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				resources.resizeHandler = function () {
 					try {
 						const wrapperDiv = document.getElementById(elementId) as HTMLElement | null;
-						const target = wrapperDiv?.parentElement ?? wrapperDiv;
-						if (!target) {
-							return;
-						}
-						const rect = target.getBoundingClientRect();
-						const width = Math.max(1, Math.floor(rect.width));
-						const height = Math.max(1, Math.floor(rect.height));
+						const parentDiv = wrapperDiv?.parentElement;
+    				    const width = parseInt(parentDiv?.style.width || '800');
+						const height = parseInt(parentDiv?.style.height || '600');
+						// const target = wrapperDiv?.parentElement ?? wrapperDiv;
+						// if (!target) {
+						// 	return;
+						// }
+						// const rect = target.getBoundingClientRect();
+						// const width = Math.max(1, Math.floor(rect.width));
+						// const height = Math.max(1, Math.floor(rect.height));
 						try {
 							api.recalculateEnvironments();
 						} catch (e) {
@@ -240,8 +243,9 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 					appName: props?.appName || 'suite',
 					width: measuredWidth,
 					height: measuredHeight,
-					scaleContainerClass: undefined,
-					allowUpscale: true,
+					// autoHeight: true,
+					scaleContainerClass: 'lm-Panel',
+					allowUpscale: false,
 					appletOnLoad: ggbOnLoad,
 					dbg
 				});
