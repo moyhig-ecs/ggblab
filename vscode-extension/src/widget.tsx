@@ -595,6 +595,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           dbg('Failed to measure container for initial size, falling back to defaults', e);
         }
 
+        const scaleContainerClass = document.getElementById('root') ? 'root' : 'ggb-root';
         const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
           elementId,
           appName,
@@ -602,7 +603,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           height: measuredHeight,
           // Use the same responsive class as the webview container so
           // the applet's internal scaling math stays consistent.
-          scaleContainerClass: 'applet-wrapper',
+          scaleContainerClass,
           // allow the applet to upscale when the panel grows
           allowUpscale: true,
           appletOnLoad: ggbOnLoad,
