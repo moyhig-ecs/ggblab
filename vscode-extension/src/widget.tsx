@@ -685,7 +685,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
           // the applet's internal scaling math stays consistent.
           scaleContainerClass,
           // allow the applet to upscale when the panel grows
-          allowUpscale: true,
+          allowUpscale: false,
           appletOnLoad: ggbOnLoad,
           dbg
         } as any);
