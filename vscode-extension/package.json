@@ -61,8 +61,7 @@
     "validate.io-number": "^1.0.3",
     "ws": "^8.19.0",
     "y-protocols": "^1.0.7",
-    "yjs": "^13.6.29"
-    ,
+    "yjs": "^13.6.29",
     "cross-fetch": "^3.1.5"
   },
   "devDependencies": {
