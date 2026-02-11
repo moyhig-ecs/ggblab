@@ -34,7 +34,6 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
   const widgetRef = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef<boolean>(false);
   const resourcesRef = useRef<any | null>(null);
-  const isVsCode = typeof (window as any).acquireVsCodeApi === 'function';
 
   function dbg(...args: any[]) {
     // Local console output when enabled
@@ -474,19 +473,6 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
 
         // Use a stable class name for the scale container (not a DOM element)
         const scaleContainerClass = 'applet-wrapper';
-        // Ensure the wrapper has explicit pixel measurements available
-        try {
-          const wdiv = widgetRef.current || document.getElementById(elementId) as HTMLElement | null;
-          if (wdiv) {
-            try {
-              wdiv.style.width = String(measuredWidth) + 'px';
-              wdiv.style.height = String(measuredHeight) + 'px';
-              wdiv.setAttribute('data-measured-width', String(measuredWidth));
-              wdiv.setAttribute('data-measured-height', String(measuredHeight));
-            } catch (e) { dbg('Failed to set wrapper pixel size', e); }
-          }
-        } catch (e) { /* ignore */ }
-
         const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
           elementId,
           appName,
@@ -608,7 +594,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
   }, []);
 
   return (
-    <div id={elementId} ref={widgetRef} className={isVsCode ? 'applet-wrapper lm-Panel' : 'applet-wrapper'} style={{ width: '100%', height: '100%' }} />
+    <div id={elementId} ref={widgetRef} className="applet-wrapper" style={{ width: '100%', height: '100%' }} />
   );
 };
 
