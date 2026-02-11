@@ -34,6 +34,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
   const widgetRef = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef<boolean>(false);
   const resourcesRef = useRef<any | null>(null);
+  const isVsCode = typeof (window as any).acquireVsCodeApi === 'function';
 
   function dbg(...args: any[]) {
     // Local console output when enabled
@@ -472,7 +473,10 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         }
 
         // Use a stable class name for the scale container (not a DOM element)
-        const scaleContainerClass = 'applet-wrapper';
+        // In JupyterLab we pass 'lm-Panel' so GeoGebra uses the surrounding
+        // Lumino panel geometry. Match that in the VS Code webview to avoid
+        // DPR inverse-scaling issues.
+        const scaleContainerClass = isVsCode ? 'lm-Panel' : 'applet-wrapper';
         const { appletPromise, scriptTag, metaViewport, cleanup } = injectGeoGebraApplet({
           elementId,
           appName,
@@ -594,7 +598,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
   }, []);
 
   return (
-    <div id={elementId} ref={widgetRef} className="applet-wrapper" style={{ width: '100%', height: '100%' }} />
+    <div id={elementId} ref={widgetRef} className={isVsCode ? 'applet-wrapper lm-Panel' : 'applet-wrapper'} style={{ width: '100%', height: '100%' }} />
   );
 };
 
