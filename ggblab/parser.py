@@ -240,7 +240,7 @@ class ggb_parser:
             return segments[0]
         return segments
 
-    def tokenize(self, cmd_string, extract_commands=False):
+    def tokenize(self, cmd_string, extract_commands=False, simplify=False):
         """Tokenize input then remove comma tokens.
 
         This is a convenience wrapper that calls `tokenize_with_commas` and
@@ -311,11 +311,16 @@ class ggb_parser:
             cleaned = _normalize_triple_nesting(cleaned)
             converted = convert_q_to_nan(cleaned)
             pruned = _prune_nans(converted)
+            if simplify:
+                pruned = self.tokenize_simplify(pruned)
             return {'tokens': pruned, 'commands': res.get('commands', set())}
         cleaned = self.strip_comma(res)
         cleaned = _normalize_triple_nesting(cleaned)
         converted = convert_q_to_nan(cleaned)
-        return _prune_nans(converted)
+        pruned = _prune_nans(converted)
+        if simplify:
+            pruned = self.tokenize_simplify(pruned)
+        return pruned
 
     def reconstruct_from_tokens(self, parsed_tokens):
         """Reconstruct the original command string from tokenized structured list.
@@ -373,3 +378,67 @@ class ggb_parser:
                                  ' '.join(result).replace(' , ', ', ')))
         else:
             raise ValueError("Unexpected token type in parsed_tokens.")
+
+    def tokenize_simplify(self, tokens, rel_tol=1e-9, abs_tol=1e-12):
+        """Return a simplified token structure by removing duplicate list elements.
+
+        For any list whose elements are all lists, duplicate elements are removed
+        (keeping first occurrence). When comparing numeric tokens, floating
+        point values are compared with `math.isclose` using the provided
+        tolerances. This preserves semantics for coefficient tokens.
+
+        Args:
+            tokens: Token structure (as returned by `tokenize`).
+            rel_tol, abs_tol: Tolerances passed to `math.isclose` for numeric comparisons.
+
+        Returns:
+            Simplified token structure.
+        """
+        def _is_float_like(x):
+            if isinstance(x, float):
+                return True
+            if not isinstance(x, str):
+                return False
+            try:
+                float(x)
+                return True
+            except Exception:
+                return False
+
+        def _deep_eq(a, b):
+            # List vs list: elementwise compare
+            if isinstance(a, list) and isinstance(b, list):
+                if len(a) != len(b):
+                    return False
+                return all(_deep_eq(x, y) for x, y in zip(a, b))
+
+            # Numeric comparison when both are float-like
+            if _is_float_like(a) and _is_float_like(b):
+                try:
+                    af = float(a)
+                    bf = float(b)
+                except Exception:
+                    return a == b
+                if math.isnan(af) and math.isnan(bf):
+                    return True
+                return math.isclose(af, bf, rel_tol=rel_tol, abs_tol=abs_tol)
+
+            # Fallback: direct equality
+            return a == b
+
+        def _recurse(obj):
+            if isinstance(obj, list):
+                children = [_recurse(e) for e in obj]
+                # If this is a list-of-lists, deduplicate by deep equality
+                if children and all(isinstance(c, list) for c in children):
+                    seen = []
+                    out = []
+                    for c in children:
+                        if not any(_deep_eq(c, s) for s in seen):
+                            seen.append(c)
+                            out.append(c)
+                    return out
+                return children
+            return obj
+
+        return _recurse(tokens)

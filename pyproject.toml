@@ -29,6 +29,8 @@ dependencies = [
     "aiofiles",
     "xmlschema",
     "networkx",
+    "numpy",
+    "sympy",
     "ipykernel",
     "pyperclip",
 ]

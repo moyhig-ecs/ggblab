@@ -13,5 +13,14 @@ startup lightweight.
 
 from .construction_io import ConstructionIO, DataFrameIO  # re-export for convenience
 from .construction_parser import ConstructionTreeParser, ggb_parser  # re-export parser
+from .graph_similarity import hungarian_similarity, collapse_scc, cost_between
 
-__all__ = ["ConstructionIO", "DataFrameIO", "ConstructionTreeParser", "ggb_parser"]
+__all__ = [
+	"ConstructionIO",
+	"DataFrameIO",
+	"ConstructionTreeParser",
+	"ggb_parser",
+	"hungarian_similarity",
+	"collapse_scc",
+	"cost_between",
+]
