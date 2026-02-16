@@ -191,6 +191,45 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
         return s2.rstrip()
 
     instance = None
+    # Support line magics where the user passed a quoted multi-line
+    # string as the single argument, e.g.:
+    #   %ggb '(0, 0)\n# (1,0)\nCircle(_1, 1)\n'
+    # or with an instance name prefix:
+    #   %ggb ggb1 '(0,0)\n...'
+    # In these cases IPython provides the raw string with literal
+    # backslash escapes; decode them into real newlines and treat the
+    # result as a `cell` so the existing cell-logic will parse it.
+    if cell is None:
+        raw = line or ''
+        try:
+            parts = raw.split(None, 1)
+            # Case: instance + quoted string: "inst '...')"
+            if len(parts) == 2 and parts[1] and parts[1][0] in ("'", '"') and parts[1][-1] == parts[1][0]:
+                inst_candidate = parts[0]
+                quoted = parts[1]
+                content = quoted[1:-1]
+                cell = content
+                line = inst_candidate
+            # Case: quoted-only form: "'...'")
+            elif raw and raw[0] in ("'", '"') and raw[-1] == raw[0]:
+                cell = raw[1:-1]
+                line = ''
+            # If quotes were stripped by the frontend but the argument contains
+            # newline escapes, treat the raw string as verbatim cell content.
+            elif raw and ('\\n' in raw or '\n' in raw):
+                parts_nl = raw.split(None, 1)
+                if len(parts_nl) == 2 and parts_nl[0].isidentifier():
+                    _dbg("_parse_commands: detected instance+raw with newline escapes; instance=%r", parts_nl[0])
+                    line = parts_nl[0]
+                    cell = parts_nl[1]
+                else:
+                    _dbg("_parse_commands: detected raw with newline escapes; treating as cell verbatim: raw=%r", raw)
+                    cell = raw
+                    line = ''
+        except Exception:
+            # Best-effort parsing; fall back to leaving `cell` as None
+            pass
+    _dbg("_parse_commands: raw_line=%r cell=%r", line, cell)
     if cell is not None:
         # cell magic: first token on the line may be an instance name
         parts = line.split(None, 1)
@@ -252,110 +291,10 @@ def register_ggb_magic(ipython=None):
         except Exception:
             user_ns = {}
 
-        if cell is None and isinstance(cmds, list) and len(cmds) == 1:
-            raw_tok = cmds[0].strip() if cmds[0] is not None else ''
-            # normalize token by removing outer quotes if present
-            raw_tok_str = _strip_outer_quotes(raw_tok)
-            # allow both `{name}` and `name`
-            var_match = None
-            try:
-                var_match = __import__('re').match(r'^\{\s*([A-Za-z_]\w*)\s*\}$', raw_tok)
-            except Exception:
-                var_match = None
-            # Only expand the brace form `{name}`. Do NOT expand a bare
-            # identifier like `%ggb name`.
-            if var_match:
-                varname = var_match.group(1)
-            else:
-                varname = None
-
-            # Debug: show token parsing result (compact preview + metrics)
-            try:
-                ns_info = f"{len(user_ns)} names" if isinstance(user_ns, dict) else None
-                tok_preview = (raw_tok.replace('\n', '\\n')[:120]) if isinstance(raw_tok, str) else repr(raw_tok)[:120]
-                raw_preview = (raw_tok_str.replace('\n', '\\n')[:120]) if isinstance(raw_tok_str, str) else repr(raw_tok_str)[:120]
-                tok_len = len(raw_tok) if hasattr(raw_tok, '__len__') else 0
-                tok_lines = raw_tok.count('\n') + 1 if isinstance(raw_tok, str) else 0
-                _dbg("[ggb-magic-debug] token_preview=%r len=%d lines=%d raw_preview=%r varname=%r user_ns=%r",
-                     tok_preview, tok_len, tok_lines, raw_preview, varname, ns_info)
-            except Exception:
-                pass
-
-            # If we couldn't detect a {name} form (because a frontend already
-            # expanded it), try to find a variable in the user namespace whose
-            # string contents match the token. This lets frontends that expand
-            # `{var}` before our magic run still behave like `%ggb var`.
-            # Do not attempt content-matching for bare identifiers like
-            # `cmds` (we only accept brace form explicitly).
-            if varname is None and not raw_tok_str.isidentifier():
-                try:
-                    tgt = raw_tok_str.strip()
-                    if isinstance(user_ns, dict):
-                        for k, v in user_ns.items():
-                            # skip obvious internals
-                            if k.startswith('__'):
-                                continue
-                            # string variables: compare stripped content
-                            if isinstance(v, str):
-                                vv = v.strip()
-                                if (vv.startswith("'") and vv.endswith("'")) or (vv.startswith('"') and vv.endswith('"')):
-                                    vv = vv[1:-1].strip()
-                                if vv == tgt:
-                                    varname = k
-                                    try:
-                                        _dbg("[ggb-magic-debug] matched token content to var %r", k)
-                                    except Exception:
-                                        pass
-                                    break
-                            # list/tuple: join by newlines and compare
-                            if isinstance(v, (list, tuple)):
-                                joined = '\n'.join(str(x) for x in v).strip()
-                                if joined == tgt:
-                                    varname = k
-                                    try:
-                                        _dbg("[ggb-magic-debug] matched token content to list/tuple var %r", k)
-                                    except Exception:
-                                        pass
-                                    break
-                except Exception:
-                    pass
-
-            if varname and varname in user_ns:
-                val = user_ns[varname]
-                if isinstance(val, str):
-                    v2 = _strip_outer_quotes(val.strip())
-                    # Prepare debug raw preview (convert literal \n to escaped form)
-                    try:
-                        raw_preview = v2.replace('\\n', '\n')
-                    except Exception:
-                        raw_preview = v2
-                    new_cmds = []
-                    for ln in v2.splitlines():
-                        cleaned = _clean_cmd_line(ln)
-                        if cleaned:
-                            new_cmds.append(cleaned)
-                    # Compact debug: show line/command counts and short preview
-                    try:
-                        lines = raw_preview.splitlines()
-                        preview = raw_preview.replace('\n', '\\n')[:120]
-                        sample = new_cmds[:5]
-                        _dbg("[ggb-magic-debug] expanded %r: %d lines, %d cmds, preview=%r, sample=%r",
-                             varname, len(lines), len(new_cmds), preview, sample)
-                        if len(new_cmds) > 5:
-                            _dbg("[ggb-magic-debug] expanded %r: showing first %d of %d cmds",
-                                 varname, 5, len(new_cmds))
-                    except Exception:
-                        pass
-                    if new_cmds:
-                        inst_name = None
-                        cmds = new_cmds
-                elif isinstance(val, (list, tuple)):
-                    try:
-                        cmds = [str(x) for x in val if x is not None]
-                        inst_name = None
-                        # already logged a compact summary above
-                    except Exception:
-                        pass
+        # Note: IPython/Frontend performs expansion of `{var}` into `cmds`.
+        # We intentionally do not re-run expansion here; use `cmds` as
+        # returned by `_parse_commands` without attempting to resolve
+        # brace-wrapped tokens in the user namespace.
         ggb_instance = None
         ip = get_ipython()
         user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
@@ -364,6 +303,19 @@ def register_ggb_magic(ipython=None):
                 maybe = user_ns[inst_name]
                 if isinstance(maybe, GeoGebra):
                     ggb_instance = maybe
+            else:
+                # If the user provided an instance name but it's not present
+                # in the user namespace, check whether a class-level singleton
+                # exists and use it (treat the provided name as an alias
+                # referring to the singleton). This handles cases like
+                # "%ggb ggb '(...)'" where `ggb` is the well-known
+                # singleton rather than an explicit variable in `user_ns`.
+                try:
+                    inst = getattr(GeoGebra, '_instance', None)
+                    if isinstance(inst, GeoGebra):
+                        ggb_instance = inst
+                except Exception:
+                    pass
         else:
             # No explicit name provided: try to find any GeoGebra instance in user namespace
             try:
@@ -390,6 +342,11 @@ def register_ggb_magic(ipython=None):
                     inst = GeoGebra()
                 if 'ggb' not in user_ns:
                     user_ns['ggb'] = inst
+                    try:
+                        # Inform the user that we populated their namespace
+                        print("ggblab: GeoGebra singleton created and assigned to name 'ggb' in the user namespace.")
+                    except Exception:
+                        pass
                 ggb_instance = inst
         except Exception:
             pass
