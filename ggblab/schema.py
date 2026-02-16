@@ -7,6 +7,7 @@ compiled `xmlschema.XMLSchema` object for validating GeoGebra construction XML.
 
 import io
 import os
+import logging
 
 import requests
 import xmlschema
@@ -78,9 +79,9 @@ class ggb_schema:
             # pprint(data_dict)
 
         except xmlschema.validators.exceptions.XMLSchemaValidationError as e:
-            print(f"XML validation error: {e}")
+            logging.getLogger(__name__).exception("XML validation error: %s", e)
         except Exception as e:
-            print(f"An error occurred: {e}")
+            logging.getLogger(__name__).exception("An error occurred: %s", e)
 
 
 def cache_schema_locally(schema_url, local_file_path):
@@ -109,11 +110,10 @@ def cache_schema_locally(schema_url, local_file_path):
         header to refresh stale cached schemas.
     """
     if os.path.exists(local_file_path):
-        print(f"Using local cached file: {local_file_path}")
+        logging.getLogger(__name__).debug("Using local cached file: %s", local_file_path)
         with open(local_file_path, 'r', encoding='utf-8') as f:
             return f.read()
-
-    print(f"Local file not found. Downloading from: {schema_url}")
+    logging.getLogger(__name__).debug("Local file not found. Downloading from: %s", schema_url)
     try:
         response = requests.get(schema_url)
         response.raise_for_status()  # Raise an exception for bad status codes
@@ -121,9 +121,9 @@ def cache_schema_locally(schema_url, local_file_path):
         # Save the content to the local file
         with open(local_file_path, 'w', encoding='utf-8') as f:
             f.write(response.text)
-        print(f"Successfully downloaded and saved to: {local_file_path}")
+        logging.getLogger(__name__).debug("Successfully downloaded and saved to: %s", local_file_path)
         return response.text
 
     except requests.exceptions.RequestException as e:
-        print(f"Error downloading schema: {e}")
+        logging.getLogger(__name__).exception("Error downloading schema: %s", e)
         return None

@@ -373,7 +373,7 @@ class GeoGebra:
             # await self.refresh_object_cache()
             self._applet_objects = set()
             
-            self._initialized = True
+            self.initialized = True
         return self
     
     def _is_literal(self, token):

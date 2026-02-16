@@ -1,7 +1,8 @@
 /* eslint-disable */
 import React, { useEffect, useRef } from 'react';
 import { injectGeoGebraApplet } from '../../src/shared/createApplet';
-import setupKernelResources, { isArrayOfArrays } from '../../src/components/jupyterlab';
+import setupKernelResources from '../../src/components/jupyterlab';
+import { isArrayOfArrays } from '../../src/shared/geoGebraCommon';
 import { createProcessCommandMessage } from '../../src/shared/geoGebraCommon';
 import setupAppletOnLoadCommon from '../../src/shared/appletOnLoadCommon';
 import { initKernelCommHelpers } from '../../src/comm/kernel_comm';

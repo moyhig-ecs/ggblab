@@ -202,10 +202,11 @@ class ConstructionIO:
         if not isinstance(norm_df, pl.DataFrame):
             raise TypeError("Normalized DataFrame expected at this point")
 
-        # add a stable construction sequence index (0-based) to preserve
+        # add a stable construction sequence index (1-based) to preserve
         # the original construction protocol ordering for downstream tools
+        # (change from 0-origin to 1-origin as requested)
         if "Sequence" not in norm_df.columns:
-            norm_df = norm_df.with_row_index("Sequence", offset=0)
+            norm_df = norm_df.with_row_index("Sequence", offset=1)
 
         for _bcol in ("ShowObject", "ShowLabel", "Auxiliary"):
             if _bcol in norm_df.columns:
@@ -217,6 +218,80 @@ class ConstructionIO:
                 )
 
         return norm_df
+
+    @staticmethod
+    def commands_for_ggb(df: pl.DataFrame) -> Sequence[str]:
+        """Produce a list of GeoGebra command strings ready for `%%ggb` input.
+
+        The returned commands have object `Name` references replaced with the
+        underscore-number notation (e.g. `_3`) that the IPython magic understands.
+
+        Args:
+            df: Normalized DataFrame returned by `initialize_dataframe`.
+
+        Returns:
+            Sequence[str]: list of transformed command strings ordered by `Sequence`.
+        """
+        if not isinstance(df, pl.DataFrame):
+            raise TypeError("df must be a polars DataFrame")
+        if "Sequence" not in df.columns or "Name" not in df.columns:
+            raise ValueError("DataFrame must contain 'Name' and 'Sequence' columns")
+
+        # Build a mapping from object name -> 1-based sequence index
+        try:
+            rows = df.select(["Name", "Sequence", "Command"]).sort("Sequence").to_dicts()
+        except Exception:
+            # Fallback for older polars versions
+            rows = sorted([{k: r.get(k) for k in ("Name", "Sequence", "Command")} for r in df.to_dicts()], key=lambda x: x.get("Sequence") or 0)
+
+        name_to_seq = {}
+        for r in rows:
+            n = r.get("Name")
+            seq = r.get("Sequence")
+            try:
+                if n is not None and seq is not None:
+                    name_to_seq[str(n)] = int(seq)
+            except Exception:
+                continue
+
+        import re
+
+        # sort by length so longer names are replaced first to avoid partial
+        # replacements (e.g. 'A' inside 'A1')
+        names_sorted = sorted(name_to_seq.keys(), key=len, reverse=True)
+
+        def _transform_command(cmd: Optional[str]) -> str:
+            if not cmd or not isinstance(cmd, str):
+                return ""
+            s = cmd
+            for name in names_sorted:
+                seq = name_to_seq.get(name)
+                if seq is None:
+                    continue
+                # replace whole-name occurrences only
+                s = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", f"_{seq}", s)
+            return s
+
+        out: list[str] = []
+        for r in rows:
+            cmd = r.get("Command")
+            t = _transform_command(cmd)
+            if t:
+                out.append(t)
+        return out
+
+    @staticmethod
+    def commands_for_magic(df: pl.DataFrame, as_string: bool = True):
+        """Return commands ready for `%%ggb` usage.
+
+        By default returns a single newline-separated string so callers can
+        directly pass it to `print()` or to a cell. If `as_string` is False,
+        returns the list of command strings (backwards-compatible behavior).
+        """
+        cmds = ConstructionIO.commands_for_ggb(df)
+        if as_string:
+            return "\n".join(cmds)
+        return cmds
 
     @staticmethod
     def write_parquet(df: pl.DataFrame, file: Optional[str] = None) -> None:

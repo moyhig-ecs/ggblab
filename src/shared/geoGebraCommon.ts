@@ -1,6 +1,9 @@
 // Shared helpers extracted from GeoGebraApplet and VSCode widget
 export function isArrayOfArrays(value: any): boolean {
-	return Array.isArray(value) && value.every((subArray: any) => Array.isArray(subArray));
+	// Treat an empty array as NOT an array-of-arrays. Only consider it
+	// an array-of-arrays when it has at least one element and every
+	// element is itself an array.
+	return Array.isArray(value) && value.length > 0 && value.every((subArray: any) => Array.isArray(subArray));
 }
 
 export function createProcessCommandMessage(resources: any, callRemoteSocketSend: (m: string) => Promise<void>, isArrayOfArraysFn: (v: any) => boolean, dbg: (...args: any[]) => void) {

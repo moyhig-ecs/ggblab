@@ -150,9 +150,37 @@ def load_ipython_extension(ipython):
                 # Use the module-level singleton to perform registration
                 ggb_comm_instance.register_target()
                 globals()["_jupyter_ggblab_registered"] = True
-                print("ggblab: comm target registered (jupyter.ggblab)")
+                import logging as _logging
+                _logging.getLogger(__name__).debug("ggblab: comm target registered (jupyter.ggblab)")
             except Exception as e:
-                print("ggblab: comm registration failed:", e)
+                import logging as _logging
+                _logging.getLogger(__name__).exception("ggblab: comm registration failed")
+        # Attempt to register IPython magics (non-critical)
+        try:
+            from .ipymagic import register_ggb_magic
+            try:
+                register_ggb_magic(ipython)
+            except Exception:
+                # Don't let magic registration break extension load
+                pass
+        except Exception:
+            pass
     except Exception:
         # Defensive: never raise from load_ipython_extension
         pass
+
+
+# Auto-register IPython extension when `import ggblab` happens inside
+# an IPython environment (e.g., Jupyter notebook). This is best-effort
+# and must not fail import if IPython is unavailable.
+try:
+    from IPython import get_ipython as _get_ipython
+    _ip = _get_ipython()
+    if _ip is not None:
+        try:
+            load_ipython_extension(_ip)
+        except Exception:
+            # Non-critical: avoid breaking normal imports
+            pass
+except Exception:
+    pass

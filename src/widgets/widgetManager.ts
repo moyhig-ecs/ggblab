@@ -4,6 +4,7 @@
 
 export type WidgetManagerType = any;
 import type { IRegisterWidgetCommOptions } from '../types';
+import { isArrayOfArrays } from '../shared/geoGebraCommon';
 
 let _injectedWidgetManager: WidgetManagerType | undefined = undefined;
 
@@ -106,9 +107,10 @@ export function registerWidgetCommTargets(kernelConn: any, opts: IRegisterWidget
 					} else if (command.type === 'function' && appletApi) {
 						const apiName = command.payload.name;
 						const args = command.payload.args;
+						const isArrayOfArraysFn = (opts && (opts as any).isArrayOfArrays) ? (opts as any).isArrayOfArrays : isArrayOfArrays;
 						let value: any[] = [];
 						(Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-							if (typeof (opts as any).isArrayOfArrays === 'function' && (opts as any).isArrayOfArrays(args)) {
+							if (isArrayOfArraysFn(args)) {
 								const v2: any[] = [];
 								args.forEach((a: any[]) => {
 									v2.push(typeof appletApi[f] === 'function' ? appletApi[f](...a) : null);
