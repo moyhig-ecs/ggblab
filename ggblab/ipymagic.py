@@ -9,6 +9,7 @@ from typing import Optional, Tuple, List
 import asyncio
 import sys
 import os
+import re
 
 from IPython import get_ipython
 
@@ -50,6 +51,37 @@ def _dbg(*a, **kw):
         pass
 
 
+def _strip_outer_quotes(s: str) -> str:
+    try:
+        s2 = s.strip()
+        if (s2.startswith("'") and s2.endswith("'")) or (s2.startswith('"') and s2.endswith('"')):
+            return s2[1:-1].strip()
+        return s2
+    except Exception:
+        return s
+
+
+def _clean_cmd_line(ln: str) -> str:
+    """Normalize a single command line extracted from a multi-line variable.
+
+    - strip whitespace
+    - remove full-line or inline comments
+    - unwrap surrounding braces or quotes
+    - return empty string for comments/blank
+    """
+    try:
+        ln2 = ln.strip()
+        if not ln2 or ln2.startswith('#'):
+            return ''
+        ln3 = ln2.split('#', 1)[0].strip()
+        if ln3.startswith('{') and ln3.endswith('}'):
+            ln3 = ln3[1:-1].strip()
+        ln3 = _strip_outer_quotes(ln3)
+        return ln3.strip()
+    except Exception:
+        return ''
+
+
 async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] = None):
     ggb = ggb_instance or GeoGebra()
     if not getattr(ggb, 'initialized', False):
@@ -58,41 +90,24 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
         except Exception:
             # If init fails, continue and let command raise later
             pass
-    import re
-
     results: List[str] = []
-
     def _stringify(v) -> str:
-        try:
-            if isinstance(v, str):
-                # If GeoGebra returns a comma-separated multi-value string
-                # (e.g. Polygon returns like "t1,e,a,d") and it's not a
-                # function-like expression, use only the first token.
-                if ',' in v and '(' not in v and ')' not in v:
-                    try:
-                        return v.split(',', 1)[0].strip()
-                    except Exception:
-                        return v
-                return v
-            # If GeoGebra returns a dict like {'label': 'A'}, prefer label
-            if isinstance(v, dict):
-                if 'label' in v:
-                    return str(v['label'])
-                # fall back to 'result' or full repr
-                if 'result' in v:
-                    return str(v['result'])
-            # lists/tuples: join or take first
-            if isinstance(v, (list, tuple)):
-                # Prefer the first element for multi-valued results.
-                try:
-                    if len(v) >= 1:
-                        return _stringify(v[0])
-                except Exception:
-                    pass
-                return ''
+        if isinstance(v, str):
+            # If GeoGebra returns a comma-separated multi-value string
+            # (e.g. Polygon returns like "t1,e,a,d") and it's not a
+            # function-like expression, prefer the first token.
+            if ',' in v and '(' not in v and ')' not in v:
+                return v.split(',', 1)[0].strip()
+            return v
+        if isinstance(v, dict):
+            if 'label' in v:
+                return str(v['label'])
+            if 'result' in v:
+                return str(v['result'])
             return str(v)
-        except Exception:
-            return str(v)
+        if isinstance(v, (list, tuple)):
+            return _stringify(v[0]) if v else ''
+        return str(v)
 
     # Pattern matches either a numeric form like '_2' (group 1) or a run
     # of underscores like '__' (group 2, includes all underscores). Numeric form takes precedence.
@@ -237,11 +252,8 @@ def register_ggb_magic(ipython=None):
 
         if cell is None and isinstance(cmds, list) and len(cmds) == 1:
             raw_tok = cmds[0].strip() if cmds[0] is not None else ''
-            # If the token is quoted (e.g. "'{cmds}'"), strip outer quotes
-            if (raw_tok.startswith("'") and raw_tok.endswith("'")) or (raw_tok.startswith('"') and raw_tok.endswith('"')):
-                raw_tok_str = raw_tok[1:-1].strip()
-            else:
-                raw_tok_str = raw_tok
+            # normalize token by removing outer quotes if present
+            raw_tok_str = _strip_outer_quotes(raw_tok)
             # allow both `{name}` and `name`
             var_match = None
             try:
@@ -257,21 +269,9 @@ def register_ggb_magic(ipython=None):
 
             # Debug: show token parsing result (compact preview + metrics)
             try:
-                ns_info = None
-                if isinstance(user_ns, dict):
-                    try:
-                        ns_info = f"{len(user_ns)} names"
-                    except Exception:
-                        ns_info = None
-                # prepare short previews to avoid huge dumps in logs
-                try:
-                    tok_preview = raw_tok.replace('\n', '\\n')[:120]
-                except Exception:
-                    tok_preview = repr(raw_tok)[:120]
-                try:
-                    raw_preview = raw_tok_str.replace('\n', '\\n')[:120]
-                except Exception:
-                    raw_preview = repr(raw_tok_str)[:120]
+                ns_info = f"{len(user_ns)} names" if isinstance(user_ns, dict) else None
+                tok_preview = (raw_tok.replace('\n', '\\n')[:120]) if isinstance(raw_tok, str) else repr(raw_tok)[:120]
+                raw_preview = (raw_tok_str.replace('\n', '\\n')[:120]) if isinstance(raw_tok_str, str) else repr(raw_tok_str)[:120]
                 tok_len = len(raw_tok) if hasattr(raw_tok, '__len__') else 0
                 tok_lines = raw_tok.count('\n') + 1 if isinstance(raw_tok, str) else 0
                 _dbg("[ggb-magic-debug] token_preview=%r len=%d lines=%d raw_preview=%r varname=%r user_ns=%r",
@@ -321,34 +321,17 @@ def register_ggb_magic(ipython=None):
             if varname and varname in user_ns:
                 val = user_ns[varname]
                 if isinstance(val, str):
-                    v2 = val.strip()
-                    if (v2.startswith("'") and v2.endswith("'")) or (v2.startswith('"') and v2.endswith('"')):
-                        v2 = v2[1:-1]
-                    # Prepare debug raw preview (convert literal \n to real newlines)
+                    v2 = _strip_outer_quotes(val.strip())
+                    # Prepare debug raw preview (convert literal \n to escaped form)
                     try:
                         raw_preview = v2.replace('\\n', '\n')
                     except Exception:
                         raw_preview = v2
                     new_cmds = []
                     for ln in v2.splitlines():
-                        ln2 = ln.strip()
-                        if not ln2:
-                            continue
-                        if ln2.startswith('#'):
-                            continue
-                        ln3 = ln2.split('#', 1)[0].rstrip()
-                        if ln3.startswith('{') and ln3.endswith('}'):
-                            ln3 = ln3[1:-1].strip()
-                        if ln3.startswith("'"):
-                            ln3 = ln3[1:]
-                        if ln3.endswith("'"):
-                            ln3 = ln3[:-1]
-                        if ln3.startswith('"'):
-                            ln3 = ln3[1:]
-                        if ln3.endswith('"'):
-                            ln3 = ln3[:-1]
-                        if ln3:
-                            new_cmds.append(ln3)
+                        cleaned = _clean_cmd_line(ln)
+                        if cleaned:
+                            new_cmds.append(cleaned)
                     # Compact debug: show line/command counts and short preview
                     try:
                         lines = raw_preview.splitlines()
