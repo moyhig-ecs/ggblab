@@ -282,19 +282,9 @@ def register_ggb_magic(ipython=None):
 
     def _ggb_magic(line, cell=None):
         inst_name, cmds = _parse_commands(line, cell)
-        # If the magic was invoked with a single token (identifier or {identifier}),
-        # treat that token as a variable name whose value contains the commands
-        # (string with newlines) or a list of command strings.
-        try:
-            ip = get_ipython()
-            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
-        except Exception:
-            user_ns = {}
-
-        # Note: IPython/Frontend performs expansion of `{var}` into `cmds`.
-        # We intentionally do not re-run expansion here; use `cmds` as
-        # returned by `_parse_commands` without attempting to resolve
-        # brace-wrapped tokens in the user namespace.
+        # If invoked with a single token (or `{var}`), the frontend may have
+        # already expanded it. Use `cmds` from `_parse_commands` and do not
+        # re-run brace-expansion here.
         ggb_instance = None
         ip = get_ipython()
         user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
@@ -333,8 +323,7 @@ def register_ggb_magic(ipython=None):
                         ggb_instance = inst
                 except Exception:
                     pass
-        # Ensure a readily discoverable name in the user namespace: if we will
-        # create or use the singleton, store it as `ggb` in user_ns for later discovery.
+        # Ensure 'ggb' exists in `user_ns` when we create or reuse the singleton.
         try:
             if ggb_instance is None and ip is not None and isinstance(user_ns, dict):
                 inst = getattr(GeoGebra, '_instance', None)
@@ -350,7 +339,7 @@ def register_ggb_magic(ipython=None):
                 ggb_instance = inst
         except Exception:
             pass
-        # Debug: show resolved instance source (temporary)
+        # Debug: show resolved instance
         try:
             _dbg("[ggb-magic-debug] resolved ggb_instance_source=%r ggb_instance=%r",
                  getattr(ggb_instance, '__class__', None), ggb_instance)

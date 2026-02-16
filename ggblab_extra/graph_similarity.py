@@ -159,12 +159,20 @@ def hungarian_similarity(G_ref: nx.DiGraph, G_sub: nx.DiGraph, insertion_cost=1.
     sub_nodes = list(G_sub_use.nodes)
     if len(ref_nodes) == 0 and len(sub_nodes) == 0:
         return 1.0, {}
-    cost = np.zeros((len(ref_nodes), len(sub_nodes)))
-    for i, a in enumerate(ref_nodes):
-        for j, b in enumerate(sub_nodes):
-            cost[i, j] = cost_between(a, b, G_ref_use, G_sub_use)
-    row_ind, col_ind = linear_sum_assignment(cost)
-    total_node_cost = cost[row_ind, col_ind].sum()
+
+    # Handle empty-side cases without calling the Hungarian solver
+    if len(ref_nodes) == 0 or len(sub_nodes) == 0:
+        total_node_cost = insertion_cost * (len(ref_nodes) + len(sub_nodes))
+        mapping = {}
+        row_ind = np.array([], dtype=int)
+        col_ind = np.array([], dtype=int)
+    else:
+        cost = np.zeros((len(ref_nodes), len(sub_nodes)))
+        for i, a in enumerate(ref_nodes):
+            for j, b in enumerate(sub_nodes):
+                cost[i, j] = cost_between(a, b, G_ref_use, G_sub_use)
+        row_ind, col_ind = linear_sum_assignment(cost)
+        total_node_cost = cost[row_ind, col_ind].sum()
     matched_ref = set(ref_nodes[i] for i in row_ind)
     matched_sub = set(sub_nodes[j] for j in col_ind)
     unmatched_ref = set(ref_nodes) - matched_ref
@@ -172,21 +180,22 @@ def hungarian_similarity(G_ref: nx.DiGraph, G_sub: nx.DiGraph, insertion_cost=1.
     total_node_cost += insertion_cost * (len(unmatched_ref) + len(unmatched_sub))
     mapping = {ref_nodes[i]: sub_nodes[j] for i, j in zip(row_ind, col_ind)}
     edge_penalty = 0
-    for u, v in G_ref.edges():
+    # Use the possibly-collapsed graphs for edge existence/iteration
+    for u, v in G_ref_use.edges():
         if u in mapping and v in mapping:
             u2 = mapping[u]
             v2 = mapping[v]
-            if not G_sub.has_edge(u2, v2):
+            if not G_sub_use.has_edge(u2, v2):
                 edge_penalty += 1
     inv_map = {v2: k for k, v2 in mapping.items()}
-    for u, v in G_sub.edges():
+    for u, v in G_sub_use.edges():
         if u in inv_map and v in inv_map:
             u1 = inv_map[u]
             v1 = inv_map[v]
-            if not G_ref.has_edge(u1, v1):
+            if not G_ref_use.has_edge(u1, v1):
                 edge_penalty += 1
     total_cost = total_node_cost + edge_penalty
-    worst = insertion_cost * (len(ref_nodes) + len(sub_nodes)) + max(G_ref.number_of_edges(), G_sub.number_of_edges())
+    worst = insertion_cost * (len(ref_nodes) + len(sub_nodes)) + max(G_ref_use.number_of_edges(), G_sub_use.number_of_edges())
     similarity = 1.0 - min(1.0, total_cost / (worst if worst > 0 else 1))
     report = {
         'ref_nodes': ref_nodes,
