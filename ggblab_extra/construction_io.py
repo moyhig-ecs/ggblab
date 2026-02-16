@@ -281,13 +281,44 @@ class ConstructionIO:
         return out
 
     @staticmethod
-    def commands_for_magic(df: pl.DataFrame, as_string: bool = True):
+    def commands_for_magic(df: pl.DataFrame, as_string: bool = True, *, use_name_equals: bool = False):
         """Return commands ready for `%%ggb` usage.
 
-        By default returns a single newline-separated string so callers can
-        directly pass it to `print()` or to a cell. If `as_string` is False,
-        returns the list of command strings (backwards-compatible behavior).
+        Behavior:
+        - By default returns the existing "register" representation where
+          object `Name` references are replaced with underscore-number
+          notation (e.g. `_3`). This is the historical behavior.
+        - If `use_name_equals` is True, returns lines of the form
+          "Name = Command" which can be more human-readable or useful for
+          frontends that prefer explicit name-to-command mapping.
+
+        Args:
+            df: Normalized DataFrame returned by `initialize_dataframe`.
+            as_string: If True (default) return a single newline-separated
+                string. If False, return a sequence of strings.
+            use_name_equals: When True, emit `Name = Command` lines instead
+                of the register-style transformed commands.
         """
+        if use_name_equals:
+            # Build rows ordered by Sequence and emit "Name = Command" for
+            # rows that have a non-empty Command value.
+            try:
+                rows = df.select(["Name", "Sequence", "Command"]).sort("Sequence").to_dicts()
+            except Exception:
+                rows = sorted([{k: r.get(k) for k in ("Name", "Sequence", "Command")} for r in df.to_dicts()], key=lambda x: x.get("Sequence") or 0)
+
+            out = []
+            for r in rows:
+                name = r.get("Name")
+                cmd = r.get("Command")
+                if name is None or not cmd:
+                    continue
+                out.append(f"{name} = {cmd}")
+            if as_string:
+                return "\n".join(out)
+            return out
+
+        # Default (backwards-compatible): register-style transformation
         cmds = ConstructionIO.commands_for_ggb(df)
         if as_string:
             return "\n".join(cmds)
