@@ -8,11 +8,46 @@ async loop the commands are executed synchronously.
 from typing import Optional, Tuple, List
 import asyncio
 import sys
+import os
 
 from IPython import get_ipython
 
 from .ggbapplet import GeoGebra
 from .errors import GeoGebraAppletError
+
+
+# Runtime debug toggle: enable with env `GGBLAB_IPYMAGIC_DEBUG=1`
+# or by setting `_ggb_debug=True` in IPython's `user_ns`.
+_DEBUG = os.environ.get('GGBLAB_IPYMAGIC_DEBUG', '') not in ('', '0', 'False', 'false')
+
+
+def _dbg(*a, **kw):
+    try:
+        if not a:
+            return
+        # If caller passed a format string plus args, format it like printf
+        if isinstance(a[0], str) and len(a) > 1:
+            try:
+                msg = a[0] % tuple(a[1:])
+            except Exception:
+                try:
+                    msg = a[0].format(*a[1:])
+                except Exception:
+                    msg = ' '.join(str(x) for x in a)
+        else:
+            msg = ' '.join(str(x) for x in a)
+
+        if _DEBUG:
+            print(msg, **kw)
+            return
+        ip_ = get_ipython()
+        if ip_ is None:
+            return
+        ns_ = getattr(ip_, 'user_ns', None)
+        if isinstance(ns_, dict) and ns_.get('_ggb_debug'):
+            print(msg, **kw)
+    except Exception:
+        pass
 
 
 async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] = None):
@@ -213,23 +248,44 @@ def register_ggb_magic(ipython=None):
                 var_match = __import__('re').match(r'^\{\s*([A-Za-z_]\w*)\s*\}$', raw_tok)
             except Exception:
                 var_match = None
-            # Expand when token is either a bare identifier `name` or the
-            # brace form `{name}` so both `%ggb name` and `%ggb {name}` work.
+            # Only expand the brace form `{name}`. Do NOT expand a bare
+            # identifier like `%ggb name`.
             if var_match:
                 varname = var_match.group(1)
-            elif raw_tok_str.isidentifier():
-                varname = raw_tok_str
             else:
                 varname = None
 
-            # Debug: show token parsing result (temporary)
-            # debug prints removed
+            # Debug: show token parsing result (compact preview + metrics)
+            try:
+                ns_info = None
+                if isinstance(user_ns, dict):
+                    try:
+                        ns_info = f"{len(user_ns)} names"
+                    except Exception:
+                        ns_info = None
+                # prepare short previews to avoid huge dumps in logs
+                try:
+                    tok_preview = raw_tok.replace('\n', '\\n')[:120]
+                except Exception:
+                    tok_preview = repr(raw_tok)[:120]
+                try:
+                    raw_preview = raw_tok_str.replace('\n', '\\n')[:120]
+                except Exception:
+                    raw_preview = repr(raw_tok_str)[:120]
+                tok_len = len(raw_tok) if hasattr(raw_tok, '__len__') else 0
+                tok_lines = raw_tok.count('\n') + 1 if isinstance(raw_tok, str) else 0
+                _dbg("[ggb-magic-debug] token_preview=%r len=%d lines=%d raw_preview=%r varname=%r user_ns=%r",
+                     tok_preview, tok_len, tok_lines, raw_preview, varname, ns_info)
+            except Exception:
+                pass
 
             # If we couldn't detect a {name} form (because a frontend already
             # expanded it), try to find a variable in the user namespace whose
             # string contents match the token. This lets frontends that expand
             # `{var}` before our magic run still behave like `%ggb var`.
-            if varname is None:
+            # Do not attempt content-matching for bare identifiers like
+            # `cmds` (we only accept brace form explicitly).
+            if varname is None and not raw_tok_str.isidentifier():
                 try:
                     tgt = raw_tok_str.strip()
                     if isinstance(user_ns, dict):
@@ -244,14 +300,20 @@ def register_ggb_magic(ipython=None):
                                     vv = vv[1:-1].strip()
                                 if vv == tgt:
                                     varname = k
-                                    # debug prints removed
+                                    try:
+                                        _dbg("[ggb-magic-debug] matched token content to var %r", k)
+                                    except Exception:
+                                        pass
                                     break
                             # list/tuple: join by newlines and compare
                             if isinstance(v, (list, tuple)):
                                 joined = '\n'.join(str(x) for x in v).strip()
                                 if joined == tgt:
                                     varname = k
-                                    # debug prints removed
+                                    try:
+                                        _dbg("[ggb-magic-debug] matched token content to list/tuple var %r", k)
+                                    except Exception:
+                                        pass
                                     break
                 except Exception:
                     pass
@@ -262,6 +324,11 @@ def register_ggb_magic(ipython=None):
                     v2 = val.strip()
                     if (v2.startswith("'") and v2.endswith("'")) or (v2.startswith('"') and v2.endswith('"')):
                         v2 = v2[1:-1]
+                    # Prepare debug raw preview (convert literal \n to real newlines)
+                    try:
+                        raw_preview = v2.replace('\\n', '\n')
+                    except Exception:
+                        raw_preview = v2
                     new_cmds = []
                     for ln in v2.splitlines():
                         ln2 = ln.strip()
@@ -282,6 +349,18 @@ def register_ggb_magic(ipython=None):
                             ln3 = ln3[:-1]
                         if ln3:
                             new_cmds.append(ln3)
+                    # Compact debug: show line/command counts and short preview
+                    try:
+                        lines = raw_preview.splitlines()
+                        preview = raw_preview.replace('\n', '\\n')[:120]
+                        sample = new_cmds[:5]
+                        _dbg("[ggb-magic-debug] expanded %r: %d lines, %d cmds, preview=%r, sample=%r",
+                             varname, len(lines), len(new_cmds), preview, sample)
+                        if len(new_cmds) > 5:
+                            _dbg("[ggb-magic-debug] expanded %r: showing first %d of %d cmds",
+                                 varname, 5, len(new_cmds))
+                    except Exception:
+                        pass
                     if new_cmds:
                         inst_name = None
                         cmds = new_cmds
@@ -289,6 +368,7 @@ def register_ggb_magic(ipython=None):
                     try:
                         cmds = [str(x) for x in val if x is not None]
                         inst_name = None
+                        # already logged a compact summary above
                     except Exception:
                         pass
         ggb_instance = None
@@ -328,7 +408,12 @@ def register_ggb_magic(ipython=None):
                 ggb_instance = inst
         except Exception:
             pass
-        # debug prints removed
+        # Debug: show resolved instance source (temporary)
+        try:
+            _dbg("[ggb-magic-debug] resolved ggb_instance_source=%r ggb_instance=%r",
+                 getattr(ggb_instance, '__class__', None), ggb_instance)
+        except Exception:
+            pass
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
