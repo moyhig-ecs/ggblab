@@ -223,12 +223,7 @@ def register_ggb_magic(ipython=None):
                 varname = None
 
             # Debug: show token parsing result (temporary)
-            try:
-                print("[ggb-magic-debug] token=%r raw_tok_str=%r varname=%r user_ns_keys=%r" % (
-                    raw_tok, raw_tok_str, varname, list(user_ns.keys()) if isinstance(user_ns, dict) else None
-                ))
-            except Exception:
-                pass
+            # debug prints removed
 
             # If we couldn't detect a {name} form (because a frontend already
             # expanded it), try to find a variable in the user namespace whose
@@ -249,20 +244,14 @@ def register_ggb_magic(ipython=None):
                                     vv = vv[1:-1].strip()
                                 if vv == tgt:
                                     varname = k
-                                    try:
-                                        print("[ggb-magic-debug] matched token content to var %r" % (k,))
-                                    except Exception:
-                                        pass
+                                    # debug prints removed
                                     break
                             # list/tuple: join by newlines and compare
                             if isinstance(v, (list, tuple)):
                                 joined = '\n'.join(str(x) for x in v).strip()
                                 if joined == tgt:
                                     varname = k
-                                    try:
-                                        print("[ggb-magic-debug] matched token content to list/tuple var %r" % (k,))
-                                    except Exception:
-                                        pass
+                                    # debug prints removed
                                     break
                 except Exception:
                     pass
@@ -339,13 +328,7 @@ def register_ggb_magic(ipython=None):
                 ggb_instance = inst
         except Exception:
             pass
-        # Debug: show resolved instance source (temporary)
-        try:
-            print("[ggb-magic-debug] resolved ggb_instance_source=%r ggb_instance=%r" % (
-                getattr(ggb_instance, '__class__', None), ggb_instance
-            ))
-        except Exception:
-            pass
+        # debug prints removed
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
