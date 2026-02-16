@@ -74,8 +74,10 @@ def _clean_cmd_line(ln: str) -> str:
         if not ln2 or ln2.startswith('#'):
             return ''
         ln3 = ln2.split('#', 1)[0].strip()
-        if ln3.startswith('{') and ln3.endswith('}'):
-            ln3 = ln3[1:-1].strip()
+        # Preserve lines wrapped in braces `{...}` verbatim.
+        # ConstructionIO.commands_for_magic may emit brace-wrapped lines
+        # that are intended to be passed directly to GeoGebra rather than
+        # treated as variable expansion markers. Do not unwrap them here.
         ln3 = _strip_outer_quotes(ln3)
         return ln3.strip()
     except Exception:
