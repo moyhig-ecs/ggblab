@@ -191,6 +191,45 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
         return s2.rstrip()
 
     instance = None
+    # If the caller provided a line that contains a quoted string with
+    # literal `\n` sequences (e.g. "%ggb '(0,0)\nCircle(_1,1)\n'"),
+    # treat that quoted string as the cell contents and remove it from
+    # the line. IPython frontends may pass such quoted literals and we
+    # should convert them into real newlines for cell parsing.
+    if cell is None and line:
+        try:
+            s = line
+            i = 0
+            found = False
+            while i < len(s):
+                if s[i] in ("'", '"'):
+                    quote = s[i]
+                    j = i + 1
+                    while j < len(s):
+                        if s[j] == quote and s[j-1] != '\\':
+                            # candidate quoted segment
+                            inner = s[i+1:j]
+                            # Detect either real newlines or escaped '\\n' sequences
+                            if '\\n' in inner or '\n' in inner:
+                                # Normalize escaped sequences into real newlines
+                                inner2 = inner.replace('\\r\\n', '\r\n').replace('\\n', '\n').replace('\\r', '\r')
+                                cell = inner2
+                                # remove the quoted portion from the line
+                                line = (s[:i] + s[j+1:]).strip()
+                                found = True
+                            break
+                        j += 1
+                    if found:
+                        break
+                    i = j
+                else:
+                    i += 1
+        except Exception:
+            # If anything goes wrong, leave `cell` unchanged
+            pass
+
+    _dbg("[ggb-magic-debug] parsing line=%r cell=%r", line, cell)
+    
     if cell is not None:
         # cell magic: first token on the line may be an instance name
         parts = line.split(None, 1)
@@ -351,11 +390,19 @@ def register_ggb_magic(ipython=None):
         try:
             if ggb_instance is None and ip is not None and isinstance(user_ns, dict):
                 inst = getattr(GeoGebra, '_instance', None)
+                created = False
                 if inst is None:
                     inst = GeoGebra()
+                    created = True
                 if 'ggb' not in user_ns:
                     user_ns['ggb'] = inst
                 ggb_instance = inst
+                if created:
+                    try:
+                        # Notify the user that we created a singleton instance
+                        print("[ggb] created GeoGebra singleton and stored as 'ggb' in user namespace")
+                    except Exception:
+                        pass
         except Exception:
             pass
         # Debug: show resolved instance source (temporary)
@@ -384,10 +431,22 @@ def register_ggb_magic(ipython=None):
 
                 # Ensure we have a GeoGebra instance
                 if ggb_instance is None:
+                    created = False
                     try:
-                        ggb_instance = getattr(GeoGebra, '_instance', None) or GeoGebra()
+                        inst = getattr(GeoGebra, '_instance', None)
+                        if inst is None:
+                            ggb_instance = GeoGebra()
+                            created = True
+                        else:
+                            ggb_instance = inst
                     except Exception:
                         ggb_instance = GeoGebra()
+                        created = True
+                    if created:
+                        try:
+                            print("[ggb] created GeoGebra singleton for api call")
+                        except Exception:
+                            pass
 
                 if loop is None:
                     # synchronous call
