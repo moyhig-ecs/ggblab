@@ -246,6 +246,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 					// autoHeight: true,
 					scaleContainerClass: 'lm-Panel',
 					allowUpscale: false,
+					showZoomButtons: true,
 					showAlgebraInput: true,
 					algebraInputPosition: 'top',
 					appletOnLoad: ggbOnLoad,
