@@ -226,7 +226,7 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
     return G
 
 
-def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elements: Sequence[str], *, group_suffix: str = '__group') -> str:
+def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elements: Sequence[str], *, group_suffix: str = '__list') -> str:
     """Create a grouping node for a list-like construction and wire parents/elements.
 
     Given a directed graph ``G``, a ``list_name`` (e.g. ``l1``), a sequence
@@ -451,10 +451,10 @@ class ConstructionTreeParser:
         # If the column exists as JSON strings, decode; otherwise compute
         # transitively from the graph. Best-effort: do not fail parse() on errors.
         try:
-            print("Processing DependsOn column for DataFrame enrichment...")
+            # print("Processing DependsOn column for DataFrame enrichment...")
             if hasattr(self, 'df') and self.df is not None:
                 if "DependsOn" in self.df.columns:
-                    print("Found 'DependsOn' column; attempting to decode or compute dependencies...")
+                    # print("Found 'DependsOn' column; attempting to decode or compute dependencies...")
                     try:
                         raw_col = self.df["DependsOn"].to_list()
                     except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
@@ -474,7 +474,7 @@ class ConstructionTreeParser:
                         types_list = list(self.df['Type'])
 
                     for name, cmd, typ in zip(names_list, cmds_list, types_list):
-                        print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
+                        # print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
                         if typ != 'list' or not cmd:
                             continue
 
@@ -491,7 +491,7 @@ class ConstructionTreeParser:
                         if not m:
                             continue
 
-                        print(f"Processing list '{name}' with command '{cmd}' and type '{typ}'")
+                        # print(f"Processing list '{name}' with command '{cmd}' and type '{typ}'")
                         # extract parents from parentheses when present (use inner_cmd)
                         parents = []
                         try:
@@ -534,8 +534,8 @@ class ConstructionTreeParser:
 
                         if elements:
                             try:
-                                print(f"Grouping list '{name}' with parents {parents} and elements {sorted(elements)}")
-                                group = group_list_nodes(self.G, name, parents, sorted(elements))
+                                # print(f"Grouping list '{name}' with parents {parents} and elements {sorted(elements)}")
+                                group = group_list_nodes(self.G, name, parents, sorted(elements), group_suffix='__list')
                                 try:
                                     nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
                                 except Exception:
