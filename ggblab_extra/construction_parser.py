@@ -457,6 +457,77 @@ class ConstructionTreeParser:
                         raw_col = self.df["DependsOn"].to_list()
                     except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                         raw_col = list(self.df["DependsOn"])
+                    # Simple grouping: for rows where Type == 'list' and the
+                    # Command is a single Tangent or Intersection, create a
+                    # synthetic group node that collects list members and wires
+                    # the geometric parents above it. This improves clarity for
+                    # downstream consumers.
+                    try:
+                        names_list = self.df['Name'].to_list()
+                        cmds_list = self.df['Command'].to_list()
+                        types_list = self.df['Type'].to_list()
+                    except Exception:
+                        names_list = list(self.df['Name'])
+                        cmds_list = list(self.df['Command'])
+                        types_list = list(self.df['Type'])
+
+                    for name, cmd, typ in zip(names_list, cmds_list, types_list):
+                        if typ != 'list' or not cmd:
+                            continue
+                        m = re.match(r"^\s*(Tangent|Intersection)\b", str(cmd), re.IGNORECASE)
+                        if not m:
+                            continue
+
+                        # extract parents from parentheses when present
+                        parents = []
+                        try:
+                            paren = re.search(r"\((.*)\)", str(cmd))
+                            if paren:
+                                args_text = paren.group(1)
+                                parents = [a.strip().strip('"\'') for a in re.split(r',\s*', args_text) if a.strip()]
+                        except Exception:
+                            parents = []
+
+                        # discover elements referencing this list
+                        elements = set()
+                        try:
+                            pattern_name = re.compile(rf'^{re.escape(name)}\(\s*\d+\s*\)')
+                            for n in names_list:
+                                if pattern_name.match(str(n)):
+                                    elements.add(n)
+                        except Exception:
+                            pass
+
+                        try:
+                            ref_pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+                            for n, cstr in zip(names_list, cmds_list):
+                                if not cstr:
+                                    continue
+                                try:
+                                    if ref_pattern.search(str(cstr)):
+                                        elements.add(n)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+
+                        try:
+                            if name in self.G:
+                                for succ in self.G.successors(name):
+                                    elements.add(succ)
+                        except Exception:
+                            pass
+
+                        if elements:
+                            try:
+                                group = group_list_nodes(self.G, name, parents, sorted(elements))
+                                try:
+                                    nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+
                     converted = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):
