@@ -1,9 +1,23 @@
-"""IPython magic for executing GeoGebra commands via `ggb.command`.
+"""IPython magics for executing GeoGebra commands via ``ggb.command``.
 
-Provides `%ggb` (line) and `%%ggb` (cell) magics that schedule execution
-of GeoGebra commands. In a running IPython event loop the commands are
-scheduled as background tasks; when IPython is not running inside an
-async loop the commands are executed synchronously.
+This module provides two magics:
+
+- ``%ggb``: line magic variant
+- ``%%ggb``: cell magic variant
+
+Behavior highlights:
+- When running inside an active asyncio event loop the commands are
+    scheduled as background tasks; otherwise they are executed
+    synchronously.
+- Variable/token expansion and frontend-side `{var}` expansion are
+    performed by the IPython frontend; this module does not attempt to
+    emulate or re-run those expansions.
+- Quoted multiline tokens passed on the line (for example
+    ``%ggb '(0,0)\nCircle(_1,1)\n'``) are detected and moved to the
+    cell body so they are parsed as multi-line GeoGebra commands.
+- When async tasks complete, results are published through IPython's
+    `displayhook` so they appear in the notebook output and are stored
+    in the `Out` mapping; a best-effort fallback also assigns ``_``.
 """
 from typing import Optional, Tuple, List
 import asyncio
@@ -64,9 +78,13 @@ def _strip_outer_quotes(s: str) -> str:
 def _clean_cmd_line(ln: str) -> str:
     """Normalize a single command line extracted from a multi-line variable.
 
-    - strip whitespace
-    - remove full-line or inline comments
-    - unwrap surrounding braces or quotes
+    Normalization performed:
+    - strip surrounding whitespace
+    - remove full-line or inline comments (``#``)
+    - preserve brace-wrapped lines (``{...}``) verbatim — do not unwrap
+      them here because some producers emit brace-wrapped GeoGebra
+      commands that should be passed unchanged to the applet.
+    - remove surrounding quotes if present
     - return empty string for comments/blank
     """
     try:
@@ -186,6 +204,12 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
     - For line magics, strip trailing inline comments and allow an optional
       instance name as the first token.
     """
+        # Note: this parser also accepts a quoted token on the line that
+        # contains embedded newlines (real or escaped) and promotes that
+        # quoted content to the `cell` argument so callers can pass a
+        # multi-line command block as a single-line token. Frontends that
+        # perform `{var}` expansion will already have expanded braces; the
+        # magic does not attempt to re-run content-matching logic.
     def _strip_comment(s: str) -> str:
         s2 = s.split('#', 1)[0]
         return s2.rstrip()
