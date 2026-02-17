@@ -1,12 +1,14 @@
 textbook-2025/
 textbook-2026/
-ggblab_extra/
+# ggblab_extra/
 examples/*.json
 examples/*.xml
 examples/*.png
 examples/tmp.*
 
 scripts/
+# tests/
+tests/repo_layer.py
 
 .github/chatmodes/
 RELEASE_MEMO.md
