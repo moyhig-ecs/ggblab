@@ -11,6 +11,8 @@ Summary: ggblab embeds a GeoGebra applet into JupyterLab and exposes an asynchro
 
 ggblab embeds a GeoGebra applet into JupyterLab and provides a compact, async Python API to send commands and call GeoGebra functions. Open a panel from the Command Palette or from Python (`GeoGebra().init()`), interact with the applet visually, and drive it programmatically from notebook code.
 
+Note (Feb 2026): this repo recently added a small IPython magic to help initialize the kernel-side registration, and the optional `ggblab_extra` parser now supports grouping for certain `list` constructions (e.g., `Tangent` / `Intersect` lists). See the `ggblab_extra` docs for details and example usage.
+
 Note: v1.5.0 adds experimental support for a VS Code extension (`geogebra-injector`) that can open a GeoGebra webview and connect to notebook kernels running inside VS Code. Install the VS Code extension `geogebra-injector` (version 1.5.0) from the Marketplace or build the `.vsix` in `vscode-extension/`.
 
 For VS Code usage the extension prefers connection JSON supplied via the clipboard or a workspace file (`.vscode/ggblab.json`) due to platform constraints in passing complex command payloads from notebook links. See `vscode-extension/README.md` for detailed instructions and security notes.
