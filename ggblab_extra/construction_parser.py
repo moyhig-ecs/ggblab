@@ -226,6 +226,67 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
     return G
 
 
+def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elements: Sequence[str], *, group_suffix: str = '__group') -> str:
+    """Create a grouping node for a list-like construction and wire parents/elements.
+
+    Given a directed graph ``G``, a ``list_name`` (e.g. ``l1``), a sequence
+    of parent node names (e.g. ``['c', 'g']``) and element node names
+    (e.g. ``['D', 'E']``), this helper will:
+
+    - create a synthetic group node named ``f"{list_name}{group_suffix}"``
+    - attach the group node as a dependent of each parent (parent -> group)
+    - attach each element as dependent of the group (group -> element)
+    - record the members on the group node under the ``group_members`` attribute
+
+    Returns the group node name.
+
+    Example:
+        >>> G = nx.DiGraph()
+        >>> G.add_nodes_from(['c','g','l1','D','E'])
+        >>> group = group_list_nodes(G, 'l1', ['c','g'], ['D','E'])
+        >>> list(G.predecessors(group))
+        ['c','g']
+        >>> list(G.successors(group))
+        ['D','E']
+    """
+    if not isinstance(G, nx.DiGraph):
+        raise TypeError("G must be a networkx.DiGraph")
+
+    group_node = f"{list_name}{group_suffix}"
+    if group_node not in G:
+        G.add_node(group_node)
+
+    # Ensure parents and elements exist as nodes and wire edges
+    for p in parents or ():
+        if p is None:
+            continue
+        if p not in G:
+            G.add_node(p)
+        try:
+            G.add_edge(p, group_node)
+        except Exception:
+            pass
+
+    for e in elements or ():
+        if e is None:
+            continue
+        if e not in G:
+            G.add_node(e)
+        try:
+            G.add_edge(group_node, e)
+        except Exception:
+            pass
+
+    # Record group membership for downstream consumers
+    try:
+        nx.set_node_attributes(G, {group_node: {'group_members': [list_name] + list(elements)}})
+    except Exception:
+        # best-effort: ignore attribute setting failures
+        pass
+
+    return group_node
+
+
 def tokenize_with_commas(cmd_string, extract_commands=False):
     return _ggb_parser.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
 
@@ -337,7 +398,7 @@ class ConstructionTreeParser:
              for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
 
         for o in list(self.rd.keys()):
-            for n in ['xAxis', 'yAxis', 'zAxis']:
+            for n in ['xAxis', 'yAxis', 'zAxis', 'xOyPlane', 'xOzPlane', 'yOzPlane']:
                 if n in self.ft.get(o, []):
                     # print(f"found {n} dependency in {o}")
                     self.rd[n] = None
