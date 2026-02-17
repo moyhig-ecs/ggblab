@@ -613,6 +613,12 @@ class ConstructionTreeParser:
                                 except Exception:
                                     pass
 
+                                try:
+                                    layer = int(layer)
+                                except Exception:
+                                    layer = 0
+                                # clamp to GeoGebra's 0..9 layer range
+                                layer = max(0, min(9, layer))
                                 assigned.append(layer)
 
                             # attach/replace Layer column on the dataframe
