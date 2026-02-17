@@ -451,14 +451,16 @@ class ConstructionTreeParser:
         # If the column exists as JSON strings, decode; otherwise compute
         # transitively from the graph. Best-effort: do not fail parse() on errors.
         try:
+            print("Processing DependsOn column for DataFrame enrichment...")
             if hasattr(self, 'df') and self.df is not None:
                 if "DependsOn" in self.df.columns:
+                    print("Found 'DependsOn' column; attempting to decode or compute dependencies...")
                     try:
                         raw_col = self.df["DependsOn"].to_list()
                     except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                         raw_col = list(self.df["DependsOn"])
                     # Simple grouping: for rows where Type == 'list' and the
-                    # Command is a single Tangent or Intersection, create a
+                    # Command is a single Tangent or Intersect, create a
                     # synthetic group node that collects list members and wires
                     # the geometric parents above it. This improves clarity for
                     # downstream consumers.
@@ -472,19 +474,31 @@ class ConstructionTreeParser:
                         types_list = list(self.df['Type'])
 
                     for name, cmd, typ in zip(names_list, cmds_list, types_list):
+                        print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
                         if typ != 'list' or not cmd:
                             continue
-                        m = re.match(r"^\s*(Tangent|Intersection)\b", str(cmd), re.IGNORECASE)
+
+                        # Some constructions encode the command wrapped in braces, e.g.
+                        # '{Tangent(C, c)}'. Unwrap such outer braces before analysis.
+                        cmd_text = str(cmd)
+                        try:
+                            brace_match = re.match(r'^\s*\{(.*)\}\s*$', cmd_text, re.DOTALL)
+                            inner_cmd = brace_match.group(1).strip() if brace_match else cmd_text
+                        except Exception:
+                            inner_cmd = cmd_text
+
+                        m = re.match(r"^\s*(Tangent|Intersect)\b", inner_cmd, re.IGNORECASE)
                         if not m:
                             continue
 
-                        # extract parents from parentheses when present
+                        print(f"Processing list '{name}' with command '{cmd}' and type '{typ}'")
+                        # extract parents from parentheses when present (use inner_cmd)
                         parents = []
                         try:
-                            paren = re.search(r"\((.*)\)", str(cmd))
+                            paren = re.search(r"\((.*)\)", inner_cmd)
                             if paren:
                                 args_text = paren.group(1)
-                                parents = [a.strip().strip('"\'') for a in re.split(r',\s*', args_text) if a.strip()]
+                                parents = [a.strip().strip('\"\'') for a in re.split(r',\s*', args_text) if a.strip()]
                         except Exception:
                             parents = []
 
@@ -520,6 +534,7 @@ class ConstructionTreeParser:
 
                         if elements:
                             try:
+                                print(f"Grouping list '{name}' with parents {parents} and elements {sorted(elements)}")
                                 group = group_list_nodes(self.G, name, parents, sorted(elements))
                                 try:
                                     nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
