@@ -556,7 +556,17 @@ class ConstructionTreeParser:
                     # layer assignment for nodes present in the dataframe. This is
                     # controlled by the instance flag `self.auto_assign_layers`.
                     if not getattr(self, 'auto_assign_layers', False):
-                        # Layer assignment disabled; skip
+                        # Layer assignment disabled; still ensure a Layer column
+                        # exists (default to 0) so downstream consumers have a value.
+                        try:
+                            zeros = [0 for _ in range(len(self.df['Name']))]
+                            self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
+                        except Exception:
+                            try:
+                                self.df = self.df.with_columns(pl.Series('Layer', [0 for _ in self.df['Name']]))
+                            except Exception:
+                                pass
+                        # skip further assignment
                         pass
                     else:
                         # perform automatic assignment following GeoGebra heuristics
@@ -639,7 +649,9 @@ class ConstructionTreeParser:
                                 # map name -> layer for quick updates
                                 layers_by_name = {n: l for n, l in zip(df_names, assigned)}
                                 # mark fixed nodes that should not be bumped by pass2
-                                fixed = set(n for n, l in layers_by_name.items() if l in (8, 9))
+                                # Only L9 (control points) are treated as fixed; L8
+                                # (lists) may be adjusted if needed.
+                                fixed = set(n for n, l in layers_by_name.items() if l == 9)
                                 max_iters2 = max(5, len(layers_by_name))
                                 for _ in range(max_iters2):
                                     changed = False
