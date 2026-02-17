@@ -338,6 +338,7 @@ class ConstructionTreeParser:
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral", "boolean", "numeric", "angle"]
+    SHAPES3D = ['conic3dpart', 'segment3d', 'vector3d', 'quadricpart', 'quadric', 'line3d', 'polygon3d', 'quadriclimited', 'plane3d', 'conic3d', 'point3d']
     # Default container types to include when searching for composite objects
     DEFAULT_CONTAINER_TYPES = {"polygon", "segment", "circle"}
 
@@ -398,7 +399,7 @@ class ConstructionTreeParser:
 
         # tokenized function, flattened (delegate to external tokenizer)
         self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
-             for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
+             for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES + self.SHAPES3D)).select(["Name", "Command"]).iter_rows()}
 
         for o in list(self.rd.keys()):
             for n in ['xAxis', 'yAxis', 'zAxis', 'xOyPlane', 'xOzPlane', 'yOzPlane']:

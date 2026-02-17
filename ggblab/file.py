@@ -133,7 +133,9 @@ class ggb_file:
         # strip to construction element and fix scientific notation
         self.geogebra_xml = (ET.tostring(ET.fromstring(self.geogebra_xml)
                                         .find('./construction'), encoding='unicode')
-                            .replace('e-1', 'E-1'))
+                            .replace('e-1', 'E-1')
+                            .replace('e-3', 'E-3')
+                            .replace('cartesian3d', 'cartesian'))
 
         return self
     
