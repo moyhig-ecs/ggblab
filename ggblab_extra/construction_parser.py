@@ -226,6 +226,67 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
     return G
 
 
+def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elements: Sequence[str], *, group_suffix: str = '__list') -> str:
+    """Create a grouping node for a list-like construction and wire parents/elements.
+
+    Given a directed graph ``G``, a ``list_name`` (e.g. ``l1``), a sequence
+    of parent node names (e.g. ``['c', 'g']``) and element node names
+    (e.g. ``['D', 'E']``), this helper will:
+
+    - create a synthetic group node named ``f"{list_name}{group_suffix}"``
+    - attach the group node as a dependent of each parent (parent -> group)
+    - attach each element as dependent of the group (group -> element)
+    - record the members on the group node under the ``group_members`` attribute
+
+    Returns the group node name.
+
+    Example:
+        >>> G = nx.DiGraph()
+        >>> G.add_nodes_from(['c','g','l1','D','E'])
+        >>> group = group_list_nodes(G, 'l1', ['c','g'], ['D','E'])
+        >>> list(G.predecessors(group))
+        ['c','g']
+        >>> list(G.successors(group))
+        ['D','E']
+    """
+    if not isinstance(G, nx.DiGraph):
+        raise TypeError("G must be a networkx.DiGraph")
+
+    group_node = f"{list_name}{group_suffix}"
+    if group_node not in G:
+        G.add_node(group_node)
+
+    # Ensure parents and elements exist as nodes and wire edges
+    for p in parents or ():
+        if p is None:
+            continue
+        if p not in G:
+            G.add_node(p)
+        try:
+            G.add_edge(p, group_node)
+        except Exception:
+            pass
+
+    for e in elements or ():
+        if e is None:
+            continue
+        if e not in G:
+            G.add_node(e)
+        try:
+            G.add_edge(group_node, e)
+        except Exception:
+            pass
+
+    # Record group membership for downstream consumers
+    try:
+        nx.set_node_attributes(G, {group_node: {'group_members': [list_name] + list(elements)}})
+    except Exception:
+        # best-effort: ignore attribute setting failures
+        pass
+
+    return group_node
+
+
 def tokenize_with_commas(cmd_string, extract_commands=False):
     return _ggb_parser.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
 
@@ -280,7 +341,7 @@ class ConstructionTreeParser:
     # Default container types to include when searching for composite objects
     DEFAULT_CONTAINER_TYPES = {"polygon", "segment", "circle"}
 
-    def __init__(self, df=None, cache_path=None, cache_enabled=True):
+    def __init__(self, df=None, cache_path=None, cache_enabled=True, auto_assign_layers: bool = False, **kwargs):
         """Initialize the parser with optional construction dataframe and command caching.
 
         Args:
@@ -305,6 +366,9 @@ class ConstructionTreeParser:
 
         cache_path = cache_path or '.ggblab_command_cache'
         self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
+        # (Note) Two-pass parent-child adjustment removed; layering is single-pass
+        # Backwards-compatible: accept `auto_assign_layers` kw but feature is
+        # currently disabled; parameter is ignored.
 
     def parse(self):
         """Build the full dependency graph (G) from construction protocol.
@@ -337,7 +401,7 @@ class ConstructionTreeParser:
              for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES)).select(["Name", "Command"]).iter_rows()}
 
         for o in list(self.rd.keys()):
-            for n in ['xAxis', 'yAxis', 'zAxis']:
+            for n in ['xAxis', 'yAxis', 'zAxis', 'xOyPlane', 'xOzPlane', 'yOzPlane']:
                 if n in self.ft.get(o, []):
                     # print(f"found {n} dependency in {o}")
                     self.rd[n] = None
@@ -390,12 +454,115 @@ class ConstructionTreeParser:
         # If the column exists as JSON strings, decode; otherwise compute
         # transitively from the graph. Best-effort: do not fail parse() on errors.
         try:
+            # print("Processing DependsOn column for DataFrame enrichment...")
             if hasattr(self, 'df') and self.df is not None:
                 if "DependsOn" in self.df.columns:
+                    # print("Found 'DependsOn' column; attempting to decode or compute dependencies...")
                     try:
                         raw_col = self.df["DependsOn"].to_list()
                     except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
                         raw_col = list(self.df["DependsOn"])
+                    # Simple grouping: for rows where Type == 'list' and the
+                    # Command is a single Tangent or Intersect, create a
+                    # synthetic group node that collects list members and wires
+                    # the geometric parents above it. This improves clarity for
+                    # downstream consumers.
+                    try:
+                        names_list = self.df['Name'].to_list()
+                        cmds_list = self.df['Command'].to_list()
+                        types_list = self.df['Type'].to_list()
+                    except Exception:
+                        names_list = list(self.df['Name'])
+                        cmds_list = list(self.df['Command'])
+                        types_list = list(self.df['Type'])
+
+                    # no longer record list elements for a second pass (two-pass removed)
+                    list_elements_map = {}
+
+                    for name, cmd, typ in zip(names_list, cmds_list, types_list):
+                        # print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
+                        if typ != 'list' or not cmd:
+                            continue
+
+                        # Some constructions encode the command wrapped in braces, e.g.
+                        # '{Tangent(C, c)}'. Unwrap such outer braces before analysis.
+                        cmd_text = str(cmd)
+                        try:
+                            brace_match = re.match(r'^\s*\{(.*)\}\s*$', cmd_text, re.DOTALL)
+                            inner_cmd = brace_match.group(1).strip() if brace_match else cmd_text
+                        except Exception:
+                            inner_cmd = cmd_text
+
+                        m = re.match(r"^\s*(Tangent|Intersect)\b", inner_cmd, re.IGNORECASE)
+                        if not m:
+                            continue
+
+                        # print(f"Processing list '{name}' with command '{cmd}' and type '{typ}'")
+                        # extract parents from parentheses when present (use inner_cmd)
+                        parents = []
+                        try:
+                            paren = re.search(r"\((.*)\)", inner_cmd)
+                            if paren:
+                                args_text = paren.group(1)
+                                parents = [a.strip().strip('\"\'') for a in re.split(r',\s*', args_text) if a.strip()]
+                        except Exception:
+                            parents = []
+
+                        # discover elements referencing this list
+                        elements = set()
+                        try:
+                            pattern_name = re.compile(rf'^{re.escape(name)}\(\s*\d+\s*\)')
+                            for n in names_list:
+                                if pattern_name.match(str(n)):
+                                    elements.add(n)
+                        except Exception:
+                            pass
+
+                        try:
+                            ref_pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+                            for n, cstr in zip(names_list, cmds_list):
+                                if not cstr:
+                                    continue
+                                try:
+                                    if ref_pattern.search(str(cstr)):
+                                        elements.add(n)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+
+                        try:
+                            if name in self.G:
+                                for succ in self.G.successors(name):
+                                    elements.add(succ)
+                        except Exception:
+                            pass
+
+                        if elements:
+                            try:
+                                # record elements for later layer adjustments
+                                list_elements_map[name] = sorted(elements)
+                                group = group_list_nodes(self.G, name, parents, sorted(elements), group_suffix='__list')
+                                try:
+                                    nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+
+                    # After processing list-grouping, optionally perform an automatic
+                    # layer assignment for nodes present in the dataframe. This is
+                    # controlled by the instance flag `self.auto_assign_layers`.
+                    # Ensure a default Layer column exists (all zeros).
+                    try:
+                        zeros = [0 for _ in range(len(self.df['Name']))]
+                        self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
+                    except Exception:
+                        try:
+                            self.df = self.df.with_columns(pl.Series('Layer', [0 for _ in self.df['Name']]))
+                        except Exception:
+                            pass
+
                     converted = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):

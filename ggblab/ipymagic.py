@@ -1,9 +1,23 @@
-"""IPython magic for executing GeoGebra commands via `ggb.command`.
+"""IPython magics for executing GeoGebra commands via ``ggb.command``.
 
-Provides `%ggb` (line) and `%%ggb` (cell) magics that schedule execution
-of GeoGebra commands. In a running IPython event loop the commands are
-scheduled as background tasks; when IPython is not running inside an
-async loop the commands are executed synchronously.
+This module provides two magics:
+
+- ``%ggb``: line magic variant
+- ``%%ggb``: cell magic variant
+
+Behavior highlights:
+- When running inside an active asyncio event loop the commands are
+    scheduled as background tasks; otherwise they are executed
+    synchronously.
+- Variable/token expansion and frontend-side `{var}` expansion are
+    performed by the IPython frontend; this module does not attempt to
+    emulate or re-run those expansions.
+- Quoted multiline tokens passed on the line (for example
+    ``%ggb '(0,0)\nCircle(_1,1)\n'``) are detected and moved to the
+    cell body so they are parsed as multi-line GeoGebra commands.
+- When async tasks complete, results are published through IPython's
+    `displayhook` so they appear in the notebook output and are stored
+    in the `Out` mapping; a best-effort fallback also assigns ``_``.
 """
 from typing import Optional, Tuple, List
 import asyncio
@@ -64,9 +78,13 @@ def _strip_outer_quotes(s: str) -> str:
 def _clean_cmd_line(ln: str) -> str:
     """Normalize a single command line extracted from a multi-line variable.
 
-    - strip whitespace
-    - remove full-line or inline comments
-    - unwrap surrounding braces or quotes
+    Normalization performed:
+    - strip surrounding whitespace
+    - remove full-line or inline comments (``#``)
+    - preserve brace-wrapped lines (``{...}``) verbatim — do not unwrap
+      them here because some producers emit brace-wrapped GeoGebra
+      commands that should be passed unchanged to the applet.
+    - remove surrounding quotes if present
     - return empty string for comments/blank
     """
     try:
@@ -186,50 +204,56 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
     - For line magics, strip trailing inline comments and allow an optional
       instance name as the first token.
     """
+        # Note: this parser also accepts a quoted token on the line that
+        # contains embedded newlines (real or escaped) and promotes that
+        # quoted content to the `cell` argument so callers can pass a
+        # multi-line command block as a single-line token. Frontends that
+        # perform `{var}` expansion will already have expanded braces; the
+        # magic does not attempt to re-run content-matching logic.
     def _strip_comment(s: str) -> str:
         s2 = s.split('#', 1)[0]
         return s2.rstrip()
 
     instance = None
-    # Support line magics where the user passed a quoted multi-line
-    # string as the single argument, e.g.:
-    #   %ggb '(0, 0)\n# (1,0)\nCircle(_1, 1)\n'
-    # or with an instance name prefix:
-    #   %ggb ggb1 '(0,0)\n...'
-    # In these cases IPython provides the raw string with literal
-    # backslash escapes; decode them into real newlines and treat the
-    # result as a `cell` so the existing cell-logic will parse it.
-    if cell is None:
-        raw = line or ''
+    # If the caller provided a line that contains a quoted string with
+    # literal `\n` sequences (e.g. "%ggb '(0,0)\nCircle(_1,1)\n'"),
+    # treat that quoted string as the cell contents and remove it from
+    # the line. IPython frontends may pass such quoted literals and we
+    # should convert them into real newlines for cell parsing.
+    if cell is None and line:
         try:
-            parts = raw.split(None, 1)
-            # Case: instance + quoted string: "inst '...')"
-            if len(parts) == 2 and parts[1] and parts[1][0] in ("'", '"') and parts[1][-1] == parts[1][0]:
-                inst_candidate = parts[0]
-                quoted = parts[1]
-                content = quoted[1:-1]
-                cell = content
-                line = inst_candidate
-            # Case: quoted-only form: "'...'")
-            elif raw and raw[0] in ("'", '"') and raw[-1] == raw[0]:
-                cell = raw[1:-1]
-                line = ''
-            # If quotes were stripped by the frontend but the argument contains
-            # newline escapes, treat the raw string as verbatim cell content.
-            elif raw and ('\\n' in raw or '\n' in raw):
-                parts_nl = raw.split(None, 1)
-                if len(parts_nl) == 2 and parts_nl[0].isidentifier():
-                    _dbg("_parse_commands: detected instance+raw with newline escapes; instance=%r", parts_nl[0])
-                    line = parts_nl[0]
-                    cell = parts_nl[1]
+            s = line
+            i = 0
+            found = False
+            while i < len(s):
+                if s[i] in ("'", '"'):
+                    quote = s[i]
+                    j = i + 1
+                    while j < len(s):
+                        if s[j] == quote and s[j-1] != '\\':
+                            # candidate quoted segment
+                            inner = s[i+1:j]
+                            # Detect either real newlines or escaped '\\n' sequences
+                            if '\\n' in inner or '\n' in inner:
+                                # Normalize escaped sequences into real newlines
+                                inner2 = inner.replace('\\r\\n', '\r\n').replace('\\n', '\n').replace('\\r', '\r')
+                                cell = inner2
+                                # remove the quoted portion from the line
+                                line = (s[:i] + s[j+1:]).strip()
+                                found = True
+                            break
+                        j += 1
+                    if found:
+                        break
+                    i = j
                 else:
-                    _dbg("_parse_commands: detected raw with newline escapes; treating as cell verbatim: raw=%r", raw)
-                    cell = raw
-                    line = ''
+                    i += 1
         except Exception:
-            # Best-effort parsing; fall back to leaving `cell` as None
+            # If anything goes wrong, leave `cell` unchanged
             pass
-    _dbg("_parse_commands: raw_line=%r cell=%r", line, cell)
+
+    _dbg("[ggb-magic-debug] parsing line=%r cell=%r", line, cell)
+    
     if cell is not None:
         # cell magic: first token on the line may be an instance name
         parts = line.split(None, 1)
@@ -279,12 +303,125 @@ def register_ggb_magic(ipython=None):
         ipython = get_ipython()
     if ipython is None:
         return
+    def _get_or_create_ggb(user_ns, ip, *, for_api: bool = False):
+        """Return an existing GeoGebra instance or create a singleton.
+
+        If a new instance is created, store it in `user_ns['ggb']` when
+        appropriate and print a single user notification. The `for_api`
+        flag adjusts the notification message for the api-call path.
+        """
+        try:
+            inst = getattr(GeoGebra, '_instance', None)
+        except Exception:
+            inst = None
+        created = False
+        if inst is None:
+            try:
+                inst = GeoGebra()
+                created = True
+            except Exception:
+                try:
+                    inst = getattr(GeoGebra, '_instance', None)
+                except Exception:
+                    inst = None
+                if inst is None:
+                    inst = GeoGebra()
+                    created = True
+        try:
+            if isinstance(user_ns, dict) and 'ggb' not in user_ns:
+                user_ns['ggb'] = inst
+        except Exception:
+            pass
+        if created:
+            try:
+                if for_api:
+                    print("[ggb] created GeoGebra singleton for api call")
+                else:
+                    print("[ggb] created GeoGebra singleton and stored as 'ggb' in user namespace")
+            except Exception:
+                pass
+        return inst
 
     def _ggb_magic(line, cell=None):
         inst_name, cmds = _parse_commands(line, cell)
-        # If invoked with a single token (or `{var}`), the frontend may have
-        # already expanded it. Use `cmds` from `_parse_commands` and do not
-        # re-run brace-expansion here.
+        # If the magic was invoked with a single token (identifier or {identifier}),
+        # treat that token as a variable name whose value contains the commands
+        # (string with newlines) or a list of command strings.
+        try:
+            ip = get_ipython()
+            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+        except Exception:
+            user_ns = {}
+
+        if cell is None and isinstance(cmds, list) and len(cmds) == 1:
+            raw_tok = cmds[0].strip() if cmds[0] is not None else ''
+            # normalize token by removing outer quotes if present
+            raw_tok_str = _strip_outer_quotes(raw_tok)
+            # allow both `{name}` and `name`
+            var_match = None
+            try:
+                var_match = __import__('re').match(r'^\{\s*([A-Za-z_]\w*)\s*\}$', raw_tok)
+            except Exception:
+                var_match = None
+            # Only expand the brace form `{name}`. Do NOT expand a bare
+            # identifier like `%ggb name`.
+            if var_match:
+                varname = var_match.group(1)
+            else:
+                varname = None
+
+            # Debug: show token parsing result (compact preview + metrics)
+            try:
+                ns_info = f"{len(user_ns)} names" if isinstance(user_ns, dict) else None
+                tok_preview = (raw_tok.replace('\n', '\\n')[:120]) if isinstance(raw_tok, str) else repr(raw_tok)[:120]
+                raw_preview = (raw_tok_str.replace('\n', '\\n')[:120]) if isinstance(raw_tok_str, str) else repr(raw_tok_str)[:120]
+                tok_len = len(raw_tok) if hasattr(raw_tok, '__len__') else 0
+                tok_lines = raw_tok.count('\n') + 1 if isinstance(raw_tok, str) else 0
+                _dbg("[ggb-magic-debug] token_preview=%r len=%d lines=%d raw_preview=%r varname=%r user_ns=%r",
+                     tok_preview, tok_len, tok_lines, raw_preview, varname, ns_info)
+            except Exception:
+                pass
+
+            # Note: IPython performs `{var}` expansion in frontends; do not
+            # attempt to emulate expansion here by matching token contents
+            # against `user_ns`. Only accept explicit `{name}` brace form.
+
+            if varname and varname in user_ns:
+                val = user_ns[varname]
+                if isinstance(val, str):
+                    v2 = _strip_outer_quotes(val.strip())
+                    # Prepare debug raw preview (convert literal \n to escaped form)
+                    try:
+                        raw_preview = v2.replace('\\n', '\n')
+                    except Exception:
+                        raw_preview = v2
+                    new_cmds = []
+                    for ln in v2.splitlines():
+                        cleaned = _clean_cmd_line(ln)
+                        if cleaned:
+                            new_cmds.append(cleaned)
+                    # Compact debug: show line/command counts and short preview
+                    try:
+                        lines = raw_preview.splitlines()
+                        preview = raw_preview.replace('\n', '\\n')[:120]
+                        sample = new_cmds[:5]
+                        _dbg("[ggb-magic-debug] expanded %r: %d lines, %d cmds, preview=%r, sample=%r",
+                             varname, len(lines), len(new_cmds), preview, sample)
+                        if len(new_cmds) > 5:
+                            _dbg("[ggb-magic-debug] expanded %r: showing first %d of %d cmds",
+                                 varname, 5, len(new_cmds))
+                    except Exception:
+                        pass
+                    if new_cmds:
+                        inst_name = None
+                        cmds = new_cmds
+                elif isinstance(val, (list, tuple)):
+                    try:
+                        cmds = [str(x) for x in val if x is not None]
+                        inst_name = None
+                        # already logged a compact summary above
+                    except Exception:
+                        pass
         ggb_instance = None
         ip = get_ipython()
         user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
@@ -326,17 +463,7 @@ def register_ggb_magic(ipython=None):
         # Ensure 'ggb' exists in `user_ns` when we create or reuse the singleton.
         try:
             if ggb_instance is None and ip is not None and isinstance(user_ns, dict):
-                inst = getattr(GeoGebra, '_instance', None)
-                if inst is None:
-                    inst = GeoGebra()
-                if 'ggb' not in user_ns:
-                    user_ns['ggb'] = inst
-                    try:
-                        # Inform the user that we populated their namespace
-                        print("ggblab: GeoGebra singleton created and assigned to name 'ggb' in the user namespace.")
-                    except Exception:
-                        pass
-                ggb_instance = inst
+                ggb_instance = _get_or_create_ggb(user_ns, ip, for_api=False)
         except Exception:
             pass
         # Debug: show resolved instance
@@ -366,9 +493,13 @@ def register_ggb_magic(ipython=None):
                 # Ensure we have a GeoGebra instance
                 if ggb_instance is None:
                     try:
-                        ggb_instance = getattr(GeoGebra, '_instance', None) or GeoGebra()
+                        ggb_instance = _get_or_create_ggb(user_ns, ip, for_api=True)
                     except Exception:
-                        ggb_instance = GeoGebra()
+                        # Fallback: create without notification
+                        try:
+                            ggb_instance = GeoGebra()
+                        except Exception:
+                            ggb_instance = None
 
                 if loop is None:
                     # synchronous call
@@ -393,7 +524,28 @@ def register_ggb_magic(ipython=None):
                                     except Exception:
                                         res = None
                                     try:
+                                        ip2 = get_ipython()
+                                    except Exception:
+                                        ip2 = None
+                                    try:
+                                        if ip2 is not None:
+                                            ip2.displayhook(res)
+                                            return
+                                    except Exception:
+                                        pass
+                                    try:
                                         ns['_'] = res
+                                    except Exception:
+                                        pass
+                                    try:
+                                        if ip2 is not None:
+                                            ns2 = getattr(ip2, 'user_ns', None)
+                                            if isinstance(ns2, dict):
+                                                out = ns2.get('Out')
+                                                if isinstance(out, dict):
+                                                    count = getattr(ip2, 'execution_count', None)
+                                                    if isinstance(count, int):
+                                                        out[count] = res
                                     except Exception:
                                         pass
 
@@ -433,9 +585,29 @@ def register_ggb_magic(ipython=None):
                         except Exception:
                             res = None
                         try:
+                            ip2 = get_ipython()
+                        except Exception:
+                            ip2 = None
+                        try:
+                            if ip2 is not None:
+                                ip2.displayhook(res)
+                                return
+                        except Exception:
+                            pass
+                        try:
                             ns['_'] = res
                         except Exception:
-                            # Best-effort; ignore failures
+                            pass
+                        try:
+                            if ip2 is not None:
+                                ns2 = getattr(ip2, 'user_ns', None)
+                                if isinstance(ns2, dict):
+                                    out = ns2.get('Out')
+                                    if isinstance(out, dict):
+                                        count = getattr(ip2, 'execution_count', None)
+                                        if isinstance(count, int):
+                                            out[count] = res
+                        except Exception:
                             pass
 
                     try:

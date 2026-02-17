@@ -4,6 +4,7 @@ export interface IInjectOptions {
 	width?: number;
 	height?: number;
 	scaleContainerClass?: string;
+	showZoomButtons?: boolean;
 	showAlgebraInput?: boolean;
 	algebraInputPosition?: 'top' | 'bottom';
 	allowUpscale?: boolean;
@@ -62,6 +63,7 @@ export function injectGeoGebraApplet(opts: IInjectOptions): IInjectResult {
 			width,
 			height,
 			showToolBar: true,
+			showZoomButtons: true,
 			showAlgebraInput: true,
 			showMenuBar: true,
 			autoHeight: true,

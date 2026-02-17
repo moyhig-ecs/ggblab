@@ -11,6 +11,8 @@ Summary: ggblab embeds a GeoGebra applet into JupyterLab and exposes an asynchro
 
 ggblab embeds a GeoGebra applet into JupyterLab and provides a compact, async Python API to send commands and call GeoGebra functions. Open a panel from the Command Palette or from Python (`GeoGebra().init()`), interact with the applet visually, and drive it programmatically from notebook code.
 
+Note (Feb 2026): this repo recently added a small IPython magic to help initialize the kernel-side registration, and the optional `ggblab_extra` parser now supports grouping for certain `list` constructions (e.g., `Tangent` / `Intersect` lists). See the `ggblab_extra` docs for details and example usage.
+
 Note: v1.5.0 adds experimental support for a VS Code extension (`geogebra-injector`) that can open a GeoGebra webview and connect to notebook kernels running inside VS Code. Install the VS Code extension `geogebra-injector` (version 1.5.0) from the Marketplace or build the `.vsix` in `vscode-extension/`.
 
 For VS Code usage the extension prefers connection JSON supplied via the clipboard or a workspace file (`.vscode/ggblab.json`) due to platform constraints in passing complex command payloads from notebook links. See `vscode-extension/README.md` for detailed instructions and security notes.
@@ -173,6 +175,45 @@ ggblab.load_ipython_extension(get_ipython())
 ```
 
 This guarantees the kernel-side Comm target (`jupyter.ggblab`) is registered before the frontend probes for it.
+
+### IPython magic examples
+
+Use the `%ggb` (line) and `%%ggb` (cell) magics to send GeoGebra commands directly from the notebook. Examples:
+
+Line magic — simple command:
+
+```python
+%ggb A = (0,0)
+%ggb api getValue(A)
+```
+
+Line magic — API call (synchronous when no running loop):
+
+```python
+%ggb api getValue(A)
+# returns the value of A (e.g. "(0,0)") or schedules an async task in running loops
+```
+
+Cell magic — multi-line commands:
+
+```python
+%%ggb
+# create points and a circle
+A = (0,0)
+B = (1,0)
+Circle(A,1)
+```
+
+Using a Python variable containing commands (brace form `{name}` required):
+
+```python
+cmds = "A = (0,0)\nB = Point(A)\n"
+%ggb {cmds}
+```
+
+Notes:
+- Only the brace form (`%ggb {varname}`) is expanded by the magic to avoid accidental variable interpolation.
+- When running inside an async event loop the magics schedule tasks and return immediately; results are published to IPython's display hook and stored in `_` / `Out` when available.
 
 ## Examples
 

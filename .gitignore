@@ -7,6 +7,8 @@ examples/*.png
 examples/tmp.*
 
 scripts/
+# tests/
+tests/repo_layer.py
 
 .github/chatmodes/
 RELEASE_MEMO.md
