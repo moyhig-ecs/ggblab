@@ -279,6 +279,44 @@ def register_ggb_magic(ipython=None):
         ipython = get_ipython()
     if ipython is None:
         return
+    def _get_or_create_ggb(user_ns, ip, *, for_api: bool = False):
+        """Return an existing GeoGebra instance or create a singleton.
+
+        If a new instance is created, store it in `user_ns['ggb']` when
+        appropriate and print a single user notification. The `for_api`
+        flag adjusts the notification message for the api-call path.
+        """
+        try:
+            inst = getattr(GeoGebra, '_instance', None)
+        except Exception:
+            inst = None
+        created = False
+        if inst is None:
+            try:
+                inst = GeoGebra()
+                created = True
+            except Exception:
+                try:
+                    inst = getattr(GeoGebra, '_instance', None)
+                except Exception:
+                    inst = None
+                if inst is None:
+                    inst = GeoGebra()
+                    created = True
+        try:
+            if isinstance(user_ns, dict) and 'ggb' not in user_ns:
+                user_ns['ggb'] = inst
+        except Exception:
+            pass
+        if created:
+            try:
+                if for_api:
+                    print("[ggb] created GeoGebra singleton for api call")
+                else:
+                    print("[ggb] created GeoGebra singleton and stored as 'ggb' in user namespace")
+            except Exception:
+                pass
+        return inst
 
     def _ggb_magic(line, cell=None):
         inst_name, cmds = _parse_commands(line, cell)
@@ -389,20 +427,7 @@ def register_ggb_magic(ipython=None):
         # create or use the singleton, store it as `ggb` in user_ns for later discovery.
         try:
             if ggb_instance is None and ip is not None and isinstance(user_ns, dict):
-                inst = getattr(GeoGebra, '_instance', None)
-                created = False
-                if inst is None:
-                    inst = GeoGebra()
-                    created = True
-                if 'ggb' not in user_ns:
-                    user_ns['ggb'] = inst
-                ggb_instance = inst
-                if created:
-                    try:
-                        # Notify the user that we created a singleton instance
-                        print("[ggb] created GeoGebra singleton and stored as 'ggb' in user namespace")
-                    except Exception:
-                        pass
+                ggb_instance = _get_or_create_ggb(user_ns, ip, for_api=False)
         except Exception:
             pass
         # Debug: show resolved instance source (temporary)
@@ -431,22 +456,14 @@ def register_ggb_magic(ipython=None):
 
                 # Ensure we have a GeoGebra instance
                 if ggb_instance is None:
-                    created = False
                     try:
-                        inst = getattr(GeoGebra, '_instance', None)
-                        if inst is None:
-                            ggb_instance = GeoGebra()
-                            created = True
-                        else:
-                            ggb_instance = inst
+                        ggb_instance = _get_or_create_ggb(user_ns, ip, for_api=True)
                     except Exception:
-                        ggb_instance = GeoGebra()
-                        created = True
-                    if created:
+                        # Fallback: create without notification
                         try:
-                            print("[ggb] created GeoGebra singleton for api call")
+                            ggb_instance = GeoGebra()
                         except Exception:
-                            pass
+                            ggb_instance = None
 
                 if loop is None:
                     # synchronous call
