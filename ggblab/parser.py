@@ -135,20 +135,114 @@ class ggb_parser:
         # code can treat it as an explicit multiplication (e.g. ['-1.0', 'x']).
         coeff_re = re.compile(r"^([-+]?\d*\.\d+|\d+)(.*)$")
 
-        stack = [[]]
+        # Stack holds tuples: (current_list, suppress_commas_flag)
+        stack = [([], False)]
         commands = set() if extract_commands else None
         prev_token = None
 
-        for token in tokens:
+        i = 0
+        n = len(tokens)
+        while i < n:
+            token = tokens[i]
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
             if token in ['(', '[', '{']:
                 # If extracting commands and previous token looks like a command name, save it
                 if extract_commands and prev_token and isinstance(prev_token, str) and prev_token[0].isalpha():
                     commands.add(prev_token)
-                # Begin a new nested list
+                # Determine whether this brace group should suppress comma-splitting
+                suppress = False
+                if token == '{' and isinstance(prev_token, str):
+                    # If previous token ends with '^' or '_' (e.g. A^{...} or A_{...}),
+                    # treat this as a sub/superscript grouping and DO NOT split on commas.
+                    # If the caret/underscore is attached to the previous token (e.g. 'C_'),
+                    # split it off so the symbol is the standalone prev_token ('_').
+                    if prev_token.endswith('^') or prev_token.endswith('_') or prev_token in ('^', '_'):
+                        # detach trailing '^' or '_' if attached
+                        if (prev_token.endswith('^') or prev_token.endswith('_')) and len(prev_token) > 1:
+                            try:
+                                cur_list, _ = stack[-1]
+                                # replace last element with the base (without trailing symbol)
+                                base = prev_token[:-1]
+                                symbol = prev_token[-1]
+                                cur_list[-1] = base
+                                prev_token = symbol
+                            except Exception:
+                                # best-effort: leave prev_token unchanged on error
+                                pass
+                        suppress = True
+                # Special-case: suppressed brace means we should consume the brace
+                # content and attach it to the preceding token (e.g., C_{t} -> 'C_{t}')
+                if token == '{' and suppress:
+                    # consume inner tokens until matching '}'
+                    depth = 1
+                    inner_parts = []
+                    i += 1
+                    while i < n and depth > 0:
+                        tk = tokens[i]
+                        if tk == '{':
+                            depth += 1
+                            inner_parts.append(tk)
+                        elif tk == '}':
+                            depth -= 1
+                            if depth > 0:
+                                inner_parts.append(tk)
+                        else:
+                            inner_parts.append(tk)
+                        i += 1
+                    # build inner string without added spaces
+                    inner_str = ''.join(inner_parts)
+                    try:
+                        cur_list, _ = stack[-1]
+                        # previous element should be the base (we detached it earlier)
+                        base = cur_list[-1]
+                        symbol = prev_token if isinstance(prev_token, str) else ''
+                        combined = f"{base}{symbol}{{{inner_str}}}"
+                        cur_list[-1] = combined
+                        prev_token = combined
+                    except Exception:
+                        # fallback: create a nested list as before
+                        new_list = []
+                        stack[-1][0].append(new_list)
+                        stack.append((new_list, True))
+                        prev_token = None
+                    i += 0
+                    continue
+                # Begin a new nested list (non-suppressed)
                 new_list = []
-                stack[-1].append(new_list)
-                stack.append(new_list)
+                stack[-1][0].append(new_list)
+                stack.append((new_list, suppress))
                 prev_token = None
+                i += 1
+                continue
             elif token in [')', ']', '}']:
                 # Close an active nested list
                 if len(stack) > 1:
@@ -156,26 +250,40 @@ class ggb_parser:
                 else:
                     raise ValueError("Mismatched parentheses/brackets in input string.")
                 prev_token = None
+                i += 1
             elif token == ',':
-                # Treat commas as tokens
-                stack[-1].append(',')
-                prev_token = None
+                # Treat commas as tokens, unless the current group suppresses comma-splitting
+                cur_list, suppress = stack[-1]
+                if suppress:
+                    # Attach comma to previous string token if possible so it is
+                    # not treated as a separator later (e.g., in A^{1,2}).
+                    if cur_list and isinstance(cur_list[-1], str):
+                        cur_list[-1] = cur_list[-1] + ','
+                        prev_token = cur_list[-1]
+                    else:
+                        # No previous token to append to; store comma as literal
+                        cur_list.append(',')
+                        prev_token = ','
+                else:
+                    stack[-1][0].append(',')
+                    prev_token = None
+                i += 1
             else:
                 # Normal token gets added to the current list
                 # Handle GeoGebra-style coefficient tokens like "-1.0x" -> "-1.0", "x"
                 m = coeff_re.match(token)
+                cur_list, _ = stack[-1]
                 if m and m.group(2):
                     # Split into coefficient and remainder token
                     rem = m.group(2)
-                    stack[-1].append(m.group(1))
-                    stack[-1].append(rem)
+                    cur_list.append(m.group(1))
+                    cur_list.append(rem)
                     prev_token = rem
                 else:
-                    # Future: if register_expr and token in rd:
-                    #     token = f"${rd[token]}"  # Replace with abstract order-based label
                     t = token
-                    stack[-1].append(t)
+                    cur_list.append(t)
                     prev_token = t
+                i += 1
 
         if len(stack) != 1:
             raise ValueError("Mismatched parentheses/brackets in input string.")
