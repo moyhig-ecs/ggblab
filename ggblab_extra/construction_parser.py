@@ -341,7 +341,7 @@ class ConstructionTreeParser:
     # Default container types to include when searching for composite objects
     DEFAULT_CONTAINER_TYPES = {"polygon", "segment", "circle"}
 
-    def __init__(self, df=None, cache_path=None, cache_enabled=True, auto_assign_layers: bool = False):
+    def __init__(self, df=None, cache_path=None, cache_enabled=True, auto_assign_layers: bool = False, layer_two_pass: bool = False):
         """Initialize the parser with optional construction dataframe and command caching.
 
         Args:
@@ -368,6 +368,9 @@ class ConstructionTreeParser:
         self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
         # Control whether automatic Layer assignment runs during parse()
         self.auto_assign_layers = bool(auto_assign_layers)
+        # If True, perform a second pass to enforce parent-child layer constraints
+        # (e.g., children should be at least parent+1, clamped to 9). Default: False
+        self.layer_two_pass = bool(layer_two_pass)
 
     def parse(self):
         """Build the full dependency graph (G) from construction protocol.
@@ -619,7 +622,40 @@ class ConstructionTreeParser:
                                     layer = 0
                                 # clamp to GeoGebra's 0..9 layer range
                                 layer = max(0, min(9, layer))
+                                try:
+                                    layer = int(layer)
+                                except Exception:
+                                    layer = 0
+                                # clamp to GeoGebra's 0..9 layer range
+                                layer = max(0, min(9, layer))
                                 assigned.append(layer)
+
+                            # Second pass: enforce parent-child constraints if enabled
+                            if getattr(self, 'layer_two_pass', False):
+                                # map name -> layer for quick updates
+                                layers_by_name = {n: l for n, l in zip(df_names, assigned)}
+                                # mark fixed nodes that should not be bumped by pass2
+                                fixed = set(n for n, l in layers_by_name.items() if l in (8, 9))
+                                max_iters2 = max(5, len(layers_by_name))
+                                for _ in range(max_iters2):
+                                    changed = False
+                                    for u, v in self.G.edges():
+                                        if u in layers_by_name and v in layers_by_name:
+                                            lu = layers_by_name[u]
+                                            lv = layers_by_name[v]
+                                            # prefer child >= parent+1 so children overlay parents
+                                            target = min(9, lu + 1)
+                                            if v in fixed:
+                                                # do not override fixed nodes
+                                                continue
+                                            if lv < target:
+                                                layers_by_name[v] = target
+                                                changed = True
+                                    if not changed:
+                                        break
+
+                                # write back adjusted layers in original order
+                                assigned = [layers_by_name.get(n, 0) for n in df_names]
 
                             # attach/replace Layer column on the dataframe
                             try:
