@@ -543,6 +543,84 @@ class ConstructionTreeParser:
                             except Exception:
                                 pass
 
+                    # After processing all list-grouping heuristics for rows,
+                    # perform an automatic layer assignment for nodes present
+                    # in the dataframe. Heuristics follow GeoGebra constraints:
+                    # - Root points (control points) => Layer 9
+                    # - Lists and synthetic list nodes => Layer 8
+                    # - Non-drawing objects (boolean, numeric, angle) => Layer 8
+                    # - Other nodes: layer = min(7, topo_depth)
+                    try:
+                        # compute stable topological depths (best-effort; handles cycles)
+                        depths = {n: 0 for n in self.G.nodes()}
+                        max_iters = max(10, len(self.G))
+                        for _ in range(max_iters):
+                            changed = False
+                            for node in self.G.nodes():
+                                preds = list(self.G.predecessors(node))
+                                if not preds:
+                                    target = 0
+                                else:
+                                    target = max(depths.get(p, 0) for p in preds) + 1
+                                if depths.get(node, 0) != target:
+                                    depths[node] = target
+                                    changed = True
+                            if not changed:
+                                break
+
+                        # Prepare per-row layer assignment following the order of df['Name']
+                        try:
+                            df_names = self.df['Name'].to_list()
+                        except Exception:
+                            df_names = list(self.df['Name'])
+
+                        assigned = []
+                        for n in df_names:
+                            # attempt to obtain the Type for this row
+                            node_type = None
+                            try:
+                                row = self.df.filter(pl.col('Name') == n).select('Type')
+                                if row.shape[0]:
+                                    node_type = row.to_series()[0]
+                            except Exception:
+                                # fallback to types_list prepared earlier
+                                try:
+                                    idx = names_list.index(n)
+                                    node_type = types_list[idx]
+                                except Exception:
+                                    node_type = None
+
+                            # defaults and overrides
+                            if node_type is not None and str(node_type).lower() in ('boolean', 'numeric', 'angle'):
+                                layer = 8
+                            elif node_type == 'list':
+                                layer = 8
+                            else:
+                                # heuristic: root point => control point => L9
+                                if (n in self.G) and (self.G.in_degree(n) == 0) and (node_type == 'point'):
+                                    layer = 9
+                                else:
+                                    depth = depths.get(n, 0)
+                                    layer = min(7, int(depth))
+
+                            # keep synthetic list nodes at L8
+                            try:
+                                if str(n).endswith('__list'):
+                                    layer = 8
+                            except Exception:
+                                pass
+
+                            assigned.append(layer)
+
+                        # attach/replace Layer column on the dataframe
+                        try:
+                            self.df = self.df.with_columns(pl.Series('Layer', assigned).cast(pl.Int64))
+                        except Exception:
+                            self.df = self.df.with_columns(pl.Series('Layer', assigned))
+                    except Exception:
+                        # do not let layer-assignment failures break parsing
+                        pass
+
                     converted = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):
