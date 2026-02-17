@@ -176,6 +176,45 @@ ggblab.load_ipython_extension(get_ipython())
 
 This guarantees the kernel-side Comm target (`jupyter.ggblab`) is registered before the frontend probes for it.
 
+### IPython magic examples
+
+Use the `%ggb` (line) and `%%ggb` (cell) magics to send GeoGebra commands directly from the notebook. Examples:
+
+Line magic — simple command:
+
+```python
+%ggb A = (0,0)
+%ggb api getValue(A)
+```
+
+Line magic — API call (synchronous when no running loop):
+
+```python
+%ggb api getValue(A)
+# returns the value of A (e.g. "(0,0)") or schedules an async task in running loops
+```
+
+Cell magic — multi-line commands:
+
+```python
+%%ggb
+# create points and a circle
+A = (0,0)
+B = (1,0)
+Circle(A,1)
+```
+
+Using a Python variable containing commands (brace form `{name}` required):
+
+```python
+cmds = "A = (0,0)\nB = Point(A)\n"
+%ggb {cmds}
+```
+
+Notes:
+- Only the brace form (`%ggb {varname}`) is expanded by the magic to avoid accidental variable interpolation.
+- When running inside an async event loop the magics schedule tasks and return immediately; results are published to IPython's display hook and stored in `_` / `Out` when available.
+
 ## Examples
 
 - See [examples/example.ipynb](examples/example.ipynb) for a basic demo.
