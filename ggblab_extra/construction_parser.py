@@ -478,6 +478,9 @@ class ConstructionTreeParser:
                         cmds_list = list(self.df['Command'])
                         types_list = list(self.df['Type'])
 
+                    # map list name -> its detected element names (to enforce element layers)
+                    list_elements_map = {}
+
                     for name, cmd, typ in zip(names_list, cmds_list, types_list):
                         # print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
                         if typ != 'list' or not cmd:
@@ -539,7 +542,8 @@ class ConstructionTreeParser:
 
                         if elements:
                             try:
-                                # print(f"Grouping list '{name}' with parents {parents} and elements {sorted(elements)}")
+                                # record elements for later layer adjustments
+                                list_elements_map[name] = sorted(elements)
                                 group = group_list_nodes(self.G, name, parents, sorted(elements), group_suffix='__list')
                                 try:
                                     nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
@@ -653,6 +657,18 @@ class ConstructionTreeParser:
                                                 changed = True
                                     if not changed:
                                         break
+
+                                # enforce that list elements are placed at L7 to avoid
+                                # everyone being pushed to L8/L9 when lists are L8.
+                                try:
+                                    for list_name, elems in list_elements_map.items():
+                                        for e in elems:
+                                            if e in layers_by_name:
+                                                # do not override L9 control points
+                                                if layers_by_name.get(e, 0) != 9:
+                                                    layers_by_name[e] = 7
+                                except Exception:
+                                    pass
 
                                 # write back adjusted layers in original order
                                 assigned = [layers_by_name.get(n, 0) for n in df_names]
