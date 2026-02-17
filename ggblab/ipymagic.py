@@ -447,7 +447,28 @@ def register_ggb_magic(ipython=None):
                                     except Exception:
                                         res = None
                                     try:
+                                        ip2 = get_ipython()
+                                    except Exception:
+                                        ip2 = None
+                                    try:
+                                        if ip2 is not None:
+                                            ip2.displayhook(res)
+                                            return
+                                    except Exception:
+                                        pass
+                                    try:
                                         ns['_'] = res
+                                    except Exception:
+                                        pass
+                                    try:
+                                        if ip2 is not None:
+                                            ns2 = getattr(ip2, 'user_ns', None)
+                                            if isinstance(ns2, dict):
+                                                out = ns2.get('Out')
+                                                if isinstance(out, dict):
+                                                    count = getattr(ip2, 'execution_count', None)
+                                                    if isinstance(count, int):
+                                                        out[count] = res
                                     except Exception:
                                         pass
 
@@ -487,9 +508,29 @@ def register_ggb_magic(ipython=None):
                         except Exception:
                             res = None
                         try:
+                            ip2 = get_ipython()
+                        except Exception:
+                            ip2 = None
+                        try:
+                            if ip2 is not None:
+                                ip2.displayhook(res)
+                                return
+                        except Exception:
+                            pass
+                        try:
                             ns['_'] = res
                         except Exception:
-                            # Best-effort; ignore failures
+                            pass
+                        try:
+                            if ip2 is not None:
+                                ns2 = getattr(ip2, 'user_ns', None)
+                                if isinstance(ns2, dict):
+                                    out = ns2.get('Out')
+                                    if isinstance(out, dict):
+                                        count = getattr(ip2, 'execution_count', None)
+                                        if isinstance(count, int):
+                                            out[count] = res
+                        except Exception:
                             pass
 
                     try:
