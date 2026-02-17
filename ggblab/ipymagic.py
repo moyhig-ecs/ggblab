@@ -281,44 +281,9 @@ def register_ggb_magic(ipython=None):
             except Exception:
                 pass
 
-            # If we couldn't detect a {name} form (because a frontend already
-            # expanded it), try to find a variable in the user namespace whose
-            # string contents match the token. This lets frontends that expand
-            # `{var}` before our magic run still behave like `%ggb var`.
-            # Do not attempt content-matching for bare identifiers like
-            # `cmds` (we only accept brace form explicitly).
-            if varname is None and not raw_tok_str.isidentifier():
-                try:
-                    tgt = raw_tok_str.strip()
-                    if isinstance(user_ns, dict):
-                        for k, v in user_ns.items():
-                            # skip obvious internals
-                            if k.startswith('__'):
-                                continue
-                            # string variables: compare stripped content
-                            if isinstance(v, str):
-                                vv = v.strip()
-                                if (vv.startswith("'") and vv.endswith("'")) or (vv.startswith('"') and vv.endswith('"')):
-                                    vv = vv[1:-1].strip()
-                                if vv == tgt:
-                                    varname = k
-                                    try:
-                                        _dbg("[ggb-magic-debug] matched token content to var %r", k)
-                                    except Exception:
-                                        pass
-                                    break
-                            # list/tuple: join by newlines and compare
-                            if isinstance(v, (list, tuple)):
-                                joined = '\n'.join(str(x) for x in v).strip()
-                                if joined == tgt:
-                                    varname = k
-                                    try:
-                                        _dbg("[ggb-magic-debug] matched token content to list/tuple var %r", k)
-                                    except Exception:
-                                        pass
-                                    break
-                except Exception:
-                    pass
+            # Note: IPython performs `{var}` expansion in frontends; do not
+            # attempt to emulate expansion here by matching token contents
+            # against `user_ns`. Only accept explicit `{name}` brace form.
 
             if varname and varname in user_ns:
                 val = user_ns[varname]
