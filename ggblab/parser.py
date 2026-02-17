@@ -144,36 +144,7 @@ class ggb_parser:
         n = len(tokens)
         while i < n:
             token = tokens[i]
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
+
             if token in ['(', '[', '{']:
                 # If extracting commands and previous token looks like a command name, save it
                 if extract_commands and prev_token and isinstance(prev_token, str) and prev_token[0].isalpha():
@@ -293,9 +264,9 @@ class ggb_parser:
                 self.command_cache.increment(commands)
             except Exception:
                 logging.getLogger(__name__).exception("Failed to increment command_cache with commands")
-            return {'tokens': stack[0], 'commands': commands}
+            return {'tokens': stack[0][0], 'commands': commands}
 
-        return stack[0]
+        return stack[0][0]
 
     def strip_comma(self, parsed_tokens):
         """Return a copy of `parsed_tokens` with all comma tokens removed.
