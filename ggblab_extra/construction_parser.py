@@ -341,7 +341,7 @@ class ConstructionTreeParser:
     # Default container types to include when searching for composite objects
     DEFAULT_CONTAINER_TYPES = {"polygon", "segment", "circle"}
 
-    def __init__(self, df=None, cache_path=None, cache_enabled=True, auto_assign_layers: bool = False, layer_two_pass: bool = False):
+    def __init__(self, df=None, cache_path=None, cache_enabled=True, auto_assign_layers: bool = False):
         """Initialize the parser with optional construction dataframe and command caching.
 
         Args:
@@ -368,9 +368,7 @@ class ConstructionTreeParser:
         self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
         # Control whether automatic Layer assignment runs during parse()
         self.auto_assign_layers = bool(auto_assign_layers)
-        # If True, perform a second pass to enforce parent-child layer constraints
-        # (e.g., children should be at least parent+1, clamped to 9). Default: False
-        self.layer_two_pass = bool(layer_two_pass)
+        # (Note) Two-pass parent-child adjustment removed; layering is single-pass
 
     def parse(self):
         """Build the full dependency graph (G) from construction protocol.
@@ -478,8 +476,7 @@ class ConstructionTreeParser:
                         cmds_list = list(self.df['Command'])
                         types_list = list(self.df['Type'])
 
-                    # map list name -> its detected element names (to enforce element layers)
-                    list_elements_map = {}
+                    # no longer record list elements for a second pass (two-pass removed)
 
                     for name, cmd, typ in zip(names_list, cmds_list, types_list):
                         # print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
@@ -644,46 +641,7 @@ class ConstructionTreeParser:
                                 layer = max(0, min(9, layer))
                                 assigned.append(layer)
 
-                            # Second pass: enforce parent-child constraints if enabled
-                            if getattr(self, 'layer_two_pass', False):
-                                # map name -> layer for quick updates
-                                layers_by_name = {n: l for n, l in zip(df_names, assigned)}
-                                # mark fixed nodes that should not be bumped by pass2
-                                # Only L9 (control points) are treated as fixed; L8
-                                # (lists) may be adjusted if needed.
-                                fixed = set(n for n, l in layers_by_name.items() if l == 9)
-                                max_iters2 = max(5, len(layers_by_name))
-                                for _ in range(max_iters2):
-                                    changed = False
-                                    for u, v in self.G.edges():
-                                        if u in layers_by_name and v in layers_by_name:
-                                            lu = layers_by_name[u]
-                                            lv = layers_by_name[v]
-                                            # prefer child >= parent+1 so children overlay parents
-                                            target = min(9, lu + 1)
-                                            if v in fixed:
-                                                # do not override fixed nodes
-                                                continue
-                                            if lv < target:
-                                                layers_by_name[v] = target
-                                                changed = True
-                                    if not changed:
-                                        break
-
-                                # enforce that list elements are placed at L7 to avoid
-                                # everyone being pushed to L8/L9 when lists are L8.
-                                try:
-                                    for list_name, elems in list_elements_map.items():
-                                        for e in elems:
-                                            if e in layers_by_name:
-                                                # do not override L9 control points
-                                                if layers_by_name.get(e, 0) != 9:
-                                                    layers_by_name[e] = 7
-                                except Exception:
-                                    pass
-
-                                # write back adjusted layers in original order
-                                assigned = [layers_by_name.get(n, 0) for n in df_names]
+                            # (two-pass parent-child adjustment removed)
 
                             # attach/replace Layer column on the dataframe
                             try:
