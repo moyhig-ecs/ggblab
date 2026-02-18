@@ -170,7 +170,22 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
 
         try:
             r = await ggb.command(c_to_send)
-            results.append(r)
+            # If GeoGebra returned multiple values packed in a string
+            # (comma-separated) or as a list/tuple, push each item into
+            # the results "register" so tokens like _1, _2 can access
+            # subsequent values. Otherwise append the single result.
+            try:
+                if isinstance(r, str) and ',' in r and '(' not in r and ')' not in r:
+                    parts = [p.strip() for p in r.split(',')]
+                    for p in parts:
+                        results.append(p)
+                elif isinstance(r, (list, tuple)):
+                    for item in r:
+                        results.append(item)
+                else:
+                    results.append(r)
+            except Exception:
+                results.append(r)
         except Exception as e:
             # If the applet raised a GeoGebraAppletError, stop executing any
             # further commands and report only this first error back to the

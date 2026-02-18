@@ -110,7 +110,7 @@
     "outputDir": "ggblab/labextension",
     "schemaDir": "schema",
     "_build": {
-      "load": "static/remoteEntry.ca0f4d3a035987784cf1.js",
+      "load": "static/remoteEntry.5a21e334b4330bae024c.js",
       "extension": "./extension",
       "style": "./style"
     }

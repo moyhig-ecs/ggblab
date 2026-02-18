@@ -554,15 +554,27 @@ class ConstructionTreeParser:
                     # After processing list-grouping, optionally perform an automatic
                     # layer assignment for nodes present in the dataframe. This is
                     # controlled by the instance flag `self.auto_assign_layers`.
-                    # Ensure a default Layer column exists (all zeros).
+                    # Ensure a default Layer column exists (all zeros) but do NOT
+                    # overwrite an existing `Layer` column. Only add the column
+                    # when it's missing; this preserves user-provided layer values.
                     try:
-                        zeros = [0 for _ in range(len(self.df['Name']))]
-                        self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
+                        if "Layer" not in self.df.columns:
+                            zeros = [0 for _ in range(len(self.df['Name']))]
+                            try:
+                                self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
+                            except Exception:
+                                self.df = self.df.with_columns(pl.Series('Layer', zeros))
+                        else:
+                            # If the column exists but contains nulls, fill them with 0
+                            try:
+                                if any(x is None for x in self.df['Layer']):
+                                    filled = [0 if x is None else x for x in list(self.df['Layer'])]
+                                    self.df = self.df.with_columns(pl.Series('Layer', filled).cast(pl.Int64))
+                            except Exception:
+                                # Best-effort: leave existing Layer column untouched
+                                pass
                     except Exception:
-                        try:
-                            self.df = self.df.with_columns(pl.Series('Layer', [0 for _ in self.df['Name']]))
-                        except Exception:
-                            pass
+                        pass
 
                     converted = []
                     for v, n in zip(raw_col, self.df["Name"]):
