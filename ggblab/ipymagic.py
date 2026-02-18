@@ -170,6 +170,9 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
 
         try:
             r = await ggb.command(c_to_send)
+            # If the applet returned None, do not record it in the results list
+            if r is None:
+                continue
             # If GeoGebra returned multiple values packed in a string
             # (comma-separated) or as a list/tuple, push each item into
             # the results "register" so tokens like _1, _2 can access
@@ -181,6 +184,9 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
                         results.append(p)
                 elif isinstance(r, (list, tuple)):
                     for item in r:
+                        # skip explicit None entries
+                        if item is None:
+                            continue
                         results.append(item)
                 else:
                     results.append(r)
