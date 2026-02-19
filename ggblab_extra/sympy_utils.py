@@ -8,34 +8,50 @@ segments) and some small DataFrame convenience functions.
 Keep this module optional to avoid forcing SymPy onto minimal users.
 """
 
+import math
+import re
 from dataclasses import dataclass
 from typing import Optional, Union
-import re
-import math
 
-from sympy import symbols, sin, cos, Matrix, sqrt
+from sympy import Matrix, cos, sin, sqrt, symbols
 from sympy.geometry import Plane, Point3D
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication_application
+from sympy.parsing.sympy_parser import (
+    implicit_multiplication_application,
+    parse_expr,
+    standard_transformations,
+)
 
 # Parser transformations and time symbol
-_t = symbols('t')
+_t = symbols("t")
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
 
 def _parse_vec_str(vec_str: str):
-    parts = [p.strip() for p in vec_str.split(',')]
+    parts = [p.strip() for p in vec_str.split(",")]
     if len(parts) != 3:
         raise ValueError("expected three components in vector part")
     exprs = []
     for p in parts:
-        if p == '' or p == '0':
-            exprs.append(parse_expr('0', transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': _t}))
+        if p == "" or p == "0":
+            exprs.append(
+                parse_expr(
+                    "0",
+                    transformations=_transformations,
+                    local_dict={"sin": sin, "cos": cos, "t": _t},
+                )
+            )
         else:
-            exprs.append(parse_expr(p, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': _t}))
+            exprs.append(
+                parse_expr(
+                    p,
+                    transformations=_transformations,
+                    local_dict={"sin": sin, "cos": cos, "t": _t},
+                )
+            )
     return exprs
 
 
-_LINE_RE = re.compile(r'^\s*([^:]+)\s*:\s*X\s*=\s*\((.*?)\)\s*\+\s*\((.*?)\)\s*$', re.I)
+_LINE_RE = re.compile(r"^\s*([^:]+)\s*:\s*X\s*=\s*\((.*?)\)\s*\+\s*\((.*?)\)\s*$", re.I)
 
 
 def parse_line(line: str):
@@ -45,10 +61,17 @@ def parse_line(line: str):
     label = m.group(1).strip()
     center_str = m.group(2).strip()
     vec_str = m.group(3).strip()
-    center_parts = [c.strip() for c in center_str.split(',')]
+    center_parts = [c.strip() for c in center_str.split(",")]
     if len(center_parts) != 3:
         raise ValueError("expected three center components")
-    center_exprs = [parse_expr(p if p else '0', transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': _t}) for p in center_parts]
+    center_exprs = [
+        parse_expr(
+            p if p else "0",
+            transformations=_transformations,
+            local_dict={"sin": sin, "cos": cos, "t": _t},
+        )
+        for p in center_parts
+    ]
     vec_exprs = _parse_vec_str(vec_str)
     return label, center_exprs, vec_exprs
 
@@ -60,8 +83,16 @@ def compute_axis(vec_exprs):
     B = Matrix(sin_coeffs)
     n = A.cross(B)
     n_simpl = Matrix([ni.simplify() for ni in n])
-    norm_val = float(sqrt(sum([float((ni**2).evalf()) for ni in n_simpl]))) if any([ni != 0 for ni in n_simpl]) else 0.0
-    unit = (n_simpl / norm_val).applyfunc(lambda x: x.evalf()) if norm_val != 0 else n_simpl
+    norm_val = (
+        float(sqrt(sum([float((ni**2).evalf()) for ni in n_simpl])))
+        if any([ni != 0 for ni in n_simpl])
+        else 0.0
+    )
+    unit = (
+        (n_simpl / norm_val).applyfunc(lambda x: x.evalf())
+        if norm_val != 0
+        else n_simpl
+    )
     return n_simpl, unit
 
 
@@ -96,42 +127,59 @@ def circle_from_value(value_str: str):
     rB = sqrt(sum([ci**2 for ci in B]))
     radius = (rA + rB) / 2
     center = Point3D(*center_exprs)
-    return Circle3D(center=center, normal=normal_simpl, radius=radius, axis_cos=A, axis_sin=B)
+    return Circle3D(
+        center=center, normal=normal_simpl, radius=radius, axis_cos=A, axis_sin=B
+    )
 
 
 def point_from_value(value_str: str) -> Point3D:
-    if ':' in value_str:
-        _, s = value_str.split(':', 1)
+    if ":" in value_str:
+        _, s = value_str.split(":", 1)
     else:
         s = value_str
     s = s.strip()
-    m = re.search(r'=\s*\(([^,]+),([^,]+),([^\)]+)\)', s)
+    m = re.search(r"=\s*\(([^,]+),([^,]+),([^\)]+)\)", s)
     if not m:
-        m2 = re.search(r'\(([^,]+),([^,]+),([^\)]+)\)', s)
+        m2 = re.search(r"\(([^,]+),([^,]+),([^\)]+)\)", s)
         if not m2:
             raise ValueError(f"not a point value: {value_str!r}")
         m = m2
     comps = [c.strip() for c in m.groups()]
-    exprs = [parse_expr(c, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': _t}) for c in comps]
+    exprs = [
+        parse_expr(
+            c,
+            transformations=_transformations,
+            local_dict={"sin": sin, "cos": cos, "t": _t},
+        )
+        for c in comps
+    ]
     return Point3D(*exprs)
 
 
 def plane_from_value(value_str: str) -> Plane:
-    if ':' in value_str:
-        _, s = value_str.split(':', 1)
+    if ":" in value_str:
+        _, s = value_str.split(":", 1)
     else:
         s = value_str
     s = s.strip()
-    if '=' in s:
-        lhs_str, rhs_str = s.split('=', 1)
+    if "=" in s:
+        lhs_str, rhs_str = s.split("=", 1)
     else:
-        lhs_str, rhs_str = s, '0'
-    x, y, z = symbols('x y z')
-    lhs = parse_expr(lhs_str.strip(), transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
-    rhs = parse_expr(rhs_str.strip(), transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
-    if isinstance(rhs, tuple) or getattr(rhs, 'is_Tuple', False):
+        lhs_str, rhs_str = s, "0"
+    x, y, z = symbols("x y z")
+    lhs = parse_expr(
+        lhs_str.strip(),
+        transformations=_transformations,
+        local_dict={"x": x, "y": y, "z": z},
+    )
+    rhs = parse_expr(
+        rhs_str.strip(),
+        transformations=_transformations,
+        local_dict={"x": x, "y": y, "z": z},
+    )
+    if isinstance(rhs, tuple) or getattr(rhs, "is_Tuple", False):
         raise ValueError(f"RHS parses as tuple, not a plane equation: {value_str!r}")
-    if isinstance(lhs, tuple) or getattr(lhs, 'is_Tuple', False):
+    if isinstance(lhs, tuple) or getattr(lhs, "is_Tuple", False):
         raise ValueError(f"LHS parses as tuple, not a plane equation: {value_str!r}")
     expr = lhs - rhs
     a = expr.coeff(x, 1)
@@ -151,9 +199,10 @@ def plane_from_value(value_str: str) -> Plane:
     return Plane(pt, normal)
 
 
-def attach_planes(df, value_col='Value', out_col='sym_plane'):
+def attach_planes(df, value_col="Value", out_col="sym_plane"):
     try:
         import polars as pl
+
         is_polars = isinstance(df, pl.DataFrame)
     except Exception:
         is_polars = False
@@ -161,9 +210,11 @@ def attach_planes(df, value_col='Value', out_col='sym_plane'):
         vals = df[value_col].to_list()
         planes = [plane_from_value(v) for v in vals]
         normals = [p.normal_vector for p in planes]
-        return df.with_columns([pl.Series(out_col, planes), pl.Series(out_col + '_normal', normals)])
+        return df.with_columns(
+            [pl.Series(out_col, planes), pl.Series(out_col + "_normal", normals)]
+        )
     df[out_col] = df[value_col].apply(plane_from_value)
-    df[out_col + '_normal'] = df[out_col].apply(lambda pl: pl.normal_vector)
+    df[out_col + "_normal"] = df[out_col].apply(lambda pl: pl.normal_vector)
     return df
 
 
@@ -180,23 +231,34 @@ def value_to_sympy(value_str: str):
         return plane_from_value(value_str)
     except Exception:
         pass
-    if ':' in value_str:
-        _, s = value_str.split(':', 1)
+    if ":" in value_str:
+        _, s = value_str.split(":", 1)
     else:
         s = value_str
     s = s.strip()
-    x, y, z = symbols('x y z')
-    if '=' in s:
-        lhs_str, rhs_str = s.split('=', 1)
-        lhs = parse_expr(lhs_str.strip(), transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
-        rhs = parse_expr(rhs_str.strip(), transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
+    x, y, z = symbols("x y z")
+    if "=" in s:
+        lhs_str, rhs_str = s.split("=", 1)
+        lhs = parse_expr(
+            lhs_str.strip(),
+            transformations=_transformations,
+            local_dict={"x": x, "y": y, "z": z},
+        )
+        rhs = parse_expr(
+            rhs_str.strip(),
+            transformations=_transformations,
+            local_dict={"x": x, "y": y, "z": z},
+        )
         return lhs - rhs
-    return parse_expr(s, transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
+    return parse_expr(
+        s, transformations=_transformations, local_dict={"x": x, "y": y, "z": z}
+    )
 
 
-def attach_sympy(df, value_col='Value', sym_col='sympy'):
+def attach_sympy(df, value_col="Value", sym_col="sympy"):
     try:
         import polars as pl
+
         is_polars = isinstance(df, pl.DataFrame)
     except Exception:
         is_polars = False
@@ -215,119 +277,133 @@ class ValueObject:
     raw: str
 
     def is_point(self) -> bool:
-        return self.kind == 'point'
+        return self.kind == "point"
 
     def is_circle(self) -> bool:
-        return self.kind == 'circle'
+        return self.kind == "circle"
 
     def is_plane(self) -> bool:
-        return self.kind == 'plane'
+        return self.kind == "plane"
 
     def is_line(self) -> bool:
-        return self.kind == 'line'
+        return self.kind == "line"
 
     def is_segment(self) -> bool:
-        return self.kind == 'segment'
+        return self.kind == "segment"
 
 
 @dataclass
 class Object3D:
-        """Unified container for 3D construction objects.
+    """Unified container for 3D construction objects.
 
-        Holds an optional `value` string (GeoGebra Value), an optional
-        `command` string (GeoGebra command), and the resolved object when
-        possible. The resolver will attempt to create a SymPy-based object
-        from `value` and/or `command`. Some objects cannot be fully
-        resolved from the value alone (e.g. a `Segment` specified only by
-        endpoint labels), so `obj` may be a lightweight container with
-        unresolved labels.
+    Holds an optional `value` string (GeoGebra Value), an optional
+    `command` string (GeoGebra command), and the resolved object when
+    possible. The resolver will attempt to create a SymPy-based object
+    from `value` and/or `command`. Some objects cannot be fully
+    resolved from the value alone (e.g. a `Segment` specified only by
+    endpoint labels), so `obj` may be a lightweight container with
+    unresolved labels.
+    """
+
+    kind: str | None = None
+    obj: object | None = None
+    value: str | None = None
+    command: str | None = None
+
+    def __repr__(self) -> str:  # pragma: no cover - formatting
+        return f"Object3D(kind={self.kind!r}, obj={self.obj!r}, value={self.value!r}, command={self.command!r})"
+
+    @classmethod
+    def from_value_command(cls, value: str | None = None, command: str | None = None):
+        """Build an Object3D from optional `value` and `command` strings.
+
+        Resolution rules (simple heuristic):
+        - If `command` looks like a `Segment(...)` command, parse it and
+            return an 'segment' Object3D with endpoint labels stored in the
+            `Segment` container (labels unresolved).
+        - Otherwise, if `value` is present, call `parse_value(value)` and
+            use its result.
+        - If both are present, prefer `command` for labeled constructions
+            (endpoints) and use `value` as fallback for numeric definitions.
         """
-        kind: str | None = None
-        obj: object | None = None
-        value: str | None = None
-        command: str | None = None
+        # Prefer command when it explicitly names endpoints (Segment(A,B))
+        if command:
+            try:
+                seg = segment_from_command(command)
+                return cls(kind="segment", obj=seg, value=value, command=command)
+            except Exception:
+                # not a Segment command; fall through to value-based parsing
+                pass
 
-        def __repr__(self) -> str:  # pragma: no cover - formatting
-                return f"Object3D(kind={self.kind!r}, obj={self.obj!r}, value={self.value!r}, command={self.command!r})"
+        if value:
+            vo = parse_value(value)
+            return cls(kind=vo.kind, obj=vo.obj, value=value, command=command)
 
-        @classmethod
-        def from_value_command(cls, value: str | None = None, command: str | None = None):
-                """Build an Object3D from optional `value` and `command` strings.
-
-                Resolution rules (simple heuristic):
-                - If `command` looks like a `Segment(...)` command, parse it and
-                    return an 'segment' Object3D with endpoint labels stored in the
-                    `Segment` container (labels unresolved).
-                - Otherwise, if `value` is present, call `parse_value(value)` and
-                    use its result.
-                - If both are present, prefer `command` for labeled constructions
-                    (endpoints) and use `value` as fallback for numeric definitions.
-                """
-                # Prefer command when it explicitly names endpoints (Segment(A,B))
-                if command:
-                        try:
-                                seg = segment_from_command(command)
-                                return cls(kind='segment', obj=seg, value=value, command=command)
-                        except Exception:
-                                # not a Segment command; fall through to value-based parsing
-                                pass
-
-                if value:
-                        vo = parse_value(value)
-                        return cls(kind=vo.kind, obj=vo.obj, value=value, command=command)
-
-                # nothing to resolve
-                return cls(kind=None, obj=None, value=value, command=command)
+        # nothing to resolve
+        return cls(kind=None, obj=None, value=value, command=command)
 
 
 def parse_value(value_str: str) -> ValueObject:
-    s = value_str if value_str is not None else ''
+    s = value_str if value_str is not None else ""
     try:
         c = circle_from_value(s)
-        return ValueObject('circle', c, s)
+        return ValueObject("circle", c, s)
     except Exception:
         pass
     try:
         l = line_from_value(s)
-        return ValueObject('line', l, s)
+        return ValueObject("line", l, s)
     except Exception:
         pass
     try:
         p = point_from_value(s)
-        return ValueObject('point', p, s)
+        return ValueObject("point", p, s)
     except Exception:
         pass
     try:
-        if ':' not in s:
-            mnum = re.search(r'=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)', s)
-            if mnum and re.match(r'^\w+\s*=\s*[-+]?\d', s):
+        if ":" not in s:
+            mnum = re.search(r"=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", s)
+            if mnum and re.match(r"^\w+\s*=\s*[-+]?\d", s):
                 try:
                     val = float(mnum.group(1))
-                    return ValueObject('segment', Segment(length=val), s)
+                    return ValueObject("segment", Segment(length=val), s)
                 except Exception:
                     pass
     except Exception:
         pass
     try:
         pl = plane_from_value(s)
-        return ValueObject('plane', pl, s)
+        return ValueObject("plane", pl, s)
     except Exception:
         pass
     try:
-        x, y, z = symbols('x y z')
-        if ':' in s:
-            _, s2 = s.split(':', 1)
+        x, y, z = symbols("x y z")
+        if ":" in s:
+            _, s2 = s.split(":", 1)
         else:
             s2 = s
         s2 = s2.strip()
-        if '=' in s2:
-            lhs_str, rhs_str = s2.split('=', 1)
-            lhs = parse_expr(lhs_str.strip(), transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
-            rhs = parse_expr(rhs_str.strip(), transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
-            if isinstance(lhs, tuple) or getattr(lhs, 'is_Tuple', False) or isinstance(rhs, tuple) or getattr(rhs, 'is_Tuple', False):
+        if "=" in s2:
+            lhs_str, rhs_str = s2.split("=", 1)
+            lhs = parse_expr(
+                lhs_str.strip(),
+                transformations=_transformations,
+                local_dict={"x": x, "y": y, "z": z},
+            )
+            rhs = parse_expr(
+                rhs_str.strip(),
+                transformations=_transformations,
+                local_dict={"x": x, "y": y, "z": z},
+            )
+            if (
+                isinstance(lhs, tuple)
+                or getattr(lhs, "is_Tuple", False)
+                or isinstance(rhs, tuple)
+                or getattr(rhs, "is_Tuple", False)
+            ):
                 try:
                     p = point_from_value(value_str)
-                    return ValueObject('point', p, value_str)
+                    return ValueObject("point", p, value_str)
                 except Exception:
                     raise
             expr = lhs - rhs
@@ -345,19 +421,24 @@ def parse_value(value_str: str) -> ValueObject:
                         pt = Point3D(0, dd / bb, 0)
                     else:
                         pt = Point3D(0, 0, dd / cc)
-                    return ValueObject('plane', Plane(pt, normal), value_str)
+                    return ValueObject("plane", Plane(pt, normal), value_str)
             except Exception:
                 pass
         else:
-            expr = parse_expr(s2, transformations=_transformations, local_dict={'x': x, 'y': y, 'z': z})
-        return ValueObject('expr', expr, value_str)
+            expr = parse_expr(
+                s2,
+                transformations=_transformations,
+                local_dict={"x": x, "y": y, "z": z},
+            )
+        return ValueObject("expr", expr, value_str)
     except Exception:
-        return ValueObject('raw', value_str, value_str)
+        return ValueObject("raw", value_str, value_str)
 
 
-def attach_objects(df, value_col='Value', obj_col='symobj'):
+def attach_objects(df, value_col="Value", obj_col="symobj"):
     try:
         import polars as pl
+
         is_polars = isinstance(df, pl.DataFrame)
     except Exception:
         is_polars = False
@@ -369,7 +450,9 @@ def attach_objects(df, value_col='Value', obj_col='symobj'):
     return df
 
 
-def attach_object3d(df, type_col='Type', command_col='Command', value_col='Value', out_col='object3d'):
+def attach_object3d(
+    df, type_col="Type", command_col="Command", value_col="Value", out_col="object3d"
+):
     """Attach an `Object3D` for each row using `Type`, `Command`, and `Value`.
 
     - For polars DataFrame: uses column lists and returns a new DataFrame with
@@ -385,7 +468,7 @@ def attach_object3d(df, type_col='Type', command_col='Command', value_col='Value
         except Exception:
             pl_mod = None
 
-    is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, 'DataFrame'))
+    is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, "DataFrame"))
 
     if is_polars:
         types = df[type_col].to_list()
@@ -394,21 +477,28 @@ def attach_object3d(df, type_col='Type', command_col='Command', value_col='Value
         objs = []
         for t, c, v in zip(types, cmds, vals):
             try:
-                o = Object3D.from_value_command(value=v if v is not None else None,
-                                                command=c if c is not None else None)
+                o = Object3D.from_value_command(
+                    value=v if v is not None else None,
+                    command=c if c is not None else None,
+                )
             except Exception:
                 o = Object3D(kind=None, obj=None, value=v, command=c)
             objs.append(o)
         try:
-            s = pl_mod.Series(out_col, objs, dtype=getattr(pl_mod, 'Object'))
+            s = pl_mod.Series(out_col, objs, dtype=getattr(pl_mod, "Object"))
         except Exception:
             s = pl_mod.Series(out_col, objs)
         return df.with_columns([s])
 
     # pandas-like DataFrame: use apply if available
-    if hasattr(df, 'apply') and callable(getattr(df, 'apply')):
+    if hasattr(df, "apply") and callable(getattr(df, "apply")):
         try:
-            df[out_col] = df.apply(lambda r: Object3D.from_value_command(value=r[value_col], command=r[command_col]), axis=1)
+            df[out_col] = df.apply(
+                lambda r: Object3D.from_value_command(
+                    value=r[value_col], command=r[command_col]
+                ),
+                axis=1,
+            )
             return df
         except Exception:
             pass
@@ -422,12 +512,17 @@ def attach_object3d(df, type_col='Type', command_col='Command', value_col='Value
             c = row[command_col]
             o = Object3D.from_value_command(value=v, command=c)
         except Exception:
-            o = Object3D(kind=None, obj=None, value=(row[value_col] if 'row' in locals() else None), command=(row[command_col] if 'row' in locals() else None))
+            o = Object3D(
+                kind=None,
+                obj=None,
+                value=(row[value_col] if "row" in locals() else None),
+                command=(row[command_col] if "row" in locals() else None),
+            )
         objs.append(o)
 
     if is_polars and pl_mod is not None:
         try:
-            s = pl_mod.Series(out_col, objs, dtype=getattr(pl_mod, 'Object'))
+            s = pl_mod.Series(out_col, objs, dtype=getattr(pl_mod, "Object"))
         except Exception:
             s = pl_mod.Series(out_col, objs)
         return df.with_columns([s])
@@ -437,12 +532,19 @@ def attach_object3d(df, type_col='Type', command_col='Command', value_col='Value
         return df
     except Exception:
         # If assignment fails, attempt to return a new DataFrame via with_columns if available
-        if pl_mod is not None and hasattr(df, 'with_columns'):
+        if pl_mod is not None and hasattr(df, "with_columns"):
             return df.with_columns([pl_mod.Series(out_col, objs)])
         raise
 
 
-def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='Command', value_col='Value', out_col='plane_members'):
+def enumerate_plane_members(
+    df,
+    type_col="Type",
+    name_col="Name",
+    command_col="Command",
+    value_col="Value",
+    out_col="plane_members",
+):
     """For rows where `Type` == 'plane', list names of objects that lie on that plane.
 
     - `segment` endpoints referenced by label are resolved using the `Name` column.
@@ -458,7 +560,7 @@ def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='C
         except Exception:
             pl_mod = None
 
-    is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, 'DataFrame'))
+    is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, "DataFrame"))
 
     # Build name -> row mapping for resolving segment endpoints
     name_map = {}
@@ -482,7 +584,7 @@ def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='C
         val = row.get(value_col) if isinstance(row, dict) else row[value_col]
         try:
             vo = parse_value(val)
-            if vo.kind == 'point' and isinstance(vo.obj, Point3D):
+            if vo.kind == "point" and isinstance(vo.obj, Point3D):
                 return vo.obj
         except Exception:
             try:
@@ -513,19 +615,23 @@ def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='C
         v = row.get(value_col) if isinstance(row, dict) else row[value_col]
         c = row.get(command_col) if isinstance(row, dict) else row[command_col]
         try:
-            o = Object3D.from_value_command(value=v if v is not None else None, command=c if c is not None else None)
+            o = Object3D.from_value_command(
+                value=v if v is not None else None, command=c if c is not None else None
+            )
         except Exception:
             o = Object3D(kind=None, obj=None, value=v, command=c)
         objs.append((t, row, o))
 
     # For each plane row, collect member names
     for idx, (t, row, o) in enumerate(objs):
-        if (isinstance(t, str) and t.lower() == 'plane') or (t == 'plane'):
+        if (isinstance(t, str) and t.lower() == "plane") or (t == "plane"):
             # resolve plane
             try:
-                plane = plane_from_value(row[value_col] if not isinstance(row, dict) else row[value_col])
+                plane = plane_from_value(
+                    row[value_col] if not isinstance(row, dict) else row[value_col]
+                )
             except Exception:
-                members_list.append('')
+                members_list.append("")
                 continue
             members = []
             # examine all rows for membership
@@ -534,12 +640,12 @@ def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='C
                     continue
                 name_j = rj.get(name_col) if isinstance(rj, dict) else rj[name_col]
                 # points
-                if oj.kind == 'point' and isinstance(oj.obj, Point3D):
+                if oj.kind == "point" and isinstance(oj.obj, Point3D):
                     if point_on_plane(oj.obj, plane):
                         members.append(name_j)
                         continue
                 # segments
-                if oj.kind == 'segment' and isinstance(oj.obj, Segment):
+                if oj.kind == "segment" and isinstance(oj.obj, Segment):
                     seg = oj.obj
                     p1 = seg.p1
                     p2 = seg.p2
@@ -552,16 +658,22 @@ def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='C
                             members.append(name_j)
                             continue
                 # circles
-                if oj.kind == 'circle' and hasattr(oj.obj, 'center'):
+                if oj.kind == "circle" and hasattr(oj.obj, "center"):
                     try:
                         center = oj.obj.center
-                        if isinstance(center, Point3D) and point_on_plane(center, plane):
+                        if isinstance(center, Point3D) and point_on_plane(
+                            center, plane
+                        ):
                             members.append(name_j)
                             continue
                     except Exception:
                         pass
                 # lines: check direction orthogonal to plane normal and point on plane
-                if oj.kind == 'line' and hasattr(oj.obj, 'point') and hasattr(oj.obj, 'direction'):
+                if (
+                    oj.kind == "line"
+                    and hasattr(oj.obj, "point")
+                    and hasattr(oj.obj, "direction")
+                ):
                     try:
                         lp = oj.obj.point
                         ld = oj.obj.direction
@@ -569,27 +681,31 @@ def enumerate_plane_members(df, type_col='Type', name_col='Name', command_col='C
                         pn = Matrix(plane.normal_vector)
                         # direction dot normal == 0 and one point on plane
                         dot = float(abs((Matrix(ld).dot(pn)).evalf()))
-                        if dot < 1e-9 and isinstance(lp, Point3D) and point_on_plane(lp, plane):
+                        if (
+                            dot < 1e-9
+                            and isinstance(lp, Point3D)
+                            and point_on_plane(lp, plane)
+                        ):
                             members.append(name_j)
                             continue
                     except Exception:
                         pass
             members_list.append(members)
         else:
-            members_list.append('')
+            members_list.append("")
 
     # attach results
     if is_polars:
         # Prefer a List(Utf8) column when possible
         try:
-            list_type = getattr(pl_mod, 'List')(getattr(pl_mod, 'Utf8'))
+            list_type = getattr(pl_mod, "List")(getattr(pl_mod, "Utf8"))
             s = pl_mod.Series(out_col, members_list, dtype=list_type)
         except Exception:
             try:
                 s = pl_mod.Series(out_col, members_list)
             except Exception:
                 # final fallback: convert lists to comma strings
-                s = pl_mod.Series(out_col, [', '.join(m or []) for m in members_list])
+                s = pl_mod.Series(out_col, [", ".join(m or []) for m in members_list])
         return df.with_columns([s])
 
     # pandas-like: keep lists as Python lists (object dtype)
@@ -625,8 +741,8 @@ class Segment:
 
 
 def line_from_value(value_str: str) -> Line3D:
-    if ':' in value_str:
-        _, s = value_str.split(':', 1)
+    if ":" in value_str:
+        _, s = value_str.split(":", 1)
     else:
         s = value_str
     s = s.strip()
@@ -635,22 +751,36 @@ def line_from_value(value_str: str) -> Line3D:
         raise ValueError(f"not a line value: {value_str!r}")
     c_str = m.group(1)
     d_str = m.group(2)
-    c_parts = [p.strip() for p in c_str.split(',')]
-    d_parts = [p.strip() for p in d_str.split(',')]
+    c_parts = [p.strip() for p in c_str.split(",")]
+    d_parts = [p.strip() for p in d_str.split(",")]
     if len(c_parts) != 3 or len(d_parts) != 3:
         raise ValueError(f"expected three components in line value: {value_str!r}")
-    exprs_c = [parse_expr(p, transformations=_transformations, local_dict={'x': symbols('x'), 'y': symbols('y'), 'z': symbols('z')}) for p in c_parts]
-    exprs_d = [parse_expr(p, transformations=_transformations, local_dict={'x': symbols('x'), 'y': symbols('y'), 'z': symbols('z')}) for p in d_parts]
+    exprs_c = [
+        parse_expr(
+            p,
+            transformations=_transformations,
+            local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
+        )
+        for p in c_parts
+    ]
+    exprs_d = [
+        parse_expr(
+            p,
+            transformations=_transformations,
+            local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
+        )
+        for p in d_parts
+    ]
     return Line3D(point=Point3D(*exprs_c), direction=Matrix(exprs_d))
 
 
 def segment_from_command(command_str: str) -> Segment:
     if command_str is None:
-        raise ValueError('empty command')
+        raise ValueError("empty command")
     s = command_str.strip()
-    m = re.search(r'Segment\s*\(\s*([^,\)]+)\s*,\s*([^\)]+)\s*\)', s)
+    m = re.search(r"Segment\s*\(\s*([^,\)]+)\s*,\s*([^\)]+)\s*\)", s)
     if not m:
-        raise ValueError(f'not a Segment command: {command_str!r}')
+        raise ValueError(f"not a Segment command: {command_str!r}")
     a = m.group(1).strip()
     b = m.group(2).strip()
     return Segment(p1=a, p2=b)
@@ -662,10 +792,10 @@ def point_distance_to_plane(point, plane) -> float:
         return float(d.evalf())
     except Exception:
         try:
-            plane_pt = getattr(plane, 'p1', None)
-            normal = getattr(plane, 'normal_vector', None)
+            plane_pt = getattr(plane, "p1", None)
+            normal = getattr(plane, "normal_vector", None)
             if plane_pt is None or normal is None:
-                raise RuntimeError('cannot get plane point/normal')
+                raise RuntimeError("cannot get plane point/normal")
             P = Matrix(point)
             P0 = Matrix(plane_pt)
             N = Matrix(normal)
@@ -695,16 +825,18 @@ def _to_numeric_vector(v):
 
 def circle_on_plane(circle, plane, dist_tol=1e-6, angle_tol=1e-3) -> bool:
     center_ok = point_on_plane(circle.center, plane, tol=dist_tol)
-    plane_n = getattr(plane, 'normal_vector', None)
-    circ_n = getattr(circle, 'normal', None)
+    plane_n = getattr(plane, "normal_vector", None)
+    circ_n = getattr(circle, "normal", None)
     if plane_n is None or circ_n is None:
         return False
     n1 = _to_numeric_vector(plane_n)
     n2 = _to_numeric_vector(circ_n)
     if n1 is None or n2 is None:
         return False
+
     def norm(vec):
         return math.sqrt(sum([x * x for x in vec]))
+
     d1 = norm(n1)
     d2 = norm(n2)
     if d1 == 0 or d2 == 0:
@@ -727,9 +859,9 @@ def valueobject_on_plane(vo: ValueObject, plane, tol=1e-6, angle_tol=1e-3) -> bo
             return circle_on_plane(vo.obj, plane, dist_tol=tol, angle_tol=angle_tol)
         if vo.is_line():
             l = vo.obj
-            D = _to_numeric_vector(getattr(l, 'direction', None))
-            N = _to_numeric_vector(getattr(plane, 'normal_vector', None))
-            P = getattr(l, 'point', None)
+            D = _to_numeric_vector(getattr(l, "direction", None))
+            N = _to_numeric_vector(getattr(plane, "normal_vector", None))
+            P = getattr(l, "point", None)
             if D is None or N is None or P is None:
                 return False
             d1 = math.sqrt(sum([x * x for x in D]))
@@ -745,15 +877,17 @@ def valueobject_on_plane(vo: ValueObject, plane, tol=1e-6, angle_tol=1e-3) -> bo
             return point_on_plane(P, plane, tol=tol)
         if vo.is_segment():
             seg = vo.obj
-            p1 = getattr(seg, 'p1', None)
-            p2 = getattr(seg, 'p2', None)
+            p1 = getattr(seg, "p1", None)
+            p2 = getattr(seg, "p2", None)
             if p1 is None or p2 is None:
                 return False
-            return point_on_plane(p1, plane, tol=tol) and point_on_plane(p2, plane, tol=tol)
+            return point_on_plane(p1, plane, tol=tol) and point_on_plane(
+                p2, plane, tol=tol
+            )
         if vo.is_plane():
             pl = vo.obj
-            N1 = _to_numeric_vector(getattr(pl, 'normal_vector', None))
-            N2 = _to_numeric_vector(getattr(plane, 'normal_vector', None))
+            N1 = _to_numeric_vector(getattr(pl, "normal_vector", None))
+            N2 = _to_numeric_vector(getattr(plane, "normal_vector", None))
             if N1 is None or N2 is None:
                 return False
             d1 = math.sqrt(sum([x * x for x in N1]))
@@ -764,7 +898,7 @@ def valueobject_on_plane(vo: ValueObject, plane, tol=1e-6, angle_tol=1e-3) -> bo
             cosang = abs(dot) / (d1 * d2)
             cosang = max(min(cosang, 1.0), -1.0)
             ang = math.acos(cosang)
-            pt = getattr(pl, 'p1', None)
+            pt = getattr(pl, "p1", None)
             if pt is None:
                 return False
             return (ang <= angle_tol) and point_on_plane(pt, plane, tol=tol)
@@ -774,10 +908,25 @@ def valueobject_on_plane(vo: ValueObject, plane, tol=1e-6, angle_tol=1e-3) -> bo
 
 
 __all__ = [
-    'parse_line', 'compute_axis', 'compute_axis_from_line', 'Circle3D', 'circle_from_value',
-    'point_from_value', 'plane_from_value', 'attach_planes', 'value_to_sympy', 'attach_sympy',
-    'ValueObject', 'parse_value', 'attach_objects', 'Line3D', 'Segment', 'line_from_value',
-    'segment_from_command', 'point_on_plane', 'circle_on_plane', 'valueobject_on_plane'
-    , 'Object3D'
+    "parse_line",
+    "compute_axis",
+    "compute_axis_from_line",
+    "Circle3D",
+    "circle_from_value",
+    "point_from_value",
+    "plane_from_value",
+    "attach_planes",
+    "value_to_sympy",
+    "attach_sympy",
+    "ValueObject",
+    "parse_value",
+    "attach_objects",
+    "Line3D",
+    "Segment",
+    "line_from_value",
+    "segment_from_command",
+    "point_on_plane",
+    "circle_on_plane",
+    "valueobject_on_plane",
+    "Object3D",
 ]
-
