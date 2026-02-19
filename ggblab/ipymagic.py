@@ -103,7 +103,50 @@ def _clean_cmd_line(ln: str) -> str:
 
 
 async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] = None):
-    ggb = ggb_instance or GeoGebra()
+    # Prefer an explicitly-supplied instance. If none provided, ensure the
+    # module behaves like the magic registration helper and create/store a
+    # GeoGebra singleton in the IPython user namespace so callers have a
+    # consistent `ggb` binding and a single shared instance per kernel.
+    if ggb_instance is not None:
+        ggb = ggb_instance
+    else:
+        prev_inst = getattr(GeoGebra, '_instance', None)
+        try:
+            ip = get_ipython()
+            user_ns = getattr(ip, 'user_ns', None) if ip is not None else None
+        except Exception:
+            user_ns = None
+        try:
+            ggb = GeoGebra()
+            # If the user namespace is available and doesn't already have
+            # a `ggb` binding, store the created singleton there and print
+            # a notification (best-effort).
+            try:
+                if isinstance(user_ns, dict) and 'ggb' not in user_ns:
+                    user_ns['ggb'] = ggb
+                    # After creating and storing the singleton, eagerly
+                    # initialize it so callers (including `ggb.function`) can
+                    # use the applet immediately without waiting for later
+                    # initialization steps.
+                    try:
+                        if not getattr(ggb, 'initialized', False):
+                            try:
+                                await ggb.init()
+                            except Exception:
+                                # initialization is best-effort here
+                                pass
+                    except Exception:
+                        pass
+                    if prev_inst is None:
+                        try:
+                            print("[ggblab] created GeoGebra singleton and stored as 'ggb' in user namespace")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        except Exception:
+            # Fallback: attempt a plain construction; GeoGebra.__new__ enforces singleton
+            ggb = GeoGebra()
     if not getattr(ggb, 'initialized', False):
         try:
             await ggb.init()
@@ -356,9 +399,9 @@ def register_ggb_magic(ipython=None):
         if created:
             try:
                 if for_api:
-                    print("[ggb] created GeoGebra singleton for api call")
+                    print("[ggblab] created GeoGebra singleton for api call")
                 else:
-                    print("[ggb] created GeoGebra singleton and stored as 'ggb' in user namespace")
+                    print("[ggblab] created GeoGebra singleton and stored as 'ggb' in user namespace")
             except Exception:
                 pass
         return inst
@@ -523,15 +566,33 @@ def register_ggb_magic(ipython=None):
                             ggb_instance = None
 
                 if loop is None:
-                    # synchronous call
+                    # synchronous call: ensure instance is initialized first
                     try:
+                        if not getattr(ggb_instance, 'initialized', False):
+                            try:
+                                asyncio.run(ggb_instance.init())
+                            except Exception:
+                                # best-effort initialization
+                                pass
                         return asyncio.run(ggb_instance.function(fname, args_list))
                     except Exception as e:
                         print('ggb api call failed:', e)
                         return None
                 else:
-                    # schedule and store task
-                    task = loop.create_task(ggb_instance.function(fname, args_list))
+                    # schedule and store task; ensure init runs before function
+                    async def _init_then_call():
+                        try:
+                            if not getattr(ggb_instance, 'initialized', False):
+                                try:
+                                    await ggb_instance.init()
+                                except Exception:
+                                    pass
+                            return await ggb_instance.function(fname, args_list)
+                        except Exception:
+                            # propagate to task result handling
+                            raise
+
+                    task = loop.create_task(_init_then_call())
                     try:
                         ip = get_ipython()
                         if ip is not None:

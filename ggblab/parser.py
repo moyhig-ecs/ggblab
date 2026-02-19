@@ -127,8 +127,10 @@ class ggb_parser:
                 return {'tokens': [], 'commands': set()}
             return []
 
-        # Regex pattern to match (1) parentheses, (2) commas, or (3) any sequence of non-spacing characters.
-        tokens = re.findall(r'[()\[\]\{\},]|[^()\[\]\{\}\s,]+', cmd_string)
+        # Regex pattern to match (1) parentheses/braces, (2) commas or colons,
+        # or (3) any sequence of non-separating characters. Include ':' as
+        # a standalone token so labels like 'l_{10}:' tokenize consistently.
+        tokens = re.findall(r'[()\[\]\{\},:]|[^()\[\]\{\}\s,:]+', cmd_string)
 
         # GeoGebra often emits implicit multiplication as juxtaposed tokens like "-1.0x".
         # Detect a leading numeric coefficient and split it into two tokens so downstream
@@ -278,45 +280,30 @@ class ggb_parser:
         if not isinstance(parsed_tokens, list):
             return parsed_tokens
 
-        # No top-level commas: recurse normally and collapse trivial single-item lists
+        # If there are no comma separators at this level, recurse normally.
         if not any(t == ',' for t in parsed_tokens):
-            res = [self.strip_comma(t) for t in parsed_tokens]
-            for idx, elem in enumerate(res):
-                if isinstance(elem, list) and all(isinstance(i, list) and len(i) == 1 for i in elem):
-                    res[idx] = [[i[0] for i in elem]]
-            return res
+            return [self.strip_comma(t) for t in parsed_tokens]
 
-        # Use itertools.groupby to split on comma tokens into segments
+        # Split on literal commas into segments and recursively process each segment.
         segments = []
-        for is_comma, group in itertools.groupby(parsed_tokens, key=lambda x: x == ','):
-            if is_comma:
-                continue
-            seg = list(group)
-            seg_processed = [self.strip_comma(x) for x in seg]
-            # Flatten single-item lists inside a segment
-            new_seg = [e[0] if isinstance(e, list) and len(e) == 1 else e for e in seg_processed]
-            segments.append(new_seg)
+        cur = []
+        for t in parsed_tokens:
+            if t == ',':
+                if len(cur) == 1:
+                    segments.append(self.strip_comma(cur[0]))
+                else:
+                    segments.append([self.strip_comma(x) for x in cur])
+                cur = []
+            else:
+                cur.append(t)
 
-        # Collapse wrapped one-level-deep patterns: [[['a'], ['b']]] -> ['a', 'b']
-        for idx, elem in enumerate(segments):
-            if isinstance(elem, list) and len(elem) == 1 and isinstance(elem[0], list):
-                inner = elem[0]
-                if all(isinstance(x, list) and len(x) == 1 for x in inner):
-                    segments[idx] = [x[0] for x in inner]
+        # push remaining
+        if cur:
+            if len(cur) == 1:
+                segments.append(self.strip_comma(cur[0]))
+            else:
+                segments.append([self.strip_comma(x) for x in cur])
 
-        # Single-level unwrap: [[['1','0']]] -> [['1','0']]
-        def _unwrap_once(obj):
-            if isinstance(obj, list):
-                if len(obj) == 1 and isinstance(obj[0], list):
-                    return obj[0]
-                return [_unwrap_once(e) for e in obj]
-            return obj
-
-        segments = _unwrap_once(segments)
-
-        # Final top-level unwrap if appropriate
-        if isinstance(segments, list) and len(segments) == 1 and isinstance(segments[0], list):
-            return segments[0]
         return segments
 
     def tokenize(self, cmd_string, extract_commands=False, simplify=False):
