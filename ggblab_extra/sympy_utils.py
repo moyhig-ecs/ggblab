@@ -6,6 +6,20 @@ SymPy geometry objects (Point3D, Plane, parametric circles, lines,
 segments) and some small DataFrame convenience functions.
 
 Keep this module optional to avoid forcing SymPy onto minimal users.
+
+Notes and limitations:
+- This module is pragmatic and aims to interoperate with GeoGebra's
+    exported `Value`/`Command` strings; it is not a complete formal
+    geometry library. Some predicates and conversions are best-effort.
+- SymPy APIs vary across versions; the code attempts graceful fallbacks
+    (e.g. Line3D import/representation) but behavior may differ by
+    SymPy release. Tests should be run in the target environment.
+- `line_from_value`, `circle_from_value`, `segment_from_command`,
+    `attach_object3d`, and `enumerate_plane_members` are pragmatic helpers
+    and may return lightweight placeholders when full symbolic objects
+    cannot be constructed (e.g. unresolved segment endpoints).
+- For educational extracts: annotate examples and explain fallbacks and
+    limitations before reuse in teaching materials.
 """
 
 import math
@@ -14,7 +28,14 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 from sympy import Matrix, cos, sin, sqrt, symbols
-from sympy.geometry import Plane, Point3D
+from sympy.geometry import Plane as SympyPlane, Point3D as SympyPoint3D
+try:
+    from sympy.geometry.line3d import Line3D as SympyLine3D
+except Exception:
+    try:
+        from sympy.geometry import Line3D as SympyLine3D
+    except Exception:
+        SympyLine3D = None
 from sympy.parsing.sympy_parser import (
     implicit_multiplication_application,
     parse_expr,
@@ -103,7 +124,7 @@ def compute_axis_from_line(line: str):
 
 @dataclass
 class Circle3D:
-    center: Point3D
+    center: SympyPoint3D
     normal: Matrix
     radius: object
     axis_cos: Matrix
@@ -126,13 +147,13 @@ def circle_from_value(value_str: str):
     rA = sqrt(sum([ci**2 for ci in A]))
     rB = sqrt(sum([ci**2 for ci in B]))
     radius = (rA + rB) / 2
-    center = Point3D(*center_exprs)
+    center = SympyPoint3D(*center_exprs)
     return Circle3D(
         center=center, normal=normal_simpl, radius=radius, axis_cos=A, axis_sin=B
     )
 
 
-def point_from_value(value_str: str) -> Point3D:
+def point_from_value(value_str: str) -> SympyPoint3D:
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
@@ -153,10 +174,10 @@ def point_from_value(value_str: str) -> Point3D:
         )
         for c in comps
     ]
-    return Point3D(*exprs)
+    return SympyPoint3D(*exprs)
 
 
-def plane_from_value(value_str: str) -> Plane:
+def plane_from_value(value_str: str) -> SympyPlane:
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
@@ -191,12 +212,12 @@ def plane_from_value(value_str: str) -> Plane:
         raise ValueError(f"no linear plane terms: {value_str!r}")
     normal = (a, b, c)
     if a != 0:
-        pt = Point3D(d / a, 0, 0)
+        pt = SympyPoint3D(d / a, 0, 0)
     elif b != 0:
-        pt = Point3D(0, d / b, 0)
+        pt = SympyPoint3D(0, d / b, 0)
     else:
-        pt = Point3D(0, 0, d / c)
-    return Plane(pt, normal)
+        pt = SympyPoint3D(0, 0, d / c)
+    return SympyPlane(pt, normal)
 
 
 def attach_planes(df, value_col="Value", out_col="sym_plane"):
@@ -293,6 +314,38 @@ class ValueObject:
 
 
 @dataclass
+class CommandObject:
+    """Parsed representation of a GeoGebra command string.
+
+    Minimal container for symmetry with `ValueObject`. Currently supports
+    `segment` commands parsed via `segment_from_command` (returns the
+    Segment container defined elsewhere in this module).
+    """
+
+    kind: Optional[str]
+    obj: object | None
+    raw: str
+
+
+def parse_command(command_str: str) -> CommandObject:
+    """Parse a GeoGebra `Command` string into a CommandObject.
+
+    Currently recognizes `Segment(...)` commands and returns a
+    `CommandObject(kind='segment', obj=Segment(...), raw=command_str)`.
+    Unknown or unparsed commands return `CommandObject(None, None, raw)`.
+    """
+    if not command_str:
+        return CommandObject(None, None, command_str)
+    try:
+        # Try known command parsers; start with Segment
+        seg = segment_from_command(command_str)
+        return CommandObject("segment", seg, command_str)
+    except Exception:
+        # Unknown/unsupported command
+        return CommandObject(None, None, command_str)
+
+
+@dataclass
 class Object3D:
     """Unified container for 3D construction objects.
 
@@ -329,10 +382,12 @@ class Object3D:
         # Prefer command when it explicitly names endpoints (Segment(A,B))
         if command:
             try:
-                seg = segment_from_command(command)
-                return cls(kind="segment", obj=seg, value=value, command=command)
+                cmd = parse_command(command)
+                if cmd.kind == "segment":
+                    return cls(kind="segment", obj=cmd.obj, value=value, command=command)
+                # other command kinds may be handled here in future
             except Exception:
-                # not a Segment command; fall through to value-based parsing
+                # not a recognized command; fall through to value-based parsing
                 pass
 
         if value:
@@ -401,11 +456,11 @@ def parse_value(value_str: str) -> ValueObject:
                 or isinstance(rhs, tuple)
                 or getattr(rhs, "is_Tuple", False)
             ):
-                try:
-                    p = point_from_value(value_str)
-                    return ValueObject("point", p, value_str)
-                except Exception:
-                    raise
+                    try:
+                        p = point_from_value(value_str)
+                        return ValueObject("point", p, value_str)
+                    except Exception:
+                        raise
             expr = lhs - rhs
             try:
                 aa = expr.coeff(x, 1)
@@ -416,12 +471,12 @@ def parse_value(value_str: str) -> ValueObject:
                     dd = -const
                     normal = (aa, bb, cc)
                     if aa != 0:
-                        pt = Point3D(dd / aa, 0, 0)
+                        pt = SympyPoint3D(dd / aa, 0, 0)
                     elif bb != 0:
-                        pt = Point3D(0, dd / bb, 0)
+                        pt = SympyPoint3D(0, dd / bb, 0)
                     else:
-                        pt = Point3D(0, 0, dd / cc)
-                    return ValueObject("plane", Plane(pt, normal), value_str)
+                        pt = SympyPoint3D(0, 0, dd / cc)
+                    return ValueObject("plane", SympyPlane(pt, normal), value_str)
             except Exception:
                 pass
         else:
@@ -584,7 +639,7 @@ def enumerate_plane_members(
         val = row.get(value_col) if isinstance(row, dict) else row[value_col]
         try:
             vo = parse_value(val)
-            if vo.kind == "point" and isinstance(vo.obj, Point3D):
+            if vo.kind == "point" and isinstance(vo.obj, SympyPoint3D):
                 return vo.obj
         except Exception:
             try:
@@ -593,7 +648,7 @@ def enumerate_plane_members(
                 return None
         return None
 
-    def point_on_plane(pt: Point3D, pln) -> bool:
+    def point_on_plane(pt: SympyPoint3D, pln) -> bool:
         try:
             d = float(abs(pln.distance(pt).evalf()))
             return d < 1e-9
@@ -640,7 +695,7 @@ def enumerate_plane_members(
                     continue
                 name_j = rj.get(name_col) if isinstance(rj, dict) else rj[name_col]
                 # points
-                if oj.kind == "point" and isinstance(oj.obj, Point3D):
+                if oj.kind == "point" and isinstance(oj.obj, SympyPoint3D):
                     if point_on_plane(oj.obj, plane):
                         members.append(name_j)
                         continue
@@ -653,7 +708,7 @@ def enumerate_plane_members(
                         p1 = resolve_point_from_name(p1)
                     if isinstance(p2, str):
                         p2 = resolve_point_from_name(p2)
-                    if isinstance(p1, Point3D) and isinstance(p2, Point3D):
+                    if isinstance(p1, SympyPoint3D) and isinstance(p2, SympyPoint3D):
                         if point_on_plane(p1, plane) and point_on_plane(p2, plane):
                             members.append(name_j)
                             continue
@@ -661,7 +716,7 @@ def enumerate_plane_members(
                 if oj.kind == "circle" and hasattr(oj.obj, "center"):
                     try:
                         center = oj.obj.center
-                        if isinstance(center, Point3D) and point_on_plane(
+                        if isinstance(center, SympyPoint3D) and point_on_plane(
                             center, plane
                         ):
                             members.append(name_j)
@@ -669,21 +724,26 @@ def enumerate_plane_members(
                     except Exception:
                         pass
                 # lines: check direction orthogonal to plane normal and point on plane
-                if (
-                    oj.kind == "line"
-                    and hasattr(oj.obj, "point")
-                    and hasattr(oj.obj, "direction")
-                ):
+                if oj.kind == "line":
                     try:
-                        lp = oj.obj.point
-                        ld = oj.obj.direction
+                        # support either the simple local Line3D-like object or SymPy's Line3D
+                        if hasattr(oj.obj, "point") and hasattr(oj.obj, "direction"):
+                            lp = oj.obj.point
+                            ld = oj.obj.direction
+                        elif SympyLine3D is not None and isinstance(oj.obj, SympyLine3D):
+                            p1 = oj.obj.p1
+                            p2 = oj.obj.p2
+                            lp = p1
+                            ld = Matrix([p2[i] - p1[i] for i in range(3)])
+                        else:
+                            continue
                         # plane normal
                         pn = Matrix(plane.normal_vector)
                         # direction dot normal == 0 and one point on plane
                         dot = float(abs((Matrix(ld).dot(pn)).evalf()))
                         if (
                             dot < 1e-9
-                            and isinstance(lp, Point3D)
+                            and isinstance(lp, SympyPoint3D)
                             and point_on_plane(lp, plane)
                         ):
                             members.append(name_j)
@@ -720,18 +780,36 @@ def enumerate_plane_members(
 
 
 @dataclass
-class Line3D:
-    point: Point3D
+class SimpleLine3D:
+    point: SympyPoint3D
     direction: Matrix
 
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
-        return f"Line3D(point={self.point}, direction={tuple(self.direction)})"
+        return f"SimpleLine3D(point={self.point}, direction={tuple(self.direction)})"
+
+
+def to_sympy_line(simple: SimpleLine3D) -> object:
+    """Convert a `SimpleLine3D` (point + direction) to SymPy's Line3D.
+
+    Constructs a second point as P + d and returns SympyLine3D(P, P+d).
+    """
+    p = simple.point
+    d = simple.direction
+    # If SympyLine3D is not available in this SymPy build, return the simple object
+    if SympyLine3D is None:
+        return simple
+    try:
+        p2 = SympyPoint3D(*(p[i] + d[i] for i in range(3)))
+    except Exception:
+        # Fallback using named attributes
+        p2 = SympyPoint3D(p.x + d[0], p.y + d[1], p.z + d[2])
+    return SympyLine3D(p, p2)
 
 
 @dataclass
 class Segment:
-    p1: Union[Point3D, str, None] = None
-    p2: Union[Point3D, str, None] = None
+    p1: Union[SympyPoint3D, str, None] = None
+    p2: Union[SympyPoint3D, str, None] = None
     length: Optional[float] = None
 
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
@@ -740,7 +818,7 @@ class Segment:
         return f"Segment(length={self.length})"
 
 
-def line_from_value(value_str: str) -> Line3D:
+def line_from_value(value_str: str) -> object:
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
@@ -771,7 +849,14 @@ def line_from_value(value_str: str) -> Line3D:
         )
         for p in d_parts
     ]
-    return Line3D(point=Point3D(*exprs_c), direction=Matrix(exprs_d))
+    # Build point and direction
+    P = SympyPoint3D(*exprs_c)
+    D = Matrix(exprs_d)
+    P2 = SympyPoint3D(*(exprs_c[i] + exprs_d[i] for i in range(3)))
+    if SympyLine3D is None:
+        # Fall back to a simple local representation when SymPy's Line3D isn't available
+        return SimpleLine3D(point=P, direction=D)
+    return SympyLine3D(P, P2)
 
 
 def segment_from_command(command_str: str) -> Segment:
