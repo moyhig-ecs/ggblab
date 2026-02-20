@@ -221,22 +221,15 @@ def plane_from_value(value_str: str) -> SympyPlane:
 
 
 def attach_planes(df, value_col="Value", out_col="sym_plane"):
-    try:
-        import polars as pl
+    import polars as pl
 
-        is_polars = isinstance(df, pl.DataFrame)
-    except Exception:
-        is_polars = False
-    if is_polars:
-        vals = df[value_col].to_list()
-        planes = [plane_from_value(v) for v in vals]
-        normals = [p.normal_vector for p in planes]
-        return df.with_columns(
-            [pl.Series(out_col, planes), pl.Series(out_col + "_normal", normals)]
-        )
-    df[out_col] = df[value_col].apply(plane_from_value)
-    df[out_col + "_normal"] = df[out_col].apply(lambda pl: pl.normal_vector)
-    return df
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("attach_planes requires a polars DataFrame")
+
+    vals = df[value_col].to_list()
+    planes = [plane_from_value(v) for v in vals]
+    normals = [p.normal_vector for p in planes]
+    return df.with_columns([pl.Series(out_col, planes), pl.Series(out_col + "_normal", normals)])
 
 
 def value_to_sympy(value_str: str):
@@ -277,18 +270,14 @@ def value_to_sympy(value_str: str):
 
 
 def attach_sympy(df, value_col="Value", sym_col="sympy"):
-    try:
-        import polars as pl
+    import polars as pl
 
-        is_polars = isinstance(df, pl.DataFrame)
-    except Exception:
-        is_polars = False
-    if is_polars:
-        vals = df[value_col].to_list()
-        syms = [value_to_sympy(v) for v in vals]
-        return df.with_columns([pl.Series(sym_col, syms)])
-    df[sym_col] = df[value_col].apply(value_to_sympy)
-    return df
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("attach_sympy requires a polars DataFrame")
+
+    vals = df[value_col].to_list()
+    syms = [value_to_sympy(v) for v in vals]
+    return df.with_columns([pl.Series(sym_col, syms)])
 
 
 @dataclass
@@ -500,82 +489,28 @@ def attach_object3d(
       a `out_col` column of `Object3D` instances.
     - For pandas-like DataFrame: applies row-wise using `apply(axis=1)`.
     """
-    # Robustly detect polars (pl) even if not imported at module level
-    try:
-        pl_mod = pl  # type: ignore[name-defined]
-    except Exception:
-        try:
-            import polars as pl_mod  # type: ignore
-        except Exception:
-            pl_mod = None
+    import polars as pl
 
-    is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, "DataFrame"))
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("attach_object3d requires a polars DataFrame")
 
-    if is_polars:
-        types = df[type_col].to_list()
-        cmds = df[command_col].to_list()
-        vals = df[value_col].to_list()
-        objs = []
-        for t, c, v in zip(types, cmds, vals):
-            try:
-                o = Object3D.from_value_command(
-                    value=v if v is not None else None,
-                    command=c if c is not None else None,
-                )
-            except Exception:
-                o = Object3D(kind=None, obj=None, value=v, command=c)
-            objs.append(o)
-        try:
-            s = pl_mod.Series(out_col, objs, dtype=getattr(pl_mod, "Object"))
-        except Exception:
-            s = pl_mod.Series(out_col, objs)
-        return df.with_columns([s])
-
-    # pandas-like DataFrame: use apply if available
-    if hasattr(df, "apply") and callable(getattr(df, "apply")):
-        try:
-            df[out_col] = df.apply(
-                lambda r: Object3D.from_value_command(
-                    value=r[value_col], command=r[command_col]
-                ),
-                axis=1,
-            )
-            return df
-        except Exception:
-            pass
-
-    # Last-resort: iterate and assign using appropriate API
+    types = df[type_col].to_list()
+    cmds = df[command_col].to_list()
+    vals = df[value_col].to_list()
     objs = []
-    for i in range(len(df)):
+    for t, c, v in zip(types, cmds, vals):
         try:
-            row = df.iloc[i]
-            v = row[value_col]
-            c = row[command_col]
-            o = Object3D.from_value_command(value=v, command=c)
-        except Exception:
-            o = Object3D(
-                kind=None,
-                obj=None,
-                value=(row[value_col] if "row" in locals() else None),
-                command=(row[command_col] if "row" in locals() else None),
+            o = Object3D.from_value_command(
+                value=v if v is not None else None, command=c if c is not None else None
             )
-        objs.append(o)
-
-    if is_polars and pl_mod is not None:
-        try:
-            s = pl_mod.Series(out_col, objs, dtype=getattr(pl_mod, "Object"))
         except Exception:
-            s = pl_mod.Series(out_col, objs)
-        return df.with_columns([s])
-
+            o = Object3D(kind=None, obj=None, value=v, command=c)
+        objs.append(o)
     try:
-        df[out_col] = objs
-        return df
+        s = pl.Series(out_col, objs, dtype=getattr(pl, "Object"))
     except Exception:
-        # If assignment fails, attempt to return a new DataFrame via with_columns if available
-        if pl_mod is not None and hasattr(df, "with_columns"):
-            return df.with_columns([pl_mod.Series(out_col, objs)])
-        raise
+        s = pl.Series(out_col, objs)
+    return df.with_columns([s])
 
 
 def enumerate_plane_members(
@@ -592,16 +527,10 @@ def enumerate_plane_members(
     - Returns the original DataFrame with a new column `out_col` containing a
       semicolon-separated string of member names for each plane row (empty string otherwise).
     """
-    # prepare polars detection
-    try:
-        pl_mod = pl  # type: ignore[name-defined]
-    except Exception:
-        try:
-            import polars as pl_mod  # type: ignore
-        except Exception:
-            pl_mod = None
+    import polars as pl
 
-    is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, "DataFrame"))
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("enumerate_plane_members requires a polars DataFrame")
 
     # Use module-level predicates (`point_on_plane`, `segment_on_plane`,
     # `line_on_plane`, `circle_on_plane`) to determine membership. The
@@ -609,41 +538,34 @@ def enumerate_plane_members(
     # provided `df` when necessary.
 
     members_list = []
+
     # precompute Object3D for each row to simplify checks
+    types = df[type_col].to_list()
+    cmds = df[command_col].to_list()
+    vals = df[value_col].to_list()
+    names = df[name_col].to_list()
+
     objs = []
-    for i in range(len(df)):
+    for t, c, v in zip(types, cmds, vals):
         try:
-            row = df.iloc[i]
-        except Exception:
-            row = {c: df[c][i] for c in df.columns}
-        t = row.get(type_col) if isinstance(row, dict) else row[type_col]
-        v = row.get(value_col) if isinstance(row, dict) else row[value_col]
-        c = row.get(command_col) if isinstance(row, dict) else row[command_col]
-        try:
-            o = Object3D.from_value_command(
-                value=v if v is not None else None, command=c if c is not None else None
-            )
+            o = Object3D.from_value_command(value=v if v is not None else None, command=c if c is not None else None)
         except Exception:
             o = Object3D(kind=None, obj=None, value=v, command=c)
-        objs.append((t, row, o))
+        objs.append((t, o))
 
     # For each plane row, collect member names
-    for idx, (t, row, o) in enumerate(objs):
+    for idx, (t, o) in enumerate(objs):
         if (isinstance(t, str) and t.lower() == "plane") or (t == "plane"):
-            # resolve plane
             try:
-                plane = plane_from_value(
-                    row[value_col] if not isinstance(row, dict) else row[value_col]
-                )
+                plane = plane_from_value(vals[idx])
             except Exception:
-                members_list.append("")
+                members_list.append([])
                 continue
             members = []
-            # examine all rows for membership
-            for j, (tt, rj, oj) in enumerate(objs):
+            for j, (tt, oj) in enumerate(objs):
                 if j == idx:
                     continue
-                name_j = rj.get(name_col) if isinstance(rj, dict) else rj[name_col]
+                name_j = names[j]
                 # points
                 if oj.kind == "point" and isinstance(oj.obj, SympyPoint3D):
                     if point_on_plane(oj.obj, plane):
@@ -652,15 +574,7 @@ def enumerate_plane_members(
                 # segments: delegate resolution + test to global helper
                 if oj.kind == "segment" and isinstance(oj.obj, Segment):
                     try:
-                        if segment_on_plane(
-                            oj.obj,
-                            plane,
-                            df=df,
-                            name_col=name_col,
-                            value_col=value_col,
-                            obj_col="object3d",
-                            tol=1e-2,
-                        ):
+                        if segment_on_plane(oj.obj, plane, df=df, name_col=name_col, value_col=value_col, obj_col="object3d", tol=1e-2):
                             members.append(name_j)
                             continue
                     except Exception:
@@ -673,7 +587,7 @@ def enumerate_plane_members(
                             continue
                     except Exception:
                         pass
-                # lines: delegate to global helper
+                # lines
                 if oj.kind == "line":
                     try:
                         if line_on_plane(oj.obj, plane):
@@ -683,31 +597,18 @@ def enumerate_plane_members(
                         pass
             members_list.append(members)
         else:
-            members_list.append("")
+            members_list.append([])
 
-    # attach results
-    if is_polars:
-        # Prefer a List(Utf8) column when possible
-        try:
-            list_type = getattr(pl_mod, "List")(getattr(pl_mod, "Utf8"))
-            s = pl_mod.Series(out_col, members_list, dtype=list_type)
-        except Exception:
-            try:
-                s = pl_mod.Series(out_col, members_list)
-            except Exception:
-                # final fallback: convert lists to comma strings
-                s = pl_mod.Series(out_col, [", ".join(m or []) for m in members_list])
-        return df.with_columns([s])
-
-    # pandas-like: keep lists as Python lists (object dtype)
+    # attach results as a List column
     try:
-        df[out_col] = members_list
-        return df
+        list_type = getattr(pl, "List")(getattr(pl, "Utf8"))
+        s = pl.Series(out_col, members_list, dtype=list_type)
     except Exception:
-        # fallback: build a copy
-        new = df.copy()
-        new[out_col] = members_list
-        return new
+        try:
+            s = pl.Series(out_col, members_list)
+        except Exception:
+            s = pl.Series(out_col, [[str(x) for x in m] for m in members_list])
+    return df.with_columns([s])
 
 
 @dataclass
@@ -1065,7 +966,6 @@ __all__ = [
     "attach_sympy",
     "ValueObject",
     "parse_value",
-    "Line3D",
     "Segment",
     "line_from_value",
     "segment_from_command",
