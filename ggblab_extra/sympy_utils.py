@@ -221,15 +221,7 @@ def plane_from_value(value_str: str) -> SympyPlane:
 
 
 def attach_planes(df, value_col="Value", out_col="sym_plane"):
-    import polars as pl
-
-    if not isinstance(df, pl.DataFrame):
-        raise TypeError("attach_planes requires a polars DataFrame")
-
-    vals = df[value_col].to_list()
-    planes = [plane_from_value(v) for v in vals]
-    normals = [p.normal_vector for p in planes]
-    return df.with_columns([pl.Series(out_col, planes), pl.Series(out_col + "_normal", normals)])
+    raise RuntimeError("attach_planes was removed; use parsing helpers directly if needed")
 
 
 def value_to_sympy(value_str: str):
@@ -270,14 +262,7 @@ def value_to_sympy(value_str: str):
 
 
 def attach_sympy(df, value_col="Value", sym_col="sympy"):
-    import polars as pl
-
-    if not isinstance(df, pl.DataFrame):
-        raise TypeError("attach_sympy requires a polars DataFrame")
-
-    vals = df[value_col].to_list()
-    syms = [value_to_sympy(v) for v in vals]
-    return df.with_columns([pl.Series(sym_col, syms)])
+    raise RuntimeError("attach_sympy was removed; use value_to_sympy on your data explicitly if needed")
 
 
 @dataclass
@@ -961,9 +946,8 @@ __all__ = [
     "circle_from_value",
     "point_from_value",
     "plane_from_value",
-    "attach_planes",
     "value_to_sympy",
-    "attach_sympy",
+    
     "ValueObject",
     "parse_value",
     "Segment",
