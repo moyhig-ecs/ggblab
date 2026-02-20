@@ -490,7 +490,7 @@ def parse_value(value_str: str) -> ValueObject:
         return ValueObject("raw", value_str, value_str)
 
 
-def attach_objects(df, value_col="Value", obj_col="symobj"):
+def attach_objects(df, value_col="Value", obj_col="object3d"):
     try:
         import polars as pl
 
@@ -617,46 +617,10 @@ def enumerate_plane_members(
 
     is_polars = pl_mod is not None and isinstance(df, getattr(pl_mod, "DataFrame"))
 
-    # Build name -> row mapping for resolving segment endpoints
-    name_map = {}
-    for i in range(len(df)):
-        try:
-            row = df.iloc[i]
-        except Exception:
-            # polars: use to_row or slice
-            if is_polars:
-                row = {c: df[c][i] for c in df.columns}
-            else:
-                raise
-        nm = row.get(name_col) if isinstance(row, dict) else row[name_col]
-        name_map[nm] = row
-
-    def resolve_point_from_name(label):
-        # return sympy Point3D or None
-        row = name_map.get(label)
-        if row is None:
-            return None
-        val = row.get(value_col) if isinstance(row, dict) else row[value_col]
-        try:
-            vo = parse_value(val)
-            if vo.kind == "point" and isinstance(vo.obj, SympyPoint3D):
-                return vo.obj
-        except Exception:
-            try:
-                return point_from_value(val)
-            except Exception:
-                return None
-        return None
-
-    def point_on_plane(pt: SympyPoint3D, pln) -> bool:
-        try:
-            d = float(abs(pln.distance(pt).evalf()))
-            return d < 1e-9
-        except Exception:
-            try:
-                return pln.distance(pt) == 0
-            except Exception:
-                return False
+    # Use module-level predicates (`point_on_plane`, `segment_on_plane`,
+    # `line_on_plane`, `circle_on_plane`) to determine membership. The
+    # global `segment_on_plane` will resolve labeled endpoints using the
+    # provided `df` when necessary.
 
     members_list = []
     # precompute Object3D for each row to simplify checks
@@ -699,53 +663,34 @@ def enumerate_plane_members(
                     if point_on_plane(oj.obj, plane):
                         members.append(name_j)
                         continue
-                # segments
+                # segments: delegate resolution + test to global helper
                 if oj.kind == "segment" and isinstance(oj.obj, Segment):
-                    seg = oj.obj
-                    p1 = seg.p1
-                    p2 = seg.p2
-                    if isinstance(p1, str):
-                        p1 = resolve_point_from_name(p1)
-                    if isinstance(p2, str):
-                        p2 = resolve_point_from_name(p2)
-                    if isinstance(p1, SympyPoint3D) and isinstance(p2, SympyPoint3D):
-                        if point_on_plane(p1, plane) and point_on_plane(p2, plane):
-                            members.append(name_j)
-                            continue
-                # circles
-                if oj.kind == "circle" and hasattr(oj.obj, "center"):
                     try:
-                        center = oj.obj.center
-                        if isinstance(center, SympyPoint3D) and point_on_plane(
-                            center, plane
+                        if segment_on_plane(
+                            oj.obj,
+                            plane,
+                            df=df,
+                            name_col=name_col,
+                            value_col=value_col,
+                            obj_col="object3d",
+                            tol=1e-2,
                         ):
                             members.append(name_j)
                             continue
                     except Exception:
                         pass
-                # lines: check direction orthogonal to plane normal and point on plane
+                # circles
+                if oj.kind == "circle":
+                    try:
+                        if circle_on_plane(oj.obj, plane):
+                            members.append(name_j)
+                            continue
+                    except Exception:
+                        pass
+                # lines: delegate to global helper
                 if oj.kind == "line":
                     try:
-                        # support either the simple local Line3D-like object or SymPy's Line3D
-                        if hasattr(oj.obj, "point") and hasattr(oj.obj, "direction"):
-                            lp = oj.obj.point
-                            ld = oj.obj.direction
-                        elif SympyLine3D is not None and isinstance(oj.obj, SympyLine3D):
-                            p1 = oj.obj.p1
-                            p2 = oj.obj.p2
-                            lp = p1
-                            ld = Matrix([p2[i] - p1[i] for i in range(3)])
-                        else:
-                            continue
-                        # plane normal
-                        pn = Matrix(plane.normal_vector)
-                        # direction dot normal == 0 and one point on plane
-                        dot = float(abs((Matrix(ld).dot(pn)).evalf()))
-                        if (
-                            dot < 1e-9
-                            and isinstance(lp, SympyPoint3D)
-                            and point_on_plane(lp, plane)
-                        ):
+                        if line_on_plane(oj.obj, plane):
                             members.append(name_j)
                             continue
                     except Exception:
@@ -811,6 +756,7 @@ class Segment:
     p1: Union[SympyPoint3D, str, None] = None
     p2: Union[SympyPoint3D, str, None] = None
     length: Optional[float] = None
+    parent: Optional[str] = None
 
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
         if self.p1 is not None and self.p2 is not None:
@@ -863,12 +809,14 @@ def segment_from_command(command_str: str) -> Segment:
     if command_str is None:
         raise ValueError("empty command")
     s = command_str.strip()
-    m = re.search(r"Segment\s*\(\s*([^,\)]+)\s*,\s*([^\)]+)\s*\)", s)
+    # Accept Segment(A,B) or Segment(A,B,Polygon) where the third arg is optional
+    m = re.search(r"Segment\s*\(\s*([^,]+?)\s*,\s*([^,\)]+?)(?:\s*,\s*([^\)]+))?\s*\)", s)
     if not m:
         raise ValueError(f"not a Segment command: {command_str!r}")
     a = m.group(1).strip()
     b = m.group(2).strip()
-    return Segment(p1=a, p2=b)
+    c = m.group(3).strip() if m.group(3) is not None else None
+    return Segment(p1=a, p2=b, parent=c)
 
 
 def point_distance_to_plane(point, plane) -> float:
@@ -891,8 +839,10 @@ def point_distance_to_plane(point, plane) -> float:
             raise
 
 
-def point_on_plane(point, plane, tol=1e-6) -> bool:
-    return point_distance_to_plane(point, plane) <= tol
+def point_on_plane(point, plane, tol=1e-2) -> bool:
+    d = point_distance_to_plane(point, plane)
+    # print(f"Debug: distance from point {point} to plane {plane} is {d}")
+    return d <= tol
 
 
 def _to_numeric_vector(v):
@@ -908,7 +858,7 @@ def _to_numeric_vector(v):
     return vals
 
 
-def circle_on_plane(circle, plane, dist_tol=1e-6, angle_tol=1e-3) -> bool:
+def circle_on_plane(circle, plane, dist_tol=1e-2, angle_tol=1e-1) -> bool:
     center_ok = point_on_plane(circle.center, plane, tol=dist_tol)
     plane_n = getattr(plane, "normal_vector", None)
     circ_n = getattr(circle, "normal", None)
@@ -934,7 +884,7 @@ def circle_on_plane(circle, plane, dist_tol=1e-6, angle_tol=1e-3) -> bool:
     return center_ok and angle_ok
 
 
-def valueobject_on_plane(vo: ValueObject, plane, tol=1e-6, angle_tol=1e-3) -> bool:
+def valueobject_on_plane(vo: ValueObject, plane, tol=1e-2, angle_tol=1e-1) -> bool:
     if vo is None or plane is None:
         return False
     try:
@@ -992,6 +942,130 @@ def valueobject_on_plane(vo: ValueObject, plane, tol=1e-6, angle_tol=1e-3) -> bo
         return False
 
 
+def segment_on_plane(
+    seg: Segment,
+    plane,
+    df=None,
+    name_col: str = "Name",
+    value_col: str = "Value",
+    obj_col: str = "object3d",
+    tol: float = 1e-2,
+) -> bool:
+    """Return True when both segment endpoints lie on the plane.
+
+    Resolution rules:
+    - If `seg.p1`/`seg.p2` are SymPy Point3D, test directly.
+    - If they are labels (strings), `df` is used to locate the row with
+      `Name == label`. The function first attempts to read `obj_col` from
+      that row (expected to be an `Object3D` or SymPy Point). If missing
+      it falls back to parsing `value_col` with `point_from_value`.
+    - Supports both pandas-like DataFrames and polars DataFrames.
+    """
+    if seg is None or plane is None:
+        return False
+
+    p1 = getattr(seg, "p1", None)
+    p2 = getattr(seg, "p2", None)
+    if p1 is None or p2 is None:
+        return False
+
+    # If endpoints are labels (strings) we require a valid DataFrame to
+    # resolve them; raise an error if none provided or if the DataFrame
+    # does not contain the expected name column.
+    if (isinstance(p1, str) or isinstance(p2, str)):
+        if df is None:
+            raise ValueError("df is required to resolve labeled segment endpoints")
+        try:
+            cols = getattr(df, "columns")
+            if name_col not in cols:
+                raise ValueError(f"df must contain '{name_col}' column to resolve labels")
+        except Exception:
+            # If df doesn't expose columns in a standard way, still proceed
+            # and let resolution attempts raise a clearer error later.
+            pass
+
+    def _resolve_label(label):
+        # already a sympy point
+        if isinstance(label, SympyPoint3D):
+            return label
+        if not isinstance(label, str):
+            return None
+        if df is None:
+            return None
+
+        # Assume polars-like DataFrame; prefer `obj_col` then `value_col`.
+        try:
+            matches = df.filter(df[name_col] == label)
+            if len(matches) == 0:
+                return None
+            # try object column first
+            try:
+                obj = matches[obj_col][0]
+                resolved = getattr(obj, "obj", obj) if obj is not None else None
+                if isinstance(resolved, SympyPoint3D):
+                    return resolved
+            except Exception:
+                pass
+            # fall back to parsing the Value column
+            try:
+                return point_from_value(matches[value_col][0])
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    rp1 = p1 if isinstance(p1, SympyPoint3D) else _resolve_label(p1)
+    rp2 = p2 if isinstance(p2, SympyPoint3D) else _resolve_label(p2)
+    if not isinstance(rp1, SympyPoint3D) or not isinstance(rp2, SympyPoint3D):
+        return False
+    return point_on_plane(rp1, plane, tol=tol) and point_on_plane(rp2, plane, tol=tol)
+
+
+def line_on_plane(line_obj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
+    """Return True when a line lies on `plane`.
+
+    Criteria:
+    - line direction is orthogonal to plane normal (angle ~ 90 degrees)
+    - at least one point on the line lies on the plane (within `tol`)
+
+    Accepts either SymPy Line3D, `SimpleLine3D` (point+direction), or
+    objects with `point` and `direction` attributes.
+    """
+    if line_obj is None or plane is None:
+        return False
+    try:
+        # obtain a point P and direction D for the line
+        if hasattr(line_obj, "point") and hasattr(line_obj, "direction"):
+            P = getattr(line_obj, "point")
+            D = getattr(line_obj, "direction")
+        elif SympyLine3D is not None and isinstance(line_obj, SympyLine3D):
+            p1 = line_obj.p1
+            p2 = line_obj.p2
+            P = p1
+            D = Matrix([p2[i] - p1[i] for i in range(3)])
+        else:
+            return False
+
+        N = _to_numeric_vector(getattr(plane, "normal_vector", None))
+        Dn = _to_numeric_vector(D)
+        if N is None or Dn is None:
+            return False
+        d1 = math.sqrt(sum([x * x for x in Dn]))
+        d2 = math.sqrt(sum([x * x for x in N]))
+        if d1 == 0 or d2 == 0:
+            return False
+        dot = sum([a * b for a, b in zip(Dn, N)])
+        cosang = abs(dot) / (d1 * d2)
+        cosang = max(min(cosang, 1.0), -1.0)
+        ang = math.acos(cosang)
+        # direction should be perpendicular to plane normal
+        if abs(ang - math.pi / 2) > angle_tol:
+            return False
+        # check a point on the line lies on the plane
+        return point_on_plane(P, plane, tol=tol)
+    except Exception:
+        return False
+
 __all__ = [
     "parse_line",
     "compute_axis",
@@ -1011,6 +1085,8 @@ __all__ = [
     "line_from_value",
     "segment_from_command",
     "point_on_plane",
+    "segment_on_plane",
+    "line_on_plane",
     "circle_on_plane",
     "valueobject_on_plane",
     "Object3D",
