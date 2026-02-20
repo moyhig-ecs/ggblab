@@ -732,6 +732,30 @@ def line_from_value(value_str: str) -> object:
 
 
 def segment_from_command(command_str: str) -> Segment:
+    """Parse a GeoGebra `Segment(...)` command into a `Segment` container.
+
+    GeoGebra often represents labeled constructions via the `Command` column
+    (e.g. `Segment(A,B)`), while the `Value` column may contain numeric
+    definitions. Parsing the command lets us preserve endpoint labels
+    (strings) which later require a DataFrame lookup to resolve into
+    concrete coordinates. Many helpers in this module (for example
+    `segment_on_plane`) accept a `df` parameter and will attempt to
+    resolve those labels using the DataFrame's `Name`/`Value`/`object3d`
+    columns — therefore callers that intend to fully resolve labeled
+    segments should provide the construction `df` to downstream helpers.
+
+    Args:
+        command_str: GeoGebra command string, expected like
+            `Segment(A,B)` or `Segment(A,B,Polygon)`.
+
+    Returns:
+        Segment: a dataclass with `p1`/`p2` set to labels (strings) or
+                 resolved values if present.
+
+    Raises:
+        ValueError: if `command_str` is empty or does not match the
+                    expected `Segment(...)` pattern.
+    """
     if command_str is None:
         raise ValueError("empty command")
     s = command_str.strip()
