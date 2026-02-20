@@ -188,10 +188,18 @@ def point_from_value(value_str: str) -> SympyPoint3D:
     s = s.strip()
     m = re.search(r"=\s*\(([^,]+),([^,]+),([^\)]+)\)", s)
     if not m:
-        m2 = re.search(r"\(([^,]+),([^,]+),([^\)]+)\)", s)
+        # accept 2D form like "(x,y)" and treat as (x,y,0)
+        m2 = re.search(r"\(([^,]+),([^,]+)\)", s)
         if not m2:
-            raise ValueError(f"not a point value: {value_str!r}")
-        m = m2
+            m3 = re.search(r"\(([^,]+),([^,]+),([^\)]+)\)", s)
+            if not m3:
+                raise ValueError(f"not a point value: {value_str!r}")
+            m = m3
+        else:
+            # two components found; append a zero z-component
+            a = m2.group(1).strip()
+            b = m2.group(2).strip()
+            m = (a, b, "0")
     comps = [c.strip() for c in m.groups()]
     exprs = [
         parse_expr(
@@ -1014,6 +1022,7 @@ def segment_on_plane(
             try:
                 obj = matches[obj_col][0]
                 resolved = getattr(obj, "obj", obj) if obj is not None else None
+                # print(f"Debug: resolving label {label!r} to object {resolved!r} using column '{obj_col}'")
                 if isinstance(resolved, SympyPoint3D):
                     return resolved
             except Exception:
@@ -1028,6 +1037,7 @@ def segment_on_plane(
 
     rp1 = p1 if isinstance(p1, SympyPoint3D) else _resolve_label(p1)
     rp2 = p2 if isinstance(p2, SympyPoint3D) else _resolve_label(p2)
+    # print(f"Debug: ({p1}, {p2}) resolved segment endpoints to {rp1} and {rp2}")
     if not isinstance(rp1, SympyPoint3D) or not isinstance(rp2, SympyPoint3D):
         return False
     return point_on_plane(rp1, plane, tol=tol) and point_on_plane(rp2, plane, tol=tol)
