@@ -490,20 +490,6 @@ def parse_value(value_str: str) -> ValueObject:
         return ValueObject("raw", value_str, value_str)
 
 
-def attach_objects(df, value_col="Value", obj_col="object3d"):
-    try:
-        import polars as pl
-
-        is_polars = isinstance(df, pl.DataFrame)
-    except Exception:
-        is_polars = False
-    if is_polars:
-        vals = df[value_col].to_list()
-        objs = [parse_value(v) for v in vals]
-        return df.with_columns([pl.Series(obj_col, objs)])
-    df[obj_col] = df[value_col].apply(parse_value)
-    return df
-
 
 def attach_object3d(
     df, type_col="Type", command_col="Command", value_col="Value", out_col="object3d"
@@ -1079,7 +1065,6 @@ __all__ = [
     "attach_sympy",
     "ValueObject",
     "parse_value",
-    "attach_objects",
     "Line3D",
     "Segment",
     "line_from_value",
