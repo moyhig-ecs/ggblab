@@ -30,10 +30,10 @@ from typing import Optional, Union
 from sympy import Matrix, cos, sin, sqrt, symbols
 from sympy.geometry import Plane as SympyPlane, Point3D as SympyPoint3D
 try:
-    from sympy.geometry.line3d import Line3D as SympyLine3D
+    from sympy.geometry.line3d import Line3D as SympyLine3D  # pylint: disable=import-error,no-name-in-module
 except Exception:
     try:
-        from sympy.geometry import Line3D as SympyLine3D
+        from sympy.geometry import Line3D as SympyLine3D  # pylint: disable=import-error,no-name-in-module
     except Exception:
         SympyLine3D = None
 from sympy.parsing.sympy_parser import (
@@ -296,7 +296,9 @@ def value_to_sympy(value_str: str):
         )
         return lhs - rhs
     return parse_expr(
-        s, transformations=_transformations, local_dict={"x": x, "y": y, "z": z}
+        s,
+        transformations=_transformations,
+        local_dict={"x": x, "y": y, "z": z},
     )
 
 
@@ -377,7 +379,10 @@ class Object3D:
     command: str | None = None
 
     def __repr__(self) -> str:  # pragma: no cover - formatting
-        return f"Object3D(kind={self.kind!r}, obj={self.obj!r}, value={self.value!r}, command={self.command!r})"
+        return (
+            f"Object3D(kind={self.kind!r}, obj={self.obj!r}, "
+            f"value={self.value!r}, command={self.command!r})"
+        )
 
     @classmethod
     def from_value_command(cls, value: str | None = None, command: str | None = None):
@@ -397,7 +402,12 @@ class Object3D:
             try:
                 cmd = parse_command(command)
                 if cmd.kind == "segment":
-                    return cls(kind="segment", obj=cmd.obj, value=value, command=command)
+                    return cls(
+                        kind="segment",
+                        obj=cmd.obj,
+                        value=value,
+                        command=command,
+                    )
                 # other command kinds may be handled here in future
             except Exception:
                 # not a recognized command; fall through to value-based parsing
@@ -469,11 +479,11 @@ def parse_value(value_str: str) -> ValueObject:
                 or isinstance(rhs, tuple)
                 or getattr(rhs, "is_Tuple", False)
             ):
-                    try:
-                        p = point_from_value(value_str)
-                        return ValueObject("point", p, value_str)
-                    except Exception:
-                        raise
+                try:
+                    p = point_from_value(value_str)
+                    return ValueObject("point", p, value_str)
+                except Exception:
+                    raise
             expr = lhs - rhs
             try:
                 aa = expr.coeff(x, 1)
@@ -572,7 +582,10 @@ def enumerate_plane_members(
     objs = []
     for t, c, v in zip(types, cmds, vals):
         try:
-            o = Object3D.from_value_command(value=v if v is not None else None, command=c if c is not None else None)
+            o = Object3D.from_value_command(
+                value=(v if v is not None else None),
+                command=(c if c is not None else None),
+            )
         except Exception:
             o = Object3D(kind=None, obj=None, value=v, command=c)
         objs.append((t, o))
@@ -598,7 +611,15 @@ def enumerate_plane_members(
                 # segments: delegate resolution + test to global helper
                 if oj.kind == "segment" and isinstance(oj.obj, Segment):
                     try:
-                        if segment_on_plane(oj.obj, plane, df=df, name_col=name_col, value_col=value_col, obj_col="object3d", tol=1e-2):
+                        if segment_on_plane(
+                            oj.obj,
+                            plane,
+                            df=df,
+                            name_col=name_col,
+                            value_col=value_col,
+                            obj_col="object3d",
+                            tol=1e-2,
+                        ):
                             members.append(name_j)
                             continue
                     except Exception:
@@ -790,6 +811,16 @@ def point_distance_to_plane(point, plane) -> float:
 
 
 def point_on_plane(point, plane, tol=1e-2) -> bool:
+    """Return True if `point` lies on `plane` within a distance tolerance.
+
+    Args:
+        point: SymPy Point3D to test.
+        plane: SymPy Plane to test against.
+        tol: Maximum allowed distance from the plane (default 1e-2).
+
+    Returns:
+        bool: True when the point's distance to the plane is <= `tol`.
+    """
     d = point_distance_to_plane(point, plane)
     # print(f"Debug: distance from point {point} to plane {plane} is {d}")
     return d <= tol
@@ -809,6 +840,21 @@ def _to_numeric_vector(v):
 
 
 def circle_on_plane(circle, plane, dist_tol=1e-2, angle_tol=1e-1) -> bool:
+    """Return True when a parametric circle lies on a given plane.
+
+    The check uses two criteria:
+    - the circle center lies on the plane within `dist_tol`;
+    - the circle's normal is aligned with the plane normal within `angle_tol`.
+
+    Args:
+        circle: `Circle3D` container with `center` and `normal` attributes.
+        plane: SymPy Plane to test against.
+        dist_tol: tolerance for center-to-plane distance (default 1e-2).
+        angle_tol: angular tolerance in radians for normal alignment (default 1e-1).
+
+    Returns:
+        bool: True if both center distance and normal angle are within tolerances.
+    """
     center_ok = point_on_plane(circle.center, plane, tol=dist_tol)
     plane_n = getattr(plane, "normal_vector", None)
     circ_n = getattr(circle, "normal", None)
@@ -835,6 +881,22 @@ def circle_on_plane(circle, plane, dist_tol=1e-2, angle_tol=1e-1) -> bool:
 
 
 def valueobject_on_plane(vo: ValueObject, plane, tol=1e-2, angle_tol=1e-1) -> bool:
+    """Dispatch predicate: test whether a `ValueObject` lies on `plane`.
+
+    This helper inspects `vo.kind` and delegates to the appropriate
+    predicate (`point_on_plane`, `circle_on_plane`, `line_on_plane`,
+    segment/plane checks). It returns `False` for unknown kinds or on
+    any resolution/parsing error.
+
+    Args:
+        vo: `ValueObject` instance (point, circle, line, segment, plane, ...)
+        plane: SymPy Plane to test against.
+        tol: distance tolerance forwarded to point/segment checks (default 1e-2).
+        angle_tol: angular tolerance in radians for normal/orthogonality checks (default 1e-1).
+
+    Returns:
+        bool: True when `vo` is determined to lie on `plane`.
+    """
     if vo is None or plane is None:
         return False
     try:
@@ -1017,24 +1079,45 @@ def line_on_plane(line_obj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
         return False
 
 __all__ = [
+    # Parsing / conversion helpers
     "parse_line",
+    "parse_command",
+    "parse_value",
+    "value_to_sympy",
+
+    # Circle/axis utilities
     "compute_axis",
     "compute_axis_from_line",
     "Circle3D",
     "circle_from_value",
+
+    # Primitive constructors
     "point_from_value",
     "plane_from_value",
-    "value_to_sympy",
-    
-    "ValueObject",
-    "parse_value",
-    "Segment",
     "line_from_value",
-    "segment_from_command",
-    "point_on_plane",
-    "segment_on_plane",
-    "line_on_plane",
-    "circle_on_plane",
-    "valueobject_on_plane",
+
+    # Dataclasses / containers
+    "ValueObject",
+    "CommandObject",
+    "Segment",
+    "SimpleLine3D",
     "Object3D",
+
+    # Command parsing
+    "segment_from_command",
+
+    # Converters / helpers
+    "to_sympy_line",
+    "point_distance_to_plane",
+
+    # Geometric predicates
+    "point_on_plane",
+    "circle_on_plane",
+    "line_on_plane",
+    "segment_on_plane",
+    "valueobject_on_plane",
+
+    # DataFrame helpers (polars-first)
+    "attach_object3d",
+    "enumerate_plane_members",
 ]
