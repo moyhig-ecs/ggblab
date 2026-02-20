@@ -200,7 +200,11 @@ def point_from_value(value_str: str) -> SympyPoint3D:
             a = m2.group(1).strip()
             b = m2.group(2).strip()
             m = (a, b, "0")
-    comps = [c.strip() for c in m.groups()]
+    # `m` may be a re.Match or a manually constructed 3-tuple for 2D points.
+    if isinstance(m, tuple):
+        comps = [m[0].strip(), m[1].strip(), m[2].strip()]
+    else:
+        comps = [c.strip() for c in m.groups()]
     exprs = [
         parse_expr(
             c,
