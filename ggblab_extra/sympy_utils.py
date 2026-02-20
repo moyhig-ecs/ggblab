@@ -135,6 +135,21 @@ class Circle3D:
 
 
 def circle_from_value(value_str: str):
+    """Parse a GeoGebra parametric circle `Value` string into a Circle3D.
+
+    The function expects a parametric trigonometric circle representation
+    (uses `sin(t)`/`cos(t)` components) and returns a `Circle3D` container
+    with numeric/symbolic center, normal, radius and axis vectors.
+
+    Args:
+        value_str: GeoGebra Value string describing a parametric circle.
+
+    Returns:
+        Circle3D: parsed circle container.
+
+    Raises:
+        ValueError: if the input is not a parametric trig circle.
+    """
     label, center_exprs, vec_exprs = parse_line(value_str)
     if not any(expr.has(sin(_t)) or expr.has(cos(_t)) for expr in vec_exprs):
         raise ValueError("not a parametric trig circle")
@@ -154,6 +169,18 @@ def circle_from_value(value_str: str):
 
 
 def point_from_value(value_str: str) -> SympyPoint3D:
+    """Parse a GeoGebra point `Value` string into a SymPy Point3D.
+
+    Accepts forms like "A = (x,y,z)" or just "(x,y,z)", optionally
+    prefixed with a label and colon ("Label: ..."). Returns a
+    `SympyPoint3D` or raises `ValueError` on malformed input.
+
+    Args:
+        value_str: GeoGebra Value string for a point.
+
+    Returns:
+        SympyPoint3D: the parsed point.
+    """
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
@@ -178,6 +205,18 @@ def point_from_value(value_str: str) -> SympyPoint3D:
 
 
 def plane_from_value(value_str: str) -> SympyPlane:
+    """Parse a GeoGebra plane `Value` string into a SymPy Plane.
+
+    Accepts plane equations like "ax + by + cz = d" (or omitted RHS,
+    which defaults to 0). If the expression does not contain linear
+    terms in x/y/z a `ValueError` is raised.
+
+    Args:
+        value_str: GeoGebra Value string describing a plane.
+
+    Returns:
+        SympyPlane: the parsed plane.
+    """
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
@@ -637,6 +676,21 @@ class Segment:
 
 
 def line_from_value(value_str: str) -> object:
+    """Parse a GeoGebra line `Value` string into a line object.
+
+    Expected forms include a parametric line like
+    "Label: X = (cx,cy,cz) + (λ) (dx,dy,dz)". Returns a SymPy
+    `Line3D` when available, otherwise a lightweight `SimpleLine3D`.
+
+    Args:
+        value_str: GeoGebra Value string for a line.
+
+    Returns:
+        SympyLine3D or SimpleLine3D: parsed line representation.
+
+    Raises:
+        ValueError: if the string does not match a line pattern.
+    """
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
