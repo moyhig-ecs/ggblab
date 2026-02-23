@@ -13,6 +13,12 @@ from typing import Optional
 # Module-level applet dimensionality flag. Use `set_applet_3d` / `get_applet_3d`
 _is_applet_3d: Optional[bool] = None
 
+try:
+    from polars.exceptions import ColumnNotFoundError as _PolarsColumnNotFoundError
+except Exception:
+    class _PolarsColumnNotFoundError(Exception):
+        pass
+
 
 def set_applet_3d(value: Optional[bool]) -> None:
     """Set module-level `_is_applet_3d` flag (True/False/None)."""
@@ -194,7 +200,8 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             resolved = getattr(obj, "obj", obj) if obj is not None else None
             if is_pointlike(resolved):
                 return resolved
-        except (KeyError, IndexError, TypeError, AttributeError):
+        except (KeyError, IndexError, TypeError, AttributeError, _PolarsColumnNotFoundError):
+            # If the object column is not present, fall through to value parsing
             pass
         try:
             raw = matches[value_col][0]
@@ -219,7 +226,7 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             return tuple(parsed)
         except (IndexError, TypeError, ValueError, AttributeError):
             return None
-    except (AttributeError, TypeError):
+    except (AttributeError, TypeError, _PolarsColumnNotFoundError):
         try:
             sel = df[df[name_col] == label]
             if len(sel) == 0:
