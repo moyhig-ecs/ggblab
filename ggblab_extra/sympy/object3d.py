@@ -38,6 +38,10 @@ class Object3D:
 
     @classmethod
     def from_value_command(cls, value: str | None = None, command: str | None = None, type_: str | None = None):
+        """Construct an `Object3D` by heuristically parsing `value`/`command`.
+
+        This method uses small module-level helpers to keep complexity low.
+        """
         # Use declared `type_` as a hint when available. Normalize inputs.
         try:
             declared = type_.strip().lower() if isinstance(type_, str) else None
@@ -50,129 +54,115 @@ class Object3D:
             vl = value.lower()
             looks_parametric = (": x =" in vl) or ("cos(" in vl) or ("sin(" in vl)
 
-        def _is_degenerate_circle(cand) -> bool:
-            try:
-                r = getattr(cand, "radius", None)
-                if r is None:
-                    return False
-                return float(r) == 0.0
-            except (AttributeError, TypeError, ValueError):
-                return False
-
-        # Small parsing helpers that return parsed object or None.
-        def _try_segment_from_command(cmd: str):
-            if not cmd:
-                return None
-            try:
-                sc = _segment_from_command(cmd)
-                if hasattr(sc, "p1") and hasattr(sc, "p2"):
-                    return sc
-            except (AttributeError, TypeError, ValueError):
-                return None
-            return None
-
-        def _try_line_from_value(val: str):
-            if not val:
-                return None
-            try:
-                from .line import line_from_value
-
-                l = line_from_value(val)
-                inner = l.obj if hasattr(l, "obj") else l
-                sym = getattr(inner, "sympy", None)
-                return sym if sym is not None else inner
-            except (ImportError, AttributeError, TypeError, ValueError):
-                return None
-
-        def _try_circle_from_value(val: str):
-            if not val:
-                return None
-            try:
-                from .circle import circle_from_value
-
-                c = circle_from_value(val)
-                if not _is_degenerate_circle(c):
-                    return c
-            except (ImportError, AttributeError, TypeError, ValueError):
-                return None
-            return None
-
-        def _try_point_from_value(val: str):
-            if not val:
-                return None
-            try:
-                from .point import point_from_value
-
-                p = point_from_value(val)
-                return p.obj if hasattr(p, "obj") else p
-            except (ImportError, AttributeError, TypeError, ValueError):
-                return None
-
-        # Centralized resolution sequence. Try declared type first, then
-        # command-based, then value-based heuristics.
-        kind = None
-        obj = None
-
+        # Declared type takes precedence
         if declared == "line":
-            obj = _try_segment_from_command(command)
-            if obj is not None:
-                kind = "segment"
-            else:
-                inner = _try_line_from_value(value)
-                if inner is not None:
-                    kind = "line"
-                    obj = inner
-        elif declared == "circle":
+            seg = _try_segment_from_command(command) if command else None
+            if seg is not None:
+                return cls(kind="segment", obj=seg, value=value, command=command)
+            inner = _try_line_from_value(value)
+            if inner is not None:
+                return cls(kind="line", obj=inner, value=value, command=command)
+
+        if declared == "circle":
             inner = _try_circle_from_value(value)
             if inner is not None:
-                kind = "circle"
-                obj = inner
-        elif declared == "point":
+                return cls(kind="circle", obj=inner, value=value, command=command)
+
+        if declared == "point":
             inner = _try_point_from_value(value)
             if inner is not None:
-                kind = "point"
-                obj = inner
+                return cls(kind="point", obj=inner, value=value, command=command)
 
-        # Heuristics: prefer circle for explicit curve commands or parametric
-        # values (best-effort), then segment/line from command.
-        if kind is None:
-            if cmd_lower.startswith("cylinder") or cmd_lower.startswith("circle") or cmd_lower.startswith("intersectpath") or looks_parametric:
-                inner = _try_circle_from_value(value)
-                if inner is not None:
-                    kind = "circle"
-                    obj = inner
-
-        if kind is None and command:
-            inner = _try_segment_from_command(command)
+        # Heuristics: prefer circle for explicit curve commands or parametric values
+        if cmd_lower.startswith("cylinder") or cmd_lower.startswith("circle") or cmd_lower.startswith("intersectpath") or looks_parametric:
+            inner = _try_circle_from_value(value)
             if inner is not None:
-                kind = "segment"
-                obj = inner
+                return cls(kind="circle", obj=inner, value=value, command=command)
 
-        # Fallback value-based resolution: parametric -> point -> circle -> line
-        if kind is None and value:
+        # Command-based segment parse
+        seg = _try_segment_from_command(command) if command else None
+        if seg is not None:
+            return cls(kind="segment", obj=seg, value=value, command=command)
+
+        # Fallback value-based resolution
+        if value:
             if looks_parametric:
                 inner = _try_line_from_value(value)
                 if inner is not None:
-                    kind = "line"
-                    obj = inner
-            if kind is None:
-                inner = _try_point_from_value(value)
-                if inner is not None:
-                    kind = "point"
-                    obj = inner
-            if kind is None:
-                inner = _try_circle_from_value(value)
-                if inner is not None:
-                    kind = "circle"
-                    obj = inner
-            if kind is None:
-                inner = _try_line_from_value(value)
-                if inner is not None:
-                    kind = "line"
-                    obj = inner
+                    return cls(kind="line", obj=inner, value=value, command=command)
+            inner = _try_point_from_value(value)
+            if inner is not None:
+                return cls(kind="point", obj=inner, value=value, command=command)
+            inner = _try_circle_from_value(value)
+            if inner is not None:
+                return cls(kind="circle", obj=inner, value=value, command=command)
+            inner = _try_line_from_value(value)
+            if inner is not None:
+                return cls(kind="line", obj=inner, value=value, command=command)
 
-        return cls(kind=kind, obj=obj, value=value, command=command)
+        return cls(kind=None, obj=None, value=value, command=command)
 
+
+def _is_degenerate_circle(cand) -> bool:
+    """Return True if `cand` is a circle-like object with zero radius.
+
+    Safe to call on unknown objects; returns False if radius not available.
+    """
+    try:
+        r = getattr(cand, "radius", None)
+        if r is None:
+            return False
+        return float(r) == 0.0
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+def _try_segment_from_command(cmd: str):
+    if not cmd:
+        return None
+    try:
+        sc = _segment_from_command(cmd)
+        if hasattr(sc, "p1") and hasattr(sc, "p2"):
+            return sc
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return None
+
+def _try_line_from_value(val: str):
+    if not val:
+        return None
+    try:
+        from .line import line_from_value
+
+        l = line_from_value(val)
+        inner = l.obj if hasattr(l, "obj") else l
+        sym = getattr(inner, "sympy", None)
+        return sym if sym is not None else inner
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return None
+
+def _try_circle_from_value(val: str):
+    if not val:
+        return None
+    try:
+        from .circle import circle_from_value
+
+        c = circle_from_value(val)
+        if not _is_degenerate_circle(c):
+            return c
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return None
+    return None
+
+def _try_point_from_value(val: str):
+    if not val:
+        return None
+    try:
+        from .point import point_from_value
+
+        p = point_from_value(val)
+        return p.obj if hasattr(p, "obj") else p
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return None
 def segment_from_command(command_str: str) -> SegmentCommand:
     """Return the underlying `SegmentCommand` parsed from `command_str`."""
     sc = _segment_from_command(command_str)
