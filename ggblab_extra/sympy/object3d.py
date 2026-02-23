@@ -1,4 +1,9 @@
-"""3D helpers moved into sympy subpackage."""
+"""3D helpers moved into sympy subpackage (renamed object3d).
+
+Provides `Object3D`, `Segment` and `attach_object3d` which attaches an
+`object3d` column to a Polars DataFrame by resolving `Type`, `Command`,
+and `Value` using the 3D parsers.
+"""
 import math
 import re
 from dataclasses import dataclass
@@ -86,10 +91,49 @@ def segment_from_command(command_str: str) -> Segment:
     return Segment(p1=None, p2=None)
 
 
+def attach_object3d(df, type_col: str = "Type", command_col: str = "Command", value_col: str = "Value", out_col: str = "object3d"):
+    """Attach an `Object3D` for each row using `Type`, `Command`, and `Value`.
+
+    - Expects a Polars DataFrame and returns a new DataFrame with the
+      additional `out_col` column containing `Object3D` instances (or `None` for
+      unsupported declared types like `list`).
+    """
+    import polars as pl
+
+    if not isinstance(df, pl.DataFrame):
+        raise TypeError("attach_object3d requires a polars DataFrame")
+
+    types = df[type_col].to_list()
+    cmds = df[command_col].to_list()
+    vals = df[value_col].to_list()
+    objs = []
+    for t, c, v in zip(types, cmds, vals):
+        try:
+            type_norm = t.strip().lower() if isinstance(t, str) else None
+        except Exception:
+            type_norm = None
+
+        if type_norm == "list":
+            objs.append(None)
+            continue
+
+        try:
+            o = Object3D.from_value_command(value=v if v is not None else None, command=c if c is not None else None)
+        except Exception:
+            o = Object3D(kind=None, obj=None, value=v, command=c)
+        objs.append(o)
+    try:
+        s = pl.Series(out_col, objs, dtype=getattr(pl, "Object"))
+    except Exception:
+        s = pl.Series(out_col, objs)
+    return df.with_columns([s])
+
+
 __all__ = [
     "SimpleLine3D",
     "Segment",
     "to_sympy_line",
     "segment_from_command",
     "Object3D",
+    "attach_object3d",
 ]

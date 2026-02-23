@@ -24,7 +24,7 @@ from .plane import (
     circle_on_plane,
     valueobject_on_plane,
 )
-from .three_d import Object3D, Segment as Segment3D, to_sympy_line, SimpleLine3D
+from .object3d import Object3D, Segment as Segment3D, to_sympy_line, SimpleLine3D, attach_object3d
 from .object2d import Object2D, attach_object2d
 
 __all__ = [
@@ -49,4 +49,5 @@ __all__ = [
     "SimpleLine3D",
     "Object2D",
     "attach_object2d",
+    "attach_object3d",
 ]
