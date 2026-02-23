@@ -164,11 +164,20 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
     except (ImportError, AttributeError):
         sympy_point_from_coords = None
         point_from_value = None
-    from sympy.parsing.sympy_parser import parse_expr
-    from sympy.parsing.sympy_parser import standard_transformations
-    from sympy.parsing.sympy_parser import implicit_multiplication_application
+    try:
+        from sympy.parsing.sympy_parser import parse_expr
+        from sympy.parsing.sympy_parser import standard_transformations
+        from sympy.parsing.sympy_parser import implicit_multiplication_application
+    except Exception:
+        parse_expr = None
+        standard_transformations = ()
+        implicit_multiplication_application = None
 
-    _transformations = standard_transformations + (implicit_multiplication_application,)
+    _transformations = (
+        standard_transformations + (implicit_multiplication_application,)
+        if implicit_multiplication_application is not None
+        else ()
+    )
 
     if is_pointlike(label):
         return label
@@ -195,7 +204,16 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             s = s.lstrip("=").strip().strip("()")
             comps = [v.strip() for v in s.split(",")]
             # Parse with sympy if available, otherwise return a tuple of parsed exprs
-            parsed = [parse_expr(v, transformations=_transformations) for v in comps]
+            if parse_expr is not None:
+                parsed = [parse_expr(v, transformations=_transformations) for v in comps]
+            else:
+                # SymPy not available: try numeric conversion, else leave as string
+                parsed = []
+                for v in comps:
+                    try:
+                        parsed.append(float(v))
+                    except Exception:
+                        parsed.append(v)
             if sympy_point_from_coords is not None:
                 return sympy_point_from_coords(*parsed)
             return tuple(parsed)

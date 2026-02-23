@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Protocol, Any, TypeVar, Generic, Union, Optional
 import re
+import tokenize as _tokenize
 
 _HAS_SYMPY = True
 try:
@@ -191,16 +192,20 @@ def _try_parse_line_equation(s: str):
             return t
         lhs_str = _sanitize(lhs_str)
         rhs_str = _sanitize(rhs_str)
-        lhs = parse_expr(
-            lhs_str.strip(),
-            transformations=_transformations,
-            local_dict={"x": x, "y": y, "z": z},
-        )
-        rhs = parse_expr(
-            rhs_str.strip(),
-            transformations=_transformations,
-            local_dict={"x": x, "y": y, "z": z},
-        )
+        try:
+            lhs = parse_expr(
+                lhs_str.strip(),
+                transformations=_transformations,
+                local_dict={"x": x, "y": y, "z": z},
+            )
+            rhs = parse_expr(
+                rhs_str.strip(),
+                transformations=_transformations,
+                local_dict={"x": x, "y": y, "z": z},
+            )
+        except (_tokenize.TokenError, SyntaxError, ValueError):
+            # Bad input (unterminated string, unmatched quotes, etc.)
+            return None
         if isinstance(lhs, tuple) or getattr(lhs, "is_Tuple", False):
             return None
         expr = lhs - rhs
@@ -303,6 +308,15 @@ class SegmentCommand:
         return f"Segment(length={self.length})"
 
 
+@dataclass
+class RayCommand:
+    p1: Union[Any, str, None] = None
+    p2: Union[Any, str, None] = None
+
+    def __repr__(self) -> str:  # pragma: no cover - simple formatting
+        return f"Ray(p1={self.p1}, p2={self.p2})"
+
+
 
 def segment_from_command(command_str: str, df=None, name_col: str = "Name", value_col: str = "Value", obj_col: str = "object3d"):
     if command_str is None:
@@ -357,7 +371,10 @@ def ray_from_command(command_str: str, df=None, name_col: str = "Name", value_co
             return Line((ra, D))
         except (AttributeError, TypeError, ValueError):
             pass
-    return Line((a, Matrix([0, 0, 0])))
+    # If we couldn't resolve both endpoints to point-like objects, return
+    # a lightweight `RayCommand` preserving the original labels so callers
+    # can decide how/when to resolve them later.
+    return RayCommand(p1=a, p2=b)
 
 
 __all__ = ["line_from_value", "segment_from_command", "ray_from_command"]

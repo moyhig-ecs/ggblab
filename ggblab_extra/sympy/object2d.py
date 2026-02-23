@@ -16,7 +16,16 @@ class Object2D:
     command: str | None = None
 
     @classmethod
-    def from_value_command(cls, value: str | None = None, command: str | None = None, type_: Optional[str] = None):
+    def from_value_command(
+        cls,
+        value: str | None = None,
+        command: str | None = None,
+        type_: Optional[str] = None,
+        df=None,
+        name_col: str = "Name",
+        value_col: str = "Value",
+        obj_col: str = "object2d",
+    ):
         # Prefer using declared `type_` when available to pick parsers.
         # Defer to specialized parsers to construct SymPy-backed objects.
         try:
@@ -34,12 +43,12 @@ class Object2D:
                 if cmd.lower().startswith("segment"):
                     from .line import segment_from_command
 
-                    seg = segment_from_command(command)
+                    seg = segment_from_command(command, df, name_col, value_col, obj_col)
                     return cls(kind="segment", obj=seg, value=value, command=command)
                 if cmd.lower().startswith("ray"):
                     from .line import ray_from_command
 
-                    r = ray_from_command(command)
+                    r = ray_from_command(command, df, name_col, value_col, obj_col)
                     return cls(kind="ray", obj=r, value=value, command=command)
             except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 # Best-effort: if parsing fails, continue to other heuristics.
@@ -154,7 +163,15 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
             continue
 
         try:
-            o = Object2D.from_value_command(value=v if v is not None else None, command=c if c is not None else None, type_=t)
+            o = Object2D.from_value_command(
+                value=v if v is not None else None,
+                command=c if c is not None else None,
+                type_=t,
+                df=df,
+                name_col=type_col if False else "Name",
+                value_col=value_col,
+                obj_col=out_col,
+            )
         except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError, RuntimeError):
             o = Object2D(kind=None, obj=None, value=v, command=c)
         objs.append(o)
