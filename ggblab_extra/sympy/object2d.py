@@ -15,32 +15,100 @@ class Object2D:
     command: str | None = None
 
     @classmethod
-    def from_value_command(cls, value: str | None = None, command: str | None = None):
+    def from_value_command(cls, value: str | None = None, command: str | None = None, type_: Optional[str] = None):
+        # Prefer using declared `type_` when available to pick parsers.
+        # Defer to specialized parsers to construct SymPy-backed objects.
+        try:
+            if type_ is not None:
+                t = type_.strip().lower()
+            else:
+                t = None
+        except Exception:
+            t = None
+
+        # Try command-based resolution first for constructs like Segment(...)/Ray(...)
         if command:
+            cmd = command.strip()
             try:
-                # defer to sympy.line's segment parser for simple commands
+                if cmd.lower().startswith("segment"):
+                    from .line import segment_from_command
+
+                    seg = segment_from_command(command)
+                    return cls(kind="segment", obj=seg, value=value, command=command)
+                if cmd.lower().startswith("ray"):
+                    from .line import ray_from_command
+
+                    r = ray_from_command(command)
+                    return cls(kind="ray", obj=r, value=value, command=command)
+            except Exception:
+                pass
+
+        # Type-driven or value-driven parsing
+        if t == "point":
+            try:
+                from .point import point_from_value
+
+                pwrap = point_from_value(value)
+                return cls(kind="point", obj=getattr(pwrap, "obj", pwrap), value=value, command=command)
+            except Exception:
+                return cls(kind="point", obj=None, value=value, command=command)
+
+        if t == "circle":
+            try:
+                from .circle import circle_from_value
+
+                c = circle_from_value(value)
+                return cls(kind="circle", obj=c, value=value, command=command)
+            except Exception:
+                return cls(kind="circle", obj=None, value=value, command=command)
+
+        if t == "line":
+            try:
+                from .line import line_from_value
+
+                l = line_from_value(value)
+                return cls(kind="line", obj=getattr(l, "obj", l), value=value, command=command)
+            except Exception:
+                return cls(kind="line", obj=None, value=value, command=command)
+
+        if t == "segment":
+            try:
                 from .line import segment_from_command
 
-                seg = segment_from_command(command)
+                seg = segment_from_command(command or value)
                 return cls(kind="segment", obj=seg, value=value, command=command)
             except Exception:
-                pass
-        if value:
-            try:
-                # best-effort: attempt to detect simple 2D constructs
-                if value.strip().lower().startswith("segment"):
-                    try:
-                        from .line import segment_from_command
+                return cls(kind="segment", obj=None, value=value, command=command)
 
-                        seg = segment_from_command(value)
-                        return cls(kind="segment", obj=seg, value=value, command=command)
-                    except Exception:
-                        pass
-                if value.strip().startswith("(") or "=" in value:
-                    # could be a point or simple 2D value; leave for callers to parse
-                    return cls(kind=None, obj=None, value=value, command=command)
+        if t == "list":
+            return cls(kind="list", obj=None, value=value, command=command)
+
+        # Heuristic fallback: try point -> circle -> line
+        if value:
+            v = value.strip()
+            try:
+                from .point import point_from_value
+
+                pwrap = point_from_value(value)
+                return cls(kind="point", obj=getattr(pwrap, "obj", pwrap), value=value, command=command)
             except Exception:
                 pass
+            try:
+                from .circle import circle_from_value
+
+                c = circle_from_value(value)
+                return cls(kind="circle", obj=c, value=value, command=command)
+            except Exception:
+                pass
+            try:
+                from .line import line_from_value
+
+                l = line_from_value(value)
+                return cls(kind="line", obj=getattr(l, "obj", l), value=value, command=command)
+            except Exception:
+                pass
+
+        # Unknown/unsupported
         return cls(kind=None, obj=None, value=value, command=command)
 
 
@@ -61,7 +129,7 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
     objs = []
     for t, c, v in zip(types, cmds, vals):
         try:
-            o = Object2D.from_value_command(value=v if v is not None else None, command=c if c is not None else None)
+            o = Object2D.from_value_command(value=v if v is not None else None, command=c if c is not None else None, type_=t)
         except Exception:
             o = Object2D(kind=None, obj=None, value=v, command=c)
         objs.append(o)
