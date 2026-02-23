@@ -157,100 +157,113 @@ _t = symbols("t")
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
 
+def _try_parse_line_equation(s: str):
+    """Try to parse an implicit cartesian plane equation into a Line.
+
+    Returns a `Line(...)` or `None` on failure.
+    """
+    try:
+        if "=" not in s:
+            return None
+        x, y, z = symbols("x y z")
+        lhs_str, rhs_str = s.split("=", 1)
+        lhs = parse_expr(
+            lhs_str.strip(),
+            transformations=_transformations,
+            local_dict={"x": x, "y": y, "z": z},
+        )
+        rhs = parse_expr(
+            rhs_str.strip(),
+            transformations=_transformations,
+            local_dict={"x": x, "y": y, "z": z},
+        )
+        if isinstance(lhs, tuple) or getattr(lhs, "is_Tuple", False):
+            return None
+        expr = lhs - rhs
+        a = expr.coeff(x, 1)
+        b = expr.coeff(y, 1)
+        c = expr.coeff(z, 1)
+        const = expr.subs({x: 0, y: 0, z: 0})
+        d = -const
+        if c == 0 and (a != 0 or b != 0):
+            if b != 0:
+                px = 0
+                py = d / b
+            else:
+                px = d / a
+                py = 0
+            dx, dy = -b, a
+            if SympyLine2D is not None and SympyPoint2D is not None:
+                P2d = SympyPoint2D(px, py)
+                P2d2 = SympyPoint2D(px + dx, py + dy)
+                return Line(SympyLine2D(P2d, P2d2))
+            P = sympy_point_from_coords(px, py, 0)
+            D = Matrix([dx, dy, 0])
+            if SympyLine3D is None:
+                return Line((P, D))
+            try:
+                p2 = sympy_point_from_coords(*(P[i] + D[i] for i in range(3)))
+            except (TypeError, AttributeError):
+                p2 = sympy_point_from_coords(P.x + D[0], P.y + D[1], P.z + D[2])
+            return Line(SympyLine3D(P, p2))
+    except (AttributeError, TypeError, ValueError, ImportError):
+        return None
+    return None
+
+
 def line_from_value(value_str: str) -> object:
+    # Normalize input and try a couple of parsing strategies.
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
         s = value_str
     s = s.strip()
+
+    # First, try the parametric form: (c) + λ (d)
     m = re.search(r"=\s*\(([^)]+)\)\s*\+\s*(?:λ\s*)?\(([^)]+)\)", s)
-    if not m:
-        if "=" in s:
+    if m:
+        c_str = m.group(1)
+        d_str = m.group(2)
+        c_parts = [p.strip() for p in c_str.split(",")]
+        d_parts = [p.strip() for p in d_str.split(",")]
+        if len(c_parts) != 3 or len(d_parts) != 3:
+            raise ValueError(f"expected three components in line value: {value_str!r}")
+        exprs_c = [
+            parse_expr(
+                p,
+                transformations=_transformations,
+                local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
+            )
+            for p in c_parts
+        ]
+        exprs_d = [
+            parse_expr(
+                p,
+                transformations=_transformations,
+                local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
+            )
+            for p in d_parts
+        ]
+        P = sympy_point_from_coords(*exprs_c)
+        D = Matrix(exprs_d)
+        P2 = sympy_point_from_coords(*(exprs_c[i] + exprs_d[i] for i in range(3)))
+        # Always return a lightweight object exposing `.point` and `.direction`.
+        sline = SimpleLine3D()
+        setattr(sline, "point", P)
+        setattr(sline, "direction", D)
+        if SympyLine3D is not None:
             try:
-                x, y, z = symbols("x y z")
-                if ":" in s:
-                    _, s2 = s.split(":", 1)
-                else:
-                    s2 = s
-                lhs_str, rhs_str = s2.split("=", 1)
-                lhs = parse_expr(
-                    lhs_str.strip(),
-                    transformations=_transformations,
-                    local_dict={"x": x, "y": y, "z": z},
-                )
-                rhs = parse_expr(
-                    rhs_str.strip(),
-                    transformations=_transformations,
-                    local_dict={"x": x, "y": y, "z": z},
-                )
-                if isinstance(lhs, tuple) or getattr(lhs, "is_Tuple", False):
-                    raise ValueError()
-                expr = lhs - rhs
-                a = expr.coeff(x, 1)
-                b = expr.coeff(y, 1)
-                c = expr.coeff(z, 1)
-                const = expr.subs({x: 0, y: 0, z: 0})
-                d = -const
-                if c == 0 and (a != 0 or b != 0):
-                    if b != 0:
-                        px = 0
-                        py = d / b
-                    else:
-                        px = d / a
-                        py = 0
-                    dx, dy = -b, a
-                    if SympyLine2D is not None and SympyPoint2D is not None:
-                        P2d = SympyPoint2D(px, py)
-                        P2d2 = SympyPoint2D(px + dx, py + dy)
-                        return Line(SympyLine2D(P2d, P2d2))
-                    P = sympy_point_from_coords(px, py, 0)
-                    D = Matrix([dx, dy, 0])
-                    if SympyLine3D is None:
-                        return Line((P, D))
-                    try:
-                        p2 = sympy_point_from_coords(*(P[i] + D[i] for i in range(3)))
-                    except (TypeError, AttributeError):
-                        p2 = sympy_point_from_coords(P.x + D[0], P.y + D[1], P.z + D[2])
-                    return Line(SympyLine3D(P, p2))
-            except (AttributeError, TypeError, ValueError, ImportError):
+                setattr(sline, "sympy", to_sympy_line((P, D)))
+            except (AttributeError, TypeError, ValueError):
                 pass
-        raise ValueError(f"not a line value: {value_str!r}")
-    c_str = m.group(1)
-    d_str = m.group(2)
-    c_parts = [p.strip() for p in c_str.split(",")]
-    d_parts = [p.strip() for p in d_str.split(",")]
-    if len(c_parts) != 3 or len(d_parts) != 3:
-        raise ValueError(f"expected three components in line value: {value_str!r}")
-    exprs_c = [
-        parse_expr(
-            p,
-            transformations=_transformations,
-            local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
-        )
-        for p in c_parts
-    ]
-    exprs_d = [
-        parse_expr(
-            p,
-            transformations=_transformations,
-            local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
-        )
-        for p in d_parts
-    ]
-    P = sympy_point_from_coords(*exprs_c)
-    D = Matrix(exprs_d)
-    P2 = sympy_point_from_coords(*(exprs_c[i] + exprs_d[i] for i in range(3)))
-    # Always return a lightweight object exposing `.point` and `.direction`.
-    # Attach the SymPy Line as `.sympy` when available for downstream use.
-    s = SimpleLine3D()
-    setattr(s, "point", P)
-    setattr(s, "direction", D)
-    if SympyLine3D is not None:
-        try:
-            setattr(s, "sympy", to_sympy_line((P, D)))
-        except (AttributeError, TypeError, ValueError):
-            pass
-    return Line(s)
+        return Line(sline)
+
+    # Next, try parsing as an implicit cartesian equation lhs = rhs
+    eq_result = _try_parse_line_equation(s)
+    if eq_result is not None:
+        return eq_result
+
+    raise ValueError(f"not a line value: {value_str!r}")
 
 
 @dataclass
