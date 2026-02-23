@@ -10,9 +10,8 @@ at the top-level package import.
 # access a compact, well-scoped API via `ggblab_extra.sympy`.
 from .point import (
     point_from_value,
-    set_applet_3d,
-    get_applet_3d,
 )
+from .utils import set_applet_3d, get_applet_3d
 from .line import line_from_value, segment_from_command, ray_from_command
 from .circle import circle_from_value, Circle3D
 from .plane import (
