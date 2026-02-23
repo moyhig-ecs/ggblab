@@ -6,30 +6,22 @@ can import them as `from ggblab_extra import sympy` or
 at the top-level package import.
 """
 
-# Import the focused helper functions from the sibling modules so users can
-# access a compact, well-scoped API via `ggblab_extra.sympy`.
-from .point import (
-    point_from_value,
-)
-from .utils import set_applet_3d, get_applet_3d
-from .line import line_from_value, segment_from_command, ray_from_command
-from .circle import circle_from_value, Circle3D
-from .plane import (
-    plane_from_value,
-    enumerate_plane_members,
-    point_on_plane,
-    segment_on_plane,
-    line_on_plane,
-    circle_on_plane,
-    valueobject_on_plane,
-)
-from .object3d import Object3D, Segment as Segment3D, to_sympy_line, SimpleLine3D, attach_object3d
-from .object2d import Object2D, attach_object2d
+# Lightweight, lazy-loading API surface for optional SymPy helpers.
+#
+# Importing SymPy is expensive and may not be available at package import
+# time. Provide `set_applet_3d` / `get_applet_3d` immediately while lazily
+# importing other helpers on demand via `__getattr__` (PEP 562).
+from importlib import import_module
+from typing import Any
 
+from .utils import set_applet_3d, get_applet_3d
+
+# Public names that are available immediately
 __all__ = [
-    "point_from_value",
     "set_applet_3d",
     "get_applet_3d",
+    # Lazy-loaded helpers listed below
+    "point_from_value",
     "line_from_value",
     "segment_from_command",
     "ray_from_command",
@@ -50,3 +42,52 @@ __all__ = [
     "attach_object2d",
     "attach_object3d",
 ]
+
+# Map attribute names to (module_path, attribute_name) for lazy import.
+_LAZY_MAP = {
+    # point
+    "point_from_value": (".point", "point_from_value"),
+    # line
+    "line_from_value": (".line", "line_from_value"),
+    "segment_from_command": (".line", "segment_from_command"),
+    "ray_from_command": (".line", "ray_from_command"),
+    # circle
+    "circle_from_value": (".circle", "circle_from_value"),
+    "Circle3D": (".circle", "Circle3D"),
+    # plane
+    "plane_from_value": (".plane", "plane_from_value"),
+    "enumerate_plane_members": (".plane", "enumerate_plane_members"),
+    "point_on_plane": (".plane", "point_on_plane"),
+    "segment_on_plane": (".plane", "segment_on_plane"),
+    "line_on_plane": (".plane", "line_on_plane"),
+    "circle_on_plane": (".plane", "circle_on_plane"),
+    "valueobject_on_plane": (".plane", "valueobject_on_plane"),
+    # 3D/2D helpers
+    "Object3D": (".object3d", "Object3D"),
+    "Segment3D": (".object3d", "Segment"),
+    "to_sympy_line": (".object3d", "to_sympy_line"),
+    "SimpleLine3D": (".object3d", "SimpleLine3D"),
+    "Object2D": (".object2d", "Object2D"),
+    "attach_object2d": (".object2d", "attach_object2d"),
+    "attach_object3d": (".object3d", "attach_object3d"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily import attributes when first accessed.
+
+    Allows `from ggblab_extra import sympy` and calling `set_applet_3d()`
+    without requiring SymPy to be installed. Other helpers import SymPy
+    on demand when used.
+    """
+    if name in _LAZY_MAP:
+        mod_path, attr = _LAZY_MAP[name]
+        mod = import_module(__name__ + mod_path)
+        val = getattr(mod, attr)
+        globals()[name] = val
+        return val
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(list(globals().keys()) + list(_LAZY_MAP.keys()))
