@@ -1,32 +1,42 @@
 """Line helpers (moved into sympy subpackage).
 """
 from dataclasses import dataclass
-from typing import Protocol, Any, TypeVar, Generic, Union
+from typing import Protocol, Any, TypeVar, Generic, Union, Optional
+import re
+
 from sympy import Matrix
+from sympy import symbols
+from sympy.parsing.sympy_parser import (
+    implicit_multiplication_application,
+    parse_expr,
+    standard_transformations,
+)
 
 try:
     from sympy.geometry.line3d import Line3D as SympyLine3D
-except Exception:
+except ImportError:
     try:
         from sympy.geometry import Line3D as SympyLine3D
-    except Exception:
+    except ImportError:
         SympyLine3D = None
 
 try:
     from sympy.geometry.line import Line as SympyLine2D
-except Exception:
+except ImportError:
     try:
         from sympy.geometry import Line as SympyLine2D
-    except Exception:
+    except ImportError:
         SympyLine2D = None
 
 try:
     from sympy.geometry.point import Point2D as SympyPoint2D
-except Exception:
+except ImportError:
     try:
         from sympy.geometry import Point2D as SympyPoint2D
-    except Exception:
+    except ImportError:
         SympyPoint2D = None
+
+    from .utils import is_pointlike, resolve_label_to_point
 
 
 class LineLike(Protocol):
@@ -34,6 +44,8 @@ class LineLike(Protocol):
     direction: Any
     p1: Any
     p2: Any
+
+    """Protocol describing a line-like object with point/direction or p1/p2."""
 
 
 AnyLine = TypeVar("AnyLine", bound=LineLike)
@@ -46,12 +58,15 @@ class Line(Generic[AnyLine]):
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
         return f"Line({self.obj!r})"
 
+    """Lightweight wrapper for line-like objects exposing `.obj`."""
+
     def __getattr__(self, name: str):
         return getattr(self.obj, name)
 
 
 @dataclass
 class SimpleLine3D:
+    """Simple container for a 3D line with `point` and `direction` attrs."""
     pass
 
 
@@ -59,43 +74,83 @@ def to_sympy_line(simple) -> object:
     if SympyLine3D is None:
         return simple
     try:
+        # Extract point and direction from tuple/list or attributes
         if isinstance(simple, (tuple, list)):
             p, d = simple[0], simple[1]
         else:
-            p, d = getattr(simple, "point"), getattr(simple, "direction")
+            p = getattr(simple, "point")
+            d = getattr(simple, "direction")
+
+        # Helper to get coordinate from a point-like object
+        def _coord(pt, i):
+            try:
+                return pt[i]
+            except (IndexError, TypeError):
+                try:
+                    return getattr(pt, ("x", "y", "z")[i])
+                except (AttributeError, TypeError):
+                    return None
+
+        # Helper to get direction component
+        def _dcomp(vec, i):
+            try:
+                return vec[i]
+            except (IndexError, TypeError):
+                try:
+                    # Matrix or sympy Matrix
+                    return vec[i]
+                except (IndexError, TypeError, AttributeError):
+                    return None
+
+        coords_p = [_coord(p, i) for i in range(3)]
+        comps_d = [_dcomp(d, i) for i in range(3)]
+
+        # If any coordinate missing, fall back to simple behavior
+        if any(c is None for c in coords_p) or any(di is None for di in comps_d):
+            return simple
+
+        # Build new point p2 = p + d
+        p2_coords = [coords_p[i] + comps_d[i] for i in range(3)]
+
+        # Construct Sympy Point3D if available, else try using type(p)
         try:
-            p2 = type(p)(*(p[i] + d[i] for i in range(3)))
-        except Exception:
-            p2 = type(p)(p.x + d[0], p.y + d[1], p.z + d[2])
-        return SympyLine3D(p, p2)
-    except Exception:
+            from sympy.geometry.point import Point3D as SympyPoint3D
+        except ImportError:
+            try:
+                from sympy.geometry import Point3D as SympyPoint3D
+            except ImportError:
+                SympyPoint3D = None
+
+        if SympyPoint3D is not None:
+            P = SympyPoint3D(*coords_p)
+            P2 = SympyPoint3D(*p2_coords)
+            return SympyLine3D(P, P2)
+
+        try:
+            p2 = type(p)(*(p2_coords[i] for i in range(3)))
+            return SympyLine3D(p, p2)
+        except (TypeError, AttributeError, ValueError):
+            return simple
+    except (AttributeError, TypeError, IndexError):
         return simple
 
-
-import re
-from sympy.parsing.sympy_parser import (
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
-from sympy import symbols, Matrix, sin, cos
-from .point import sympy_point_from_coords, point_from_value
-from typing import Optional
+        
+from .point import sympy_point_from_coords
 
 try:
     from sympy.geometry.segment import Segment as SympySegment
-except Exception:
+except ImportError:
     try:
         from sympy.geometry import Segment as SympySegment
-    except Exception:
+    except ImportError:
         SympySegment = None
 
 try:
     from sympy.geometry.ray import Ray as SympyRay
-except Exception:
+except ImportError:
     try:
         from sympy.geometry import Ray as SympyRay
-    except Exception:
+    except ImportError:
         SympyRay = None
 
 _t = symbols("t")
@@ -154,10 +209,10 @@ def line_from_value(value_str: str) -> object:
                         return Line((P, D))
                     try:
                         p2 = sympy_point_from_coords(*(P[i] + D[i] for i in range(3)))
-                    except Exception:
+                    except (TypeError, AttributeError):
                         p2 = sympy_point_from_coords(P.x + D[0], P.y + D[1], P.z + D[2])
                     return Line(SympyLine3D(P, p2))
-            except Exception:
+            except (AttributeError, TypeError, ValueError, ImportError):
                 pass
         raise ValueError(f"not a line value: {value_str!r}")
     c_str = m.group(1)
@@ -185,9 +240,17 @@ def line_from_value(value_str: str) -> object:
     P = sympy_point_from_coords(*exprs_c)
     D = Matrix(exprs_d)
     P2 = sympy_point_from_coords(*(exprs_c[i] + exprs_d[i] for i in range(3)))
-    if SympyLine3D is None:
-        return Line((P, D))
-    return Line(SympyLine3D(P, P2))
+    # Always return a lightweight object exposing `.point` and `.direction`.
+    # Attach the SymPy Line as `.sympy` when available for downstream use.
+    s = SimpleLine3D()
+    setattr(s, "point", P)
+    setattr(s, "direction", D)
+    if SympyLine3D is not None:
+        try:
+            setattr(s, "sympy", to_sympy_line((P, D)))
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return Line(s)
 
 
 @dataclass
@@ -203,55 +266,6 @@ class SegmentCommand:
         return f"Segment(length={self.length})"
 
 
-def _is_pointlike(obj: object) -> bool:
-    try:
-        return hasattr(obj, "x") and hasattr(obj, "y")
-    except Exception:
-        return False
-
-
-def _resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_col: str):
-    if _is_pointlike(label):
-        return label
-    if not isinstance(label, str):
-        return None
-    if df is None:
-        return None
-    try:
-        matches = df.filter(df[name_col] == label)
-        if len(matches) == 0:
-            return None
-        try:
-            obj = matches[obj_col][0]
-            resolved = getattr(obj, "obj", obj) if obj is not None else None
-            if _is_pointlike(resolved):
-                return resolved
-        except Exception:
-            pass
-        try:
-            return sympy_point_from_coords(*[parse_expr(v, transformations=_transformations) for v in matches[value_col][0].strip().lstrip(label).strip().lstrip("=").strip().strip("()").split(",")])
-        except Exception:
-            return None
-    except Exception:
-        try:
-            sel = df[df[name_col] == label]
-            if len(sel) == 0:
-                return None
-            row = sel.iloc[0]
-            try:
-                obj = row[obj_col]
-                resolved = getattr(obj, "obj", obj) if obj is not None else None
-                if _is_pointlike(resolved):
-                    return resolved
-            except Exception:
-                pass
-            try:
-                return point_from_value(row[value_col])
-            except Exception:
-                return None
-        except Exception:
-            return None
-
 
 def segment_from_command(command_str: str, df=None, name_col: str = "Name", value_col: str = "Value", obj_col: str = "object3d"):
     if command_str is None:
@@ -263,13 +277,13 @@ def segment_from_command(command_str: str, df=None, name_col: str = "Name", valu
     a = m.group(1).strip()
     b = m.group(2).strip()
     c = m.group(3).strip() if m.group(3) is not None else None
-    ra = a if _is_pointlike(a) else _resolve_label_to_point(a, df, name_col, value_col, obj_col)
-    rb = b if _is_pointlike(b) else _resolve_label_to_point(b, df, name_col, value_col, obj_col)
-    if _is_pointlike(ra) and _is_pointlike(rb):
+    ra = a if is_pointlike(a) else resolve_label_to_point(a, df, name_col, value_col, obj_col)
+    rb = b if is_pointlike(b) else resolve_label_to_point(b, df, name_col, value_col, obj_col)
+    if is_pointlike(ra) and is_pointlike(rb):
         if SympySegment is not None:
             try:
                 return SympySegment(ra, rb)
-            except Exception:
+            except (TypeError, ValueError, AttributeError):
                 pass
         return SegmentCommand(p1=ra, p2=rb, parent=c)
     return SegmentCommand(p1=a, p2=b, parent=c)
@@ -284,16 +298,16 @@ def ray_from_command(command_str: str, df=None, name_col: str = "Name", value_co
         raise ValueError(f"not a Ray command: {command_str!r}")
     a = m.group(1).strip()
     b = m.group(2).strip()
-    ra = a if _is_pointlike(a) else _resolve_label_to_point(a, df, name_col, value_col, obj_col)
-    rb = b if _is_pointlike(b) else _resolve_label_to_point(b, df, name_col, value_col, obj_col)
-    if _is_pointlike(ra) and _is_pointlike(rb):
+    ra = a if is_pointlike(a) else resolve_label_to_point(a, df, name_col, value_col, obj_col)
+    rb = b if is_pointlike(b) else resolve_label_to_point(b, df, name_col, value_col, obj_col)
+    if is_pointlike(ra) and is_pointlike(rb):
         try:
             z0 = getattr(ra, "z", 0)
             z1 = getattr(rb, "z", 0)
             if (z0 == 0 or z0 is None) and (z1 == 0 or z1 is None) and SympyRay is not None:
                 try:
                     return SympyRay(ra, rb)
-                except Exception:
+                except (TypeError, ValueError, AttributeError):
                     pass
             D = Matrix([rb[i] - ra[i] for i in range(3)])
             if SympyLine2D is not None and SympyPoint2D is not None:
@@ -301,10 +315,10 @@ def ray_from_command(command_str: str, df=None, name_col: str = "Name", value_co
                     P2d = SympyPoint2D(float(ra.x), float(ra.y))
                     P2d2 = SympyPoint2D(float(rb.x), float(rb.y))
                     return Line(SympyLine2D(P2d, P2d2))
-                except Exception:
+                except (TypeError, ValueError, AttributeError):
                     pass
             return Line((ra, D))
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
     return Line((a, Matrix([0, 0, 0])))
 

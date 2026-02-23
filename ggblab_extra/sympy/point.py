@@ -6,11 +6,11 @@ provides a `Point` wrapper exposing a uniform API across 2D/3D points.
 from dataclasses import dataclass
 from typing import Optional, Any, TypeVar, Protocol, Generic
 
-from sympy.geometry import Point as SympyPoint, Point3D as SympyPoint3D, Point2D as SympyPoint2D
 import re
+
+from sympy.geometry import Point as SympyPoint, Point3D as SympyPoint3D, Point2D as SympyPoint2D
 from sympy.parsing.sympy_parser import implicit_multiplication_application, parse_expr, standard_transformations
 from sympy import sin, cos, symbols
-from .utils import get_applet_3d
 
 # Parser transformations and time symbol for parametric expressions
 _t = symbols("t")
@@ -21,7 +21,10 @@ class PointLike(Protocol):
     x: Any
     y: Any
 
+    """Protocol representing a point-like object (has `x`, `y`)."""
+
     def distance(self, other: Any) -> Any:  # pragma: no cover - typing helper
+        """Return distance to another point-like object."""
         ...
 
 
@@ -29,6 +32,10 @@ AnyPoint = TypeVar("AnyPoint", bound=PointLike)
 
 
 def sympy_point_from_coords(*coords, is_3d: Optional[bool] = None):
+    """Construct a SymPy Point from numeric/expression coordinates.
+
+    The `is_3d` hint forces 2D/3D construction when provided.
+    """
     if is_3d is True:
         if len(coords) == 2:
             return SympyPoint3D(coords[0], coords[1], 0)
@@ -48,6 +55,7 @@ def sympy_point_from_coords(*coords, is_3d: Optional[bool] = None):
 
 @dataclass
 class Point(Generic[AnyPoint]):
+    """Wrapper around a SymPy `Point` exposing uniform `x`,`y`,`z` access."""
     obj: AnyPoint
 
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
@@ -78,7 +86,7 @@ class Point(Generic[AnyPoint]):
             zy = float(self.y.evalf()) if hasattr(self.y, "evalf") else float(self.y)
             zz = float(getattr(self.obj, "z", 0)) if getattr(self.obj, "z", None) is not None else 0.0
             return zx == 0.0 and zy == 0.0 and zz == 0.0
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             return False
 
     def __getattr__(self, name: str):
@@ -89,6 +97,11 @@ class Point(Generic[AnyPoint]):
 
 
 def point_from_value(value_str: str) -> "Point":
+    """Parse a GeoGebra-style `Value` string into a `Point` wrapper.
+
+    Accepts forms like "A = (1,2)" or "(x,y)". Raises `ValueError` if
+    parsing fails.
+    """
     if ":" in value_str:
         _, s = value_str.split(":", 1)
     else:
@@ -118,13 +131,18 @@ def point_from_value(value_str: str) -> "Point":
         )
         for c in comps
     ]
-    is3d = get_applet_3d()
+    try:
+        from .utils import get_applet_3d
+
+        is3d = get_applet_3d()
+    except (ImportError, AttributeError):
+        is3d = None
     if is3d:
         p = sympy_point_from_coords(*exprs, is_3d=True)
     else:
         try:
             p = SympyPoint2D(exprs[0], exprs[1])
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             p = sympy_point_from_coords(*exprs)
     return Point(p)
 

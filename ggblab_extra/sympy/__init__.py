@@ -16,32 +16,10 @@ from typing import Any
 
 from .utils import set_applet_3d, get_applet_3d
 
-# Public names that are available immediately
-__all__ = [
-    "set_applet_3d",
-    "get_applet_3d",
-    # Lazy-loaded helpers listed below
-    "point_from_value",
-    "line_from_value",
-    "segment_from_command",
-    "ray_from_command",
-    "circle_from_value",
-    "Circle3D",
-    "plane_from_value",
-    "enumerate_plane_members",
-    "point_on_plane",
-    "segment_on_plane",
-    "line_on_plane",
-    "circle_on_plane",
-    "valueobject_on_plane",
-    "Object3D",
-    "Segment3D",
-    "to_sympy_line",
-    "SimpleLine3D",
-    "Object2D",
-    "attach_object2d",
-    "attach_object3d",
-]
+# Build `__all__` dynamically so the module can expose names without
+# importing heavy SymPy-dependent modules at import time. Static analyzers
+# may not be able to prove the lazy imports; silence that specific check
+# for this expression. The assignment is placed after `_LAZY_MAP` below.
 
 # Map attribute names to (module_path, attribute_name) for lazy import.
 _LAZY_MAP = {
@@ -91,3 +69,10 @@ def __getattr__(name: str) -> Any:
 
 def __dir__():
     return sorted(list(globals().keys()) + list(_LAZY_MAP.keys()))
+
+
+# Build `__all__` dynamically so the module can expose names without
+# importing heavy SymPy-dependent modules at import time. Static analyzers
+# may not be able to prove the lazy imports; silence that specific check
+# for this expression.
+__all__ = ["set_applet_3d", "get_applet_3d"] + list(_LAZY_MAP.keys())  # pylint: disable=undefined-all-variable

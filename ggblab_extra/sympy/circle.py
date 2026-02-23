@@ -1,25 +1,32 @@
 """Circle helpers (moved into sympy subpackage).
+
+This module contains lightweight parsers that try to produce SymPy circle
+objects when SymPy is available, otherwise they return simple tuples or
+lightweight wrappers.
 """
+
 from dataclasses import dataclass
 from typing import Any, Optional
 import re
+import math
 
 from sympy.parsing.sympy_parser import (
     implicit_multiplication_application,
     parse_expr,
     standard_transformations,
 )
-import math
 from sympy import symbols, sin, cos, Matrix, sqrt
+from sympy.core.sympify import SympifyError
+from sympy.geometry import Point3D as SympyPoint3D
 
 from .point import sympy_point_from_coords, point_from_value
 
 try:
     from sympy.geometry.circle import Circle as SympyCircle
-except Exception:
+except ImportError:
     try:
         from sympy.geometry import Circle as SympyCircle
-    except Exception:
+    except ImportError:
         SympyCircle = None
 
 _t = symbols("t")
@@ -29,6 +36,8 @@ _transformations = standard_transformations + (implicit_multiplication_applicati
 @dataclass
 class CircleLike:
     obj: Any
+
+    """Wrapper for circle-like objects exposing `.obj` and simple attrs."""
 
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
         return f"Circle({self.obj!r})"
@@ -49,13 +58,8 @@ def sympy_circle_from_center_radius(center, radius, is_3d: Optional[bool] = None
         return (center, radius)
     try:
         return SympyCircle(center, radius)
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
         return (center, radius)
-
-
-from dataclasses import dataclass
-from sympy import Matrix
-from sympy.geometry import Point3D as SympyPoint3D
 
 
 @dataclass
@@ -66,8 +70,13 @@ class Circle3D:
     axis_cos: Matrix
     axis_sin: Matrix
 
+    """Representation for a 3D circle (parametric axes + normal)."""
+
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
-        return f"Circle3D(center={self.center}, radius={self.radius}, normal={tuple(self.normal)})"
+        return (
+            f"Circle3D(center={self.center}, radius={self.radius}, "
+            f"normal={tuple(self.normal)})"
+        )
 
 
 _CIRCLE_CENTER_RAD_RE = re.compile(r"Circle\s*\(\s*([^,\)]+)\s*,\s*([^\)]+)\)", re.I)
@@ -75,6 +84,10 @@ _EQUATION_RE = re.compile(r"\(x[-+].*\)\s*=\s*.*")
 
 
 def circle_from_value(value_str: str):
+    """Parse a string `value_str` into a circle-like object.
+
+    Attempts center+radius, cartesian-equation, and parametric forms.
+    """
     if value_str is None:
         raise ValueError("empty value")
     s = value_str
@@ -91,22 +104,33 @@ def circle_from_value(value_str: str):
             if center_part.startswith("("):
                 comps = [c.strip() for c in center_part.strip("() ").split(",")]
                 exprs = [
-                    parse_expr(c, transformations=_transformations, local_dict={"sin": sin, "cos": cos, "t": _t})
+                    parse_expr(
+                        c,
+                        transformations=_transformations,
+                        local_dict={"sin": sin, "cos": cos, "t": _t},
+                    )
                     for c in comps
                 ]
                 center = sympy_point_from_coords(*exprs, is_3d=False)
             else:
                 try:
                     center = point_from_value(center_part)
-                except Exception:
+                except (ValueError, TypeError):
                     comps = [c.strip() for c in center_part.strip("() ").split(",")]
-                    center = sympy_point_from_coords(*[parse_expr(c, transformations=_transformations) for c in comps], is_3d=False)
-        except Exception:
+                    center = sympy_point_from_coords(
+                        *[parse_expr(c, transformations=_transformations) for c in comps],
+                        is_3d=False,
+                    )
+        except (ValueError, TypeError, AttributeError, IndexError, SympifyError):
             center = None
 
         try:
-            r_expr = parse_expr(radius_part, transformations=_transformations, local_dict={"sin": sin, "cos": cos, "t": _t})
-        except Exception:
+            r_expr = parse_expr(
+                radius_part,
+                transformations=_transformations,
+                local_dict={"sin": sin, "cos": cos, "t": _t},
+            )
+        except (ValueError, TypeError, SympifyError, SyntaxError):
             r_expr = None
 
         if center is not None and r_expr is not None:
@@ -128,7 +152,7 @@ def circle_from_value(value_str: str):
             r = math.sqrt(r2)
             center = sympy_point_from_coords(h, k, 0)
             return sympy_circle_from_center_radius(center, r)
-    except Exception:
+    except (ValueError, TypeError):
         pass
 
     try:
@@ -163,14 +187,22 @@ def circle_from_value(value_str: str):
                                 if len(center_parts) not in (2, 3):
                                     raise ValueError("expected 2 or 3 components in center")
                                 center_exprs = [
-                                    parse_expr(p, transformations=_transformations, local_dict={"sin": sin, "cos": cos, "t": _t})
+                                    parse_expr(
+                                        p,
+                                        transformations=_transformations,
+                                        local_dict={"sin": sin, "cos": cos, "t": _t},
+                                    )
                                     for p in center_parts
                                 ]
                                 vec_parts = [v.strip() for v in vec_str.split(",")]
                                 if len(vec_parts) != 3:
                                     raise ValueError("expected three components in parametric part")
                                 vec_exprs = [
-                                    parse_expr(v, transformations=_transformations, local_dict={"sin": sin, "cos": cos, "t": _t})
+                                    parse_expr(
+                                        v,
+                                        transformations=_transformations,
+                                        local_dict={"sin": sin, "cos": cos, "t": _t},
+                                    )
                                     for v in vec_parts
                                 ]
                                 cos_coeffs = [expr.expand().coeff(cos(_t), 1) for expr in vec_exprs]
@@ -179,12 +211,18 @@ def circle_from_value(value_str: str):
                                 B = Matrix(sin_coeffs)
                                 normal = A.cross(B)
                                 normal_simpl = Matrix([ni.simplify() for ni in normal])
-                                rA = sqrt(sum([ci**2 for ci in A]))
-                                rB = sqrt(sum([ci**2 for ci in B]))
+                                rA = sqrt(sum(ci**2 for ci in A))
+                                rB = sqrt(sum(ci**2 for ci in B))
                                 radius = (rA + rB) / 2
                                 center = sympy_point_from_coords(*center_exprs, is_3d=True)
-                                return Circle3D(center=center, normal=normal_simpl, radius=radius, axis_cos=A, axis_sin=B)
-    except Exception:
+                                return Circle3D(
+                                    center=center,
+                                    normal=normal_simpl,
+                                    radius=radius,
+                                    axis_cos=A,
+                                    axis_sin=B,
+                                )
+    except (ValueError, TypeError, IndexError, AttributeError, SympifyError):
         pass
 
     raise ValueError(f"not a recognized circle value: {value_str!r}")

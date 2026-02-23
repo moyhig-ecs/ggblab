@@ -9,6 +9,7 @@ from typing import Optional
 
 @dataclass
 class Object2D:
+    """Container describing a parsed 2D object and its metadata."""
     kind: Optional[str] = None
     obj: object | None = None
     value: str | None = None
@@ -23,7 +24,7 @@ class Object2D:
                 t = type_.strip().lower()
             else:
                 t = None
-        except Exception:
+        except (AttributeError, TypeError):
             t = None
 
         # Try command-based resolution first for constructs like Segment(...)/Ray(...)
@@ -40,7 +41,8 @@ class Object2D:
 
                     r = ray_from_command(command)
                     return cls(kind="ray", obj=r, value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                # Best-effort: if parsing fails, continue to other heuristics.
                 pass
 
         # Type-driven or value-driven parsing
@@ -50,7 +52,7 @@ class Object2D:
 
                 pwrap = point_from_value(value)
                 return cls(kind="point", obj=getattr(pwrap, "obj", pwrap), value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 return cls(kind="point", obj=None, value=value, command=command)
 
         if t == "circle":
@@ -59,7 +61,7 @@ class Object2D:
 
                 c = circle_from_value(value)
                 return cls(kind="circle", obj=c, value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 return cls(kind="circle", obj=None, value=value, command=command)
 
         if t == "line":
@@ -68,7 +70,7 @@ class Object2D:
 
                 l = line_from_value(value)
                 return cls(kind="line", obj=getattr(l, "obj", l), value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 return cls(kind="line", obj=None, value=value, command=command)
 
         if t == "segment":
@@ -77,7 +79,7 @@ class Object2D:
 
                 seg = segment_from_command(command or value)
                 return cls(kind="segment", obj=seg, value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 return cls(kind="segment", obj=None, value=value, command=command)
 
         if t == "list":
@@ -91,21 +93,21 @@ class Object2D:
 
                 pwrap = point_from_value(value)
                 return cls(kind="point", obj=getattr(pwrap, "obj", pwrap), value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 pass
             try:
                 from .circle import circle_from_value
 
                 c = circle_from_value(value)
                 return cls(kind="circle", obj=c, value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 pass
             try:
                 from .line import line_from_value
 
                 l = line_from_value(value)
                 return cls(kind="line", obj=getattr(l, "obj", l), value=value, command=command)
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 pass
 
         # Unknown/unsupported
@@ -126,12 +128,25 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
     types = df[type_col].to_list()
     cmds = df[command_col].to_list()
     vals = df[value_col].to_list()
+    # Force re-detection of the applet mode before processing rows.
+    try:
+        from .utils import get_applet_3d
+    except ImportError:
+        # utils may be absent in minimal environments; continue gracefully.
+        get_applet_3d = None  # type: ignore
+    else:
+        try:
+            _ = get_applet_3d(force=True)
+        except (RuntimeError, TypeError, ValueError):
+            # Best-effort: ignore detection errors and continue.
+            pass
+
     objs = []
     for t, c, v in zip(types, cmds, vals):
         # If the declared type is an unsupported container like 'list', do not attach.
         try:
             type_norm = t.strip().lower() if isinstance(t, str) else None
-        except Exception:
+        except (AttributeError, TypeError):
             type_norm = None
 
         if type_norm == "list":
@@ -140,12 +155,12 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
 
         try:
             o = Object2D.from_value_command(value=v if v is not None else None, command=c if c is not None else None, type_=t)
-        except Exception:
+        except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError, RuntimeError):
             o = Object2D(kind=None, obj=None, value=v, command=c)
         objs.append(o)
     try:
         s = pl.Series(out_col, objs, dtype=getattr(pl, "Object"))
-    except Exception:
+    except (AttributeError, TypeError):
         s = pl.Series(out_col, objs)
     return df.with_columns([s])
 
