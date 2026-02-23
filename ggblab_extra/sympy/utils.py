@@ -6,11 +6,8 @@ few functions and delegates heavy work to sibling modules.
 """
 from typing import Optional
 
-from .point import set_applet_3d, get_applet_3d
-
-
-# `make_object_from_value_command` was removed; use `attach_object2d`/`attach_object3d`
-# or call `Object2D.from_value_command` / `Object3D.from_value_command` directly.
+# Note: `set_applet_3d` / `get_applet_3d` live in `ggblab_extra.sympy.point`.
+# Callers should import them from `ggblab_extra.sympy.point` directly.
 
 
 async def is_applet_3d_from_ggblab(ggb) -> Optional[bool]:
@@ -35,6 +32,5 @@ async def is_applet_3d_from_ggblab(ggb) -> Optional[bool]:
 
 __all__ = [
     "is_applet_3d_from_ggblab",
-    "set_applet_3d",
-    "get_applet_3d",
+    # removed: set_applet_3d, get_applet_3d — import from ggblab_extra.sympy.point
 ]
