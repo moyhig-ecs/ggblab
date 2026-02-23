@@ -139,12 +139,7 @@ async def is_applet_3d_from_ggblab(ggb=None) -> Optional[bool]:
     return ("3d" in app_attr) or ("3d" in sub_attr)
 
 
-__all__ = [
-    "is_applet_3d_from_ggblab",
-    # removed: set_applet_3d, get_applet_3d — import from ggblab_extra.sympy.point
-    "set_applet_3d",
-    "get_applet_3d",
-]
+# Exports are declared at the end of the file to keep them centralized.
 
 
 def is_pointlike(obj: object) -> bool:
@@ -247,3 +242,12 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
                 return None
         except (TypeError, AttributeError, IndexError):
             return None
+
+
+    __all__ = [
+        "set_applet_3d",
+        "get_applet_3d",
+        "is_applet_3d_from_ggblab",
+        "is_pointlike",
+        "resolve_label_to_point",
+    ]
