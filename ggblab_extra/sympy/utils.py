@@ -244,10 +244,10 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             return None
 
 
-    __all__ = [
-        "set_applet_3d",
-        "get_applet_3d",
-        "is_applet_3d_from_ggblab",
-        "is_pointlike",
-        "resolve_label_to_point",
-    ]
+__all__ = [
+    "set_applet_3d",
+    "get_applet_3d",
+    "is_applet_3d_from_ggblab",
+    "is_pointlike",
+    "resolve_label_to_point",
+]
