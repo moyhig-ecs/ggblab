@@ -265,18 +265,6 @@ def line_on_plane(line_obj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
         return False
 
 
-__all__ = [
-    "plane_from_value",
-    "attach_planes",
-    "point_distance_to_plane",
-    "point_on_plane",
-    "circle_on_plane",
-    "valueobject_on_plane",
-    "segment_on_plane",
-    "line_on_plane",
-    "enumerate_plane_members",
-]
-
 
 def enumerate_plane_members(
     df,
@@ -375,3 +363,14 @@ def enumerate_plane_members(
         except Exception:
             s = pl.Series(out_col, [[str(x) for x in m] for m in members_list])
     return df.with_columns([s])
+
+__all__ = [
+    "plane_from_value",
+    "point_distance_to_plane",
+    "point_on_plane",
+    "circle_on_plane",
+    "valueobject_on_plane",
+    "segment_on_plane",
+    "line_on_plane",
+    "enumerate_plane_members",
+]

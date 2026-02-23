@@ -25,7 +25,7 @@ from .plane import (
     valueobject_on_plane,
 )
 from .three_d import Object3D, Segment as Segment3D, to_sympy_line, SimpleLine3D
-from .two_d import Object2D
+from .object2d import Object2D, attach_object2d
 
 __all__ = [
     "point_from_value",
@@ -48,4 +48,5 @@ __all__ = [
     "to_sympy_line",
     "SimpleLine3D",
     "Object2D",
+    "attach_object2d",
 ]
