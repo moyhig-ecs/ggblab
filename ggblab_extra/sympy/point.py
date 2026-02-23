@@ -10,6 +10,7 @@ from sympy.geometry import Point as SympyPoint, Point3D as SympyPoint3D, Point2D
 import re
 from sympy.parsing.sympy_parser import implicit_multiplication_application, parse_expr, standard_transformations
 from sympy import sin, cos, symbols
+from .utils import get_applet_3d
 
 # Parser transformations and time symbol for parametric expressions
 _t = symbols("t")
@@ -84,17 +85,7 @@ class Point(Generic[AnyPoint]):
         return getattr(self.obj, name)
 
 
-# Module-level applet dimensionality flag. See sympy_utils for usage.
-_is_applet_3d: Optional[bool] = None
-
-
-def set_applet_3d(value: Optional[bool]) -> None:
-    global _is_applet_3d
-    _is_applet_3d = True if value else (False if value is False else None)
-
-
-def get_applet_3d() -> Optional[bool]:
-    return _is_applet_3d
+# Applet dimensionality flag moved to `ggblab_extra.sympy.utils`.
 
 
 def point_from_value(value_str: str) -> "Point":
