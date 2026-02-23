@@ -7,19 +7,10 @@ few functions and delegates heavy work to sibling modules.
 from typing import Optional
 
 from .point import set_applet_3d, get_applet_3d
-from .three_d import Object3D
-from .two_d import Object2D
 
 
-def make_object_from_value_command(value: str | None = None, command: str | None = None, is_3d: Optional[bool] = None):
-    if is_3d is None:
-        flag = get_applet_3d()
-    else:
-        flag = is_3d
-    is3d_flag = bool(flag) if flag is not None else False
-    if is3d_flag:
-        return Object3D.from_value_command(value=value, command=command)
-    return Object2D.from_value_command(value=value, command=command)
+# `make_object_from_value_command` was removed; use `attach_object2d`/`attach_object3d`
+# or call `Object2D.from_value_command` / `Object3D.from_value_command` directly.
 
 
 async def is_applet_3d_from_ggblab(ggb) -> Optional[bool]:
@@ -43,7 +34,6 @@ async def is_applet_3d_from_ggblab(ggb) -> Optional[bool]:
 
 
 __all__ = [
-    "make_object_from_value_command",
     "is_applet_3d_from_ggblab",
     "set_applet_3d",
     "get_applet_3d",
