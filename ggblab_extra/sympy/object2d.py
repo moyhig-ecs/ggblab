@@ -128,6 +128,16 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
     vals = df[value_col].to_list()
     objs = []
     for t, c, v in zip(types, cmds, vals):
+        # If the declared type is an unsupported container like 'list', do not attach.
+        try:
+            type_norm = t.strip().lower() if isinstance(t, str) else None
+        except Exception:
+            type_norm = None
+
+        if type_norm == "list":
+            objs.append(None)
+            continue
+
         try:
             o = Object2D.from_value_command(value=v if v is not None else None, command=c if c is not None else None, type_=t)
         except Exception:
