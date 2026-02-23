@@ -24,3 +24,8 @@ __all__ = [
 	"collapse_scc",
 	"cost_between",
 ]
+
+# Optional SymPy helpers are provided as a dedicated subpackage. Import
+# `ggblab_extra.sympy` when you need SymPy-based utilities to avoid pulling
+# heavy dependencies at top-level package import.
+__all__ += ["sympy"]
