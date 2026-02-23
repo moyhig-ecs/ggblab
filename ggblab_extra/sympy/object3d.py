@@ -7,8 +7,10 @@ and `Value` using the 3D parsers.
 from dataclasses import dataclass
 from typing import Optional
 
-from sympy import symbols
-from sympy.geometry import Point3D as SympyPoint3D
+try:
+    from sympy.geometry import Point3D as SympyPoint3D
+except Exception:
+    SympyPoint3D = None
 try:
     from sympy.geometry.line3d import Line3D as SympyLine3D
 except ImportError:

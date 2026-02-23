@@ -8,13 +8,28 @@ from typing import Optional, Any, TypeVar, Protocol, Generic
 
 import re
 
-from sympy.geometry import Point as SympyPoint, Point3D as SympyPoint3D, Point2D as SympyPoint2D
-from sympy.parsing.sympy_parser import implicit_multiplication_application, parse_expr, standard_transformations
-from sympy import sin, cos, symbols
+_HAS_SYMPY = True
+try:
+    from sympy.geometry import Point as SympyPoint, Point3D as SympyPoint3D, Point2D as SympyPoint2D
+    from sympy.parsing.sympy_parser import implicit_multiplication_application, parse_expr, standard_transformations
+    from sympy import sin, cos, symbols
+except Exception:
+    SympyPoint = SympyPoint3D = SympyPoint2D = None
+    implicit_multiplication_application = None
+    parse_expr = None
+    standard_transformations = ()
+    sin = None
+    cos = None
+    symbols = None
+    _HAS_SYMPY = False
 
 # Parser transformations and time symbol for parametric expressions
-_t = symbols("t")
-_transformations = standard_transformations + (implicit_multiplication_application,)
+_t = symbols("t") if _HAS_SYMPY and symbols is not None else None
+_transformations = (
+    standard_transformations + (implicit_multiplication_application,)
+    if _HAS_SYMPY and implicit_multiplication_application is not None
+    else ()
+)
 
 
 class PointLike(Protocol):
@@ -36,6 +51,9 @@ def sympy_point_from_coords(*coords, is_3d: Optional[bool] = None):
 
     The `is_3d` hint forces 2D/3D construction when provided.
     """
+    if not _HAS_SYMPY:
+        raise ImportError("SymPy is required for constructing sympy points")
+
     if is_3d is True:
         if len(coords) == 2:
             return SympyPoint3D(coords[0], coords[1], 0)

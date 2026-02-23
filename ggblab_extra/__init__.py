@@ -13,7 +13,12 @@ startup lightweight.
 
 from .construction_io import ConstructionIO, DataFrameIO  # re-export for convenience
 from .construction_parser import ConstructionTreeParser, ggb_parser  # re-export parser
-from .graph_similarity import hungarian_similarity, collapse_scc, cost_between
+try:
+	from .graph_similarity import hungarian_similarity, collapse_scc, cost_between
+except Exception:  # pragma: no cover - allow optional deps to be missing
+	hungarian_similarity = None
+	collapse_scc = None
+	cost_between = None
 
 __all__ = [
 	"ConstructionIO",

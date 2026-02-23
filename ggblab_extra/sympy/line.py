@@ -4,13 +4,22 @@ from dataclasses import dataclass
 from typing import Protocol, Any, TypeVar, Generic, Union, Optional
 import re
 
-from sympy import Matrix
-from sympy import symbols
-from sympy.parsing.sympy_parser import (
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
+_HAS_SYMPY = True
+try:
+    from sympy import Matrix
+    from sympy import symbols
+    from sympy.parsing.sympy_parser import (
+        implicit_multiplication_application,
+        parse_expr,
+        standard_transformations,
+    )
+except Exception:
+    Matrix = None
+    symbols = None
+    implicit_multiplication_application = None
+    parse_expr = None
+    standard_transformations = ()
+    _HAS_SYMPY = False
 
 from .utils import is_pointlike, resolve_label_to_point
 
@@ -153,8 +162,12 @@ except ImportError:
     except ImportError:
         SympyRay = None
 
-_t = symbols("t")
-_transformations = standard_transformations + (implicit_multiplication_application,)
+_t = symbols("t") if _HAS_SYMPY and symbols is not None else None
+_transformations = (
+    standard_transformations + (implicit_multiplication_application,)
+    if _HAS_SYMPY and implicit_multiplication_application is not None
+    else ()
+)
 
 
 def _try_parse_line_equation(s: str):
@@ -167,6 +180,17 @@ def _try_parse_line_equation(s: str):
             return None
         x, y, z = symbols("x y z")
         lhs_str, rhs_str = s.split("=", 1)
+        # Sanitize common notation issues from GeoGebra/LaTeX-like strings
+        def _sanitize(sym_str: str) -> str:
+            # remove LaTeX-style braces which confuse the parser: v_{1} -> v_1
+            t = sym_str.replace("{", "").replace("}", "")
+            # normalize subscript forms like _('1') or _ ( 1 ) -> _1
+            t = re.sub(r"_\s*\((\d+)\)", r"_\1", t)
+            # collapse repeated whitespace
+            t = re.sub(r"\s+", " ", t)
+            return t
+        lhs_str = _sanitize(lhs_str)
+        rhs_str = _sanitize(rhs_str)
         lhs = parse_expr(
             lhs_str.strip(),
             transformations=_transformations,
