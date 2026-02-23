@@ -12,6 +12,8 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
+from .utils import is_pointlike, resolve_label_to_point
+
 try:
     from sympy.geometry.line3d import Line3D as SympyLine3D
 except ImportError:
@@ -35,8 +37,6 @@ except ImportError:
         from sympy.geometry import Point2D as SympyPoint2D
     except ImportError:
         SympyPoint2D = None
-
-    from .utils import is_pointlike, resolve_label_to_point
 
 
 class LineLike(Protocol):
