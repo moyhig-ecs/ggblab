@@ -158,7 +158,7 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
         except (AttributeError, TypeError):
             type_norm = None
 
-        if type_norm == "list":
+        if type_norm in ("list", "numeric"):
             objs.append(None)
             continue
 
