@@ -31,6 +31,9 @@ _LAZY_MAP = {
     "ray_from_command": (".line", "ray_from_command"),
     # circle
     "circle_from_value": (".circle", "circle_from_value"),
+    "surface_from_value": (".surface", "surface_from_value"),
+    "ParametricSurface": (".surface", "ParametricSurface"),
+    "curve_from_value": (".curve", "curve_from_value"),
     "Circle3D": (".circle", "Circle3D"),
     # plane
     "plane_from_value": (".plane", "plane_from_value"),

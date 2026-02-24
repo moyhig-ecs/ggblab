@@ -75,11 +75,25 @@ class Object3D:
             if inner is not None:
                 return cls(kind="point", obj=inner, value=value, command=command)
 
+        if declared == "surface":
+            inner = _try_surface_from_value(value)
+            if inner is not None:
+                return cls(kind="surface", obj=inner, value=value, command=command)
+
         # Heuristics: prefer circle for explicit curve commands or parametric values
         if cmd_lower.startswith("cylinder") or cmd_lower.startswith("circle") or cmd_lower.startswith("intersectpath") or looks_parametric:
             inner = _try_circle_from_value(value)
             if inner is not None:
                 return cls(kind="circle", obj=inner, value=value, command=command)
+
+        # If value looks like a 2-parameter parametric surface try parsing
+        if isinstance(value, str):
+            vl = value.lower()
+            # crude heuristic: contains both 'u' and 'v' and at least three comma-separated expressions
+            if ("u" in vl and "v" in vl and ("cos(" in vl or "sin(" in vl or "tan(" in vl)):
+                inner = _try_surface_from_value(value)
+                if inner is not None:
+                    return cls(kind="surface", obj=inner, value=value, command=command)
 
         # Command-based segment parse
         seg = _try_segment_from_command(command) if command else None
@@ -151,6 +165,18 @@ def _try_circle_from_value(val: str):
         c = circle_from_value(val)
         if not _is_degenerate_circle(c):
             return c
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return None
+    return None
+
+def _try_surface_from_value(val: str):
+    if not val:
+        return None
+    try:
+        from .surface import surface_from_value
+
+        s = surface_from_value(val)
+        return s.sympy if getattr(s, "sympy", None) is not None else s
     except (ImportError, AttributeError, TypeError, ValueError):
         return None
     return None

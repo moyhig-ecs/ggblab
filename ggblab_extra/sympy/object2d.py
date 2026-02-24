@@ -73,6 +73,16 @@ class Object2D:
             except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
                 return cls(kind="circle", obj=None, value=value, command=command)
 
+        if t in ("curvecartesian", "curve"):
+            try:
+                from .curve import curve_from_value
+
+                cv = curve_from_value(command or value)
+                obj_val = cv.sympy if getattr(cv, "sympy", None) is not None else cv
+                return cls(kind="curvecartesian", obj=obj_val, value=value, command=command)
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                return cls(kind="curvecartesian", obj=None, value=value, command=command)
+
         if t == "line":
             try:
                 from .line import line_from_value
@@ -97,6 +107,16 @@ class Object2D:
         # Heuristic fallback: try point -> circle -> line
         if value:
             v = value.strip()
+            # Prefer treating explicit Curve(...) commands or parametric values as curves
+            try:
+                if isinstance(v, str) and (v.lower().startswith("curve(") or (":" in v and ("cos(" in v or "sin(" in v))):
+                    from .curve import curve_from_value
+
+                    cv = curve_from_value(command or value)
+                    obj_val = cv.sympy if getattr(cv, "sympy", None) is not None else cv
+                    return cls(kind="curvecartesian", obj=obj_val, value=value, command=command)
+            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                pass
             try:
                 from .point import point_from_value
 
