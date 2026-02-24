@@ -24,11 +24,60 @@ import asyncio
 import sys
 import os
 import re
+import ast
 
 from IPython import get_ipython
 
 from .ggbapplet import GeoGebra
 from .errors import GeoGebraAppletError
+
+# Build a mapping of ascii names -> unicode Greek symbol names from sympy.abc._clash2
+_GREEK_MAP = None
+_GREEK_RE = None
+def _build_greek_map():
+    global _GREEK_MAP, _GREEK_RE
+    # print("Building Greek symbol mapping from sympy...")
+    if _GREEK_MAP is not None:
+        return
+    _GREEK_MAP = {}
+    try:
+        # Import lazily to avoid hard dependency if sympy is not installed
+        import sympy
+        core = getattr(sympy, 'core', None)
+        alphabets = getattr(core, 'alphabets', None)
+        greeks = getattr(alphabets, 'greeks', None)
+        # print(f"Found {len(greeks) if greeks else 0} sympy greek symbols for mapping")
+        if greeks:
+            import unicodedata as _ud
+            for name in greeks:
+                # print("sympy greek symbol:", s)
+                # name = str(s)
+                # small letter: map 'alpha' -> 'α'
+                try:
+                    small = _ud.lookup(f'GREEK SMALL LETTER {name.upper()}')
+                    # print(f"Mapping {name} -> {small}")
+                    _GREEK_MAP[name] = small
+                except Exception:
+                    pass
+                # capital forms: map 'Alpha' and 'ALPHA' -> 'Α'
+                try:
+                    cap = _ud.lookup(f'GREEK CAPITAL LETTER {name.upper()}')
+                    # print(f"Mapping {name.capitalize()} and {name.upper()} -> {cap}")
+                    _GREEK_MAP[name.capitalize()] = cap
+                    _GREEK_MAP[name.upper()] = cap
+                except Exception:
+                    pass
+    except Exception:
+        _GREEK_MAP = {}
+    # print(f"Built Greek symbol mapping with {len(_GREEK_MAP)} entries")
+    # compile regex for whole-word substitution if any mappings exist
+    try:
+        if _GREEK_MAP:
+            import re as _re
+            pattern = r"\b(?:" + "|".join(_re.escape(k) for k in _GREEK_MAP.keys()) + r")\b"
+            _GREEK_RE = _re.compile(pattern)
+    except Exception:
+        _GREEK_RE = None
 
 
 # Runtime debug toggle: enable with env `GGBLAB_IPYMAGIC_DEBUG=1`
@@ -100,6 +149,132 @@ def _clean_cmd_line(ln: str) -> str:
         return ln3.strip()
     except Exception:
         return ''
+
+
+def _serialize_for_ggb(obj):
+    """Recursively convert Python lists/tuples (including objects
+    exposing `tolist()`, e.g. sympy.Matrix or numpy arrays) to
+    GeoGebra-style brace notation. Strings are returned as-is.
+    """
+    try:
+        # If object has a `.shape` like (n, 1) treat it as a column vector
+        # and serialize as GeoGebra Vector((...)) before any tolist() conversion.
+        try:
+            shape = getattr(obj, 'shape', None)
+            if isinstance(shape, (tuple, list)) and len(shape) >= 2 and shape[1] == 1:
+                # Attempt to obtain Python list representation
+                lst = None
+                if not isinstance(obj, str) and hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):
+                    try:
+                        lst = obj.tolist()
+                    except Exception:
+                        lst = None
+                else:
+                    try:
+                        lst = list(obj)
+                    except Exception:
+                        lst = None
+
+                if lst is not None:
+                    try:
+                        # Flatten column vector rows like [x], (x,) -> x
+                        vals = [row[0] if (isinstance(row, (list, tuple)) and len(row) > 0) else row for row in lst]
+                    except Exception:
+                        vals = lst
+                    parts = [_serialize_for_ggb(x) for x in vals]
+                    return 'Vector((' + ','.join(parts) + '))'
+        except Exception:
+            pass
+
+        # If the object exposes `tolist()`, prefer converting it to
+        # Python lists first so nested matrices/arrays serialize correctly.
+        if not isinstance(obj, str) and hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):
+            try:
+                obj = obj.tolist()
+            except Exception:
+                pass
+
+        if isinstance(obj, (list, tuple)):
+            parts = [_serialize_for_ggb(x) for x in obj]
+            return '{' + ','.join(parts) + '}'
+        if isinstance(obj, str):
+            # encode ascii greek names to unicode greek if mapping available
+            try:
+                _build_greek_map()
+                if _GREEK_RE and _GREEK_MAP:
+                    def _enc(m):
+                        return _GREEK_MAP.get(m.group(0), m.group(0))
+                    return _GREEK_RE.sub(_enc, obj)
+            except Exception:
+                pass
+            return obj
+        # Fallback: convert to string and run mapping as well
+        s = str(obj)
+        try:
+            _build_greek_map()
+            if _GREEK_RE and _GREEK_MAP:
+                def _enc2(m):
+                    return _GREEK_MAP.get(m.group(0), m.group(0))
+                return _GREEK_RE.sub(_enc2, s)
+        except Exception:
+            pass
+        return s
+    except Exception:
+        try:
+            return str(obj)
+        except Exception:
+            return ''
+
+
+def _safe_eval(expr: str, user_ns: dict):
+    """Evaluate simple expressions (names, attribute access, indexing,
+    and simple literals) against `user_ns`. Uses AST validation to
+    prevent execution of calls or complex constructs.
+    Returns the evaluated value or raises an exception on failure.
+    """
+    node = ast.parse(expr, mode='eval')
+
+    def _is_safe(n):
+        # Expression wrapper
+        if isinstance(n, ast.Expression):
+            return _is_safe(n.body)
+        # Names and literals
+        if isinstance(n, ast.Name):
+            return True
+        if isinstance(n, ast.Constant):
+            return True
+        # older py versions
+        if hasattr(ast, 'Num') and isinstance(n, ast.Num):
+            return True
+        if hasattr(ast, 'Str') and isinstance(n, ast.Str):
+            return True
+        # Attribute access and subscripts
+        if isinstance(n, ast.Attribute):
+            return _is_safe(n.value)
+        if isinstance(n, ast.Subscript):
+            return _is_safe(n.value) and _is_safe(n.slice)
+        if isinstance(n, ast.Index):
+            return _is_safe(n.value)
+        if isinstance(n, ast.Slice):
+            ok = True
+            for a in (n.lower, n.upper, n.step):
+                if a is not None and not _is_safe(a):
+                    ok = False
+                    break
+            return ok
+        if isinstance(n, (ast.Tuple, ast.List)):
+            return all(_is_safe(e) for e in n.elts)
+        # Allow simple unary/binary numeric ops
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.UAdd, ast.USub)):
+            return _is_safe(n.operand)
+        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow)):
+            return _is_safe(n.left) and _is_safe(n.right)
+        return False
+
+    if not _is_safe(node):
+        raise ValueError('unsafe expression')
+    # Evaluate with user_ns as locals to resolve names
+    return eval(compile(node, '<ipymagic>', 'eval'), {}, user_ns)
 
 
 async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] = None):
@@ -268,12 +443,13 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
     - For line magics, strip trailing inline comments and allow an optional
       instance name as the first token.
     """
-        # Note: this parser also accepts a quoted token on the line that
-        # contains embedded newlines (real or escaped) and promotes that
-        # quoted content to the `cell` argument so callers can pass a
-        # multi-line command block as a single-line token. Frontends that
-        # perform `{var}` expansion will already have expanded braces; the
-        # magic does not attempt to re-run content-matching logic.
+    # Note: this parser also accepts a quoted token on the line that
+    # contains embedded newlines (real or escaped) and promotes that
+    # quoted content to the `cell` argument so callers can pass a
+    # multi-line command block as a single-line token. Frontends that
+    # perform `{var}` expansion will already have expanded braces; the
+    # magic does not attempt to re-run content-matching logic.
+
     def _strip_comment(s: str) -> str:
         s2 = s.split('#', 1)[0]
         return s2.rstrip()
@@ -324,6 +500,11 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
         if parts:
             instance = parts[0]
         cmds = []
+        try:
+            ip = get_ipython()
+            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+        except Exception:
+            user_ns = {}
         for ln in cell.splitlines():
             ln2 = ln.strip()
             if not ln2:
@@ -333,8 +514,47 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
                 continue
             # strip inline comments
             cmd = _strip_comment(ln2)
+            if not cmd:
+                continue
+
+            # # Preserve verbatim brace-wrapped lines (e.g. `{...}`), do not expand them
+            # cmd_stripped = cmd.strip()
+            # if re.match(r'^\{\s*.*\s*\}$', cmd_stripped):
+            #     print(f"Preserving verbatim brace-wrapped line: {cmd_stripped!r}")
+            #     cmds.append(cmd_stripped)
+            #     continue
+
+            # Expand {var} occurrences using IPython user namespace when available.
+            # Use module-level `_serialize_for_ggb` for serializing Python
+            # lists/tuples (and objects exposing `tolist()`) into GeoGebra
+            # brace notation.
+            def _expand_var(m):
+                expr = m.group(1).strip()
+                try:
+                    # Try to evaluate complex expressions (indexing/attr access)
+                    val = _safe_eval(expr, user_ns) if isinstance(user_ns, dict) else _safe_eval(expr, {})
+                except Exception:
+                    # Fallback: if it's a simple identifier, look it up
+                    if re.match(r'^[A-Za-z_]\w*$', expr) and isinstance(user_ns, dict) and expr in user_ns:
+                        val = user_ns[expr]
+                    else:
+                        return m.group(0)
+                try:
+                    return _serialize_for_ggb(val)
+                except Exception:
+                    try:
+                        return str(val)
+                    except Exception:
+                        return m.group(0)
+            try:
+                # Match any expression inside braces (non-greedy) and expand
+                # using the safe evaluator which supports indexing/attribute access.
+                cmd = re.sub(r'\{\s*([^}]+?)\s*\}', _expand_var, cmd)
+            except Exception:
+                pass
             if cmd:
                 cmds.append(cmd)
+        # print(f"Parsed instance={instance!r} cmds={cmds!r}")
         return instance, cmds
 
     # line magic: allow "instance command..." or just "command"

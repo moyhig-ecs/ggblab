@@ -130,7 +130,7 @@ class ggb_parser:
         # Regex pattern to match (1) parentheses/braces, (2) commas or colons,
         # or (3) any sequence of non-separating characters. Include ':' as
         # a standalone token so labels like 'l_{10}:' tokenize consistently.
-        tokens = re.findall(r'[()\[\]\{\},:]|[^()\[\]\{\}\s,:]+', cmd_string)
+        tokens = re.findall(r'[()\[\]\{\},:\;]|[^()\[\]\{\}\s,:\;]+', cmd_string)
 
         # GeoGebra often emits implicit multiplication as juxtaposed tokens like "-1.0x".
         # Detect a leading numeric coefficient and split it into two tokens so downstream
