@@ -137,7 +137,23 @@ def circle_from_value(value_str: str):
             return sympy_circle_from_center_radius(center, r_expr)
 
     try:
+        # Normalize common superscript and caret forms
         eq = s.replace("²", "**2").replace("^2", "**2")
+
+        # Simple canonical form: x**2 + y**2 = R
+        simple_match = re.match(
+            r"^\s*x\s*\*\*\s*2\s*\+\s*y\s*\*\*\s*2\s*=\s*([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?\d+)?)\s*$",
+            eq,
+        )
+        if simple_match:
+            r2 = float(simple_match.group(1))
+            if r2 < 0:
+                raise ValueError("negative radius squared")
+            r = math.sqrt(r2)
+            center = sympy_point_from_coords(0, 0, 0)
+            return sympy_circle_from_center_radius(center, r)
+
+        # More general expanded form: (x + a)**2 + (y + b)**2 = R
         mx = re.search(r"\(\s*x\s*([+-]\s*[0-9.+eE-]+)\s*\)\s*\*\*2", eq)
         my = re.search(r"\(\s*y\s*([+-]\s*[0-9.+eE-]+)\s*\)\s*\*\*2", eq)
         mr = re.search(r"=\s*([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?\d+)?)", eq)
