@@ -39,6 +39,10 @@ class ConstructionIO:
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer", "ShowObject", "ShowLabel", "Auxiliary"]
     SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral", "curvecartesian"]
 
+    # NOTE: XML errata handling has been moved to the ggb_file helper in
+    # `ggblab.file`. ConstructionIO will call the file-level errata helpers
+    # when attempting to decode legacy XML formats.
+
     @staticmethod
     async def _build_df_from_applet(ggb: "GeoGebra", columns: Optional[Sequence[str]] = None) -> Mapping[str, Sequence]:
         if columns is None:
@@ -80,7 +84,22 @@ class ConstructionIO:
             raise ValueError("ggb_path must be provided when using ggb runner")
 
         c = ggb.file.load(ggb_path)
-        o = c.ggb_schema.decode(c.geogebra_xml)
+        # Try decoding with the provided schema. If decoding fails due to
+        # legacy XML formatting that the schema does not accept (for
+        # example older label formats like `O_{1}`), run errata handlers
+        # to conservatively transform the XML and retry decoding.
+        try:
+            o = c.ggb_schema.decode(c.geogebra_xml)
+        except Exception:
+            try:
+                # Apply file-level errata handlers available on the loaded
+                # ggb_file instance and retry decoding.
+                xml_fixed = getattr(c, '_apply_xml_errata', lambda x: x)(c.geogebra_xml)
+                o = c.ggb_schema.decode(xml_fixed)
+            except Exception:
+                # If decoding still fails, re-raise by attempting the original
+                # decode again so the original exception propagates.
+                o = c.ggb_schema.decode(c.geogebra_xml)
 
         construction: Dict[str, Any] = {}
         for e in o.get('element', []):

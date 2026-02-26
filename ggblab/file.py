@@ -12,6 +12,7 @@ import io
 import json
 import os
 import xml.etree.ElementTree as ET
+import re
 import zipfile
 
 from .schema import ggb_schema
@@ -130,14 +131,70 @@ class ggb_file:
         except Exception as e:
             raise RuntimeError(f"Failed to load the file: {e}")
 
-        # strip to construction element and fix scientific notation
-        self.geogebra_xml = (ET.tostring(ET.fromstring(self.geogebra_xml)
-                                        .find('./construction'), encoding='unicode')
-                            .replace('e-1', 'E-1')
-                            .replace('e-3', 'E-3')
-                            .replace('cartesian3d', 'cartesian'))
+        # strip to construction element and normalize XML (scientific
+        # notation, legacy tokens, etc.)
+        raw_xml = ET.tostring(ET.fromstring(self.geogebra_xml)
+                      .find('./construction'), encoding='unicode')
+        self.geogebra_xml = self._normalize_geogebra_xml(raw_xml)
 
         return self
+
+    @staticmethod
+    def _normalize_geogebra_xml(xml: str) -> str:
+        """Normalize GeoGebra construction XML.
+
+        Performs small, safe normalizations previously done inline:
+        - Normalize scientific notation from lower-case `e` to upper-case
+          `E` in numeric exponents (e.g. `1.23e-4` -> `1.23E-4`).
+        - Replace legacy token `cartesian3d` with `cartesian`.
+
+        This centralizes transformations so future fixes are easier to
+        maintain and optionally unit-test.
+        """
+        if not isinstance(xml, str):
+            return xml
+        # Upper-case the scientific `e` when used as exponent marker.
+        try:
+            # Replace a lower-case 'e' that appears after a digit or dot and
+            # is followed by an optional sign and digits with 'E' plus the
+            # exponent. This avoids changing unrelated 'e' characters.
+            xml = re.sub(r'(?<=[0-9\.])e([+-]?\d+)', r'E\1', xml)
+        except Exception:
+            pass
+
+        try:
+            xml = xml.replace('cartesian3d', 'cartesian')
+        except Exception:
+            pass
+
+        # Default errata: strip braces around single-digit subscripts,
+        # e.g. O_{1} -> O_1. Conservative: only single digits after '_'.
+        try:
+            xml = re.sub(r'_\{([0-9])\}', r'_\1', xml)
+        except Exception:
+            pass
+
+        return xml
+
+    # XML errata handlers for legacy GeoGebra XML quirks. Users may append
+    # callables to this list to perform conservative fixes before schema
+    # decoding (for example, historic label formatting like `O_{1}`).
+    XML_ERRATA_HANDLERS = []
+    @staticmethod
+    def _apply_xml_errata(xml: str) -> str:
+        """Apply registered errata handlers (in order) and the unified
+        normalization/errata step.
+        """
+        if not isinstance(xml, str):
+            return xml
+        out = xml
+        for h in ggb_file.XML_ERRATA_HANDLERS:
+            try:
+                out = h(out)
+            except Exception:
+                pass
+        out = ggb_file._normalize_geogebra_xml(out)
+        return out
     
     def save(self, overwrite=False, file=None):
         """Save the construction to a file.

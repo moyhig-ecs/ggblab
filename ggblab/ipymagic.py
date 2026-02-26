@@ -349,7 +349,9 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
 
     # Pattern matches either a numeric form like '_2' (group 1) or a run
     # of underscores like '__' (group 2, includes all underscores). Numeric form takes precedence.
-    token_re = re.compile(r'(?<!\w)(?:_(\d+)|(_+))(?!\w)')
+    # Do not match underscores that are immediately preceded by a word
+    # character or an apostrophe (to exclude primed names like F'_2).
+    token_re = re.compile(r"(?<![\w'])(?:_(\d+)|(_+))(?!\w)")
 
     for c in cmds:
         if not c or not c.strip():
@@ -388,6 +390,7 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
 
         try:
             r = await ggb.command(c_to_send)
+            print(f"ggb.command({c_to_send!r}) -> {r!r}")
             # If the applet returned None, do not record it in the results list
             if r is None:
                 continue
@@ -549,7 +552,10 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
             try:
                 # Match any expression inside braces (non-greedy) and expand
                 # using the safe evaluator which supports indexing/attribute access.
-                cmd = re.sub(r'\{\s*([^}]+?)\s*\}', _expand_var, cmd)
+                # Do not expand brace groups that are immediately preceded by an
+                # underscore (subscript syntax like `O_{4}`), to preserve those
+                # grouping braces for GeoGebra identifiers.
+                cmd = re.sub(r'(?<!_)\{\s*([^}]+?)\s*\}', _expand_var, cmd)
             except Exception:
                 pass
             if cmd:
