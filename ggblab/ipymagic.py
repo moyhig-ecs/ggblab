@@ -390,7 +390,7 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
 
         try:
             r = await ggb.command(c_to_send)
-            print(f"ggb.command({c_to_send!r}) -> {r!r}")
+            # print(f"ggb.command({c_to_send!r}) -> {r!r}")
             # If the applet returned None, do not record it in the results list
             if r is None:
                 continue
