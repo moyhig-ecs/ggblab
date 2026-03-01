@@ -195,9 +195,60 @@ def _serialize_for_ggb(obj):
                 pass
 
         if isinstance(obj, (list, tuple)):
+            # Detect NaN-like elements before serializing parts so we can
+            # normalize ['nan'] or [nan] -> {}. Use a robust check that
+            # handles float('nan'), numpy.nan, sympy.nan, or the string 'nan'.
+            def _is_nan_val(v):
+                try:
+                    import math
+
+                    if isinstance(v, float) and math.isnan(v):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    # numpy floats
+                    import numpy as _np
+
+                    if isinstance(v, (_np.floating,)) and _np.isnan(v):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    # sympy.nan comparison
+                    from sympy import nan as _s_nan
+
+                    if v is _s_nan or v == _s_nan:
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if isinstance(v, str) and v.lower() == 'nan':
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            # If the python-level list contains only NaN-like values, render as '{}'
+            try:
+                if len(obj) == 1 and _is_nan_val(obj[0]):
+                    return '{}'
+                if obj and all(_is_nan_val(x) for x in obj):
+                    return '{}'
+            except Exception:
+                pass
+
             parts = [_serialize_for_ggb(x) for x in obj]
             return '{' + ','.join(parts) + '}'
         if isinstance(obj, str):
+            # Treat GeoGebra brace placeholders like '{?}' or '{nan}' as empty
+            # sets so we don't emit '{nan}' back to the applet. Match either
+            # '?' or 'nan' (case-insensitive) possibly repeated like '{?,?}'.
+            try:
+                if re.match(r"^\{\s*(?:\?|nan)(?:\s*,\s*(?:\?|nan))*\s*\}$", obj, flags=re.IGNORECASE):
+                    return '{}'
+            except Exception:
+                pass
             # encode ascii greek names to unicode greek if mapping available
             try:
                 _build_greek_map()

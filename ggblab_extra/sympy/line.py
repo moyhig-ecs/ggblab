@@ -170,6 +170,18 @@ _transformations = (
     else ()
 )
 
+# Prefer centralized parser when available
+try:
+    from .utils import expr_from_value
+except Exception:
+    expr_from_value = None
+
+
+def _parse_expr(s: str, local: dict = None):
+    if expr_from_value is not None:
+        return expr_from_value(s, transformations=_transformations, local_dict=local)
+    return parse_expr(s, transformations=_transformations, local_dict=local)
+
 
 def _try_parse_line_equation(s: str):
     """Try to parse an implicit cartesian plane equation into a Line.
@@ -193,16 +205,9 @@ def _try_parse_line_equation(s: str):
         lhs_str = _sanitize(lhs_str)
         rhs_str = _sanitize(rhs_str)
         try:
-            lhs = parse_expr(
-                lhs_str.strip(),
-                transformations=_transformations,
-                local_dict={"x": x, "y": y, "z": z},
-            )
-            rhs = parse_expr(
-                rhs_str.strip(),
-                transformations=_transformations,
-                local_dict={"x": x, "y": y, "z": z},
-            )
+            local = {"x": x, "y": y, "z": z}
+            lhs = _parse_expr(lhs_str.strip(), local=local)
+            rhs = _parse_expr(rhs_str.strip(), local=local)
         except (_tokenize.TokenError, SyntaxError, ValueError):
             # Bad input (unterminated string, unmatched quotes, etc.)
             return None
@@ -258,19 +263,11 @@ def line_from_value(value_str: str) -> object:
         if len(c_parts) != 3 or len(d_parts) != 3:
             raise ValueError(f"expected three components in line value: {value_str!r}")
         exprs_c = [
-            parse_expr(
-                p,
-                transformations=_transformations,
-                local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
-            )
+            _parse_expr(p, local={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")})
             for p in c_parts
         ]
         exprs_d = [
-            parse_expr(
-                p,
-                transformations=_transformations,
-                local_dict={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")},
-            )
+            _parse_expr(p, local={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")})
             for p in d_parts
         ]
         P = sympy_point_from_coords(*exprs_c)

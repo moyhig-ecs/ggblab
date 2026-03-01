@@ -19,6 +19,18 @@ from sympy.core.sympify import SympifyError
 
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
+# Prefer centralized parser when available
+try:
+    from .utils import expr_from_value
+except Exception:
+    expr_from_value = None
+
+
+def _parse_expr(s: str, local: dict = None):
+    if expr_from_value is not None:
+        return expr_from_value(s, transformations=_transformations, local_dict=local)
+    return parse_expr(s, transformations=_transformations, local_dict=local)
+
 
 @dataclass
 class ParametricCurve:
@@ -74,8 +86,8 @@ def curve_from_value(val: str) -> ParametricCurve:
                     x_s, y_s = parts[0], parts[1]
                     # no range provided
                     var_sym = symbols('t')
-                    x_expr = parse_expr(x_s, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': var_sym})
-                    y_expr = parse_expr(y_s, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': var_sym})
+                    x_expr = _parse_expr(x_s, local={'sin': sin, 'cos': cos, 't': var_sym})
+                    y_expr = _parse_expr(y_s, local={'sin': sin, 'cos': cos, 't': var_sym})
                     return ParametricCurve(x=x_expr, y=y_expr, var=var_sym)
         except (ValueError, SympifyError, IndexError):
             pass
@@ -102,10 +114,10 @@ def curve_from_value(val: str) -> ParametricCurve:
                 local = {'sin': sin, 'cos': cos, str(var_sym): var_sym}
                 # also provide 't' alias
                 local['t'] = var_sym
-                x_expr = parse_expr(x_s, transformations=_transformations, local_dict=local)
-                y_expr = parse_expr(y_s, transformations=_transformations, local_dict=local)
-                start = parse_expr(start_expr, transformations=_transformations, local_dict=local) if start_expr is not None else None
-                end = parse_expr(end_expr, transformations=_transformations, local_dict=local) if end_expr is not None else None
+                x_expr = _parse_expr(x_s, local=local)
+                y_expr = _parse_expr(y_s, local=local)
+                start = _parse_expr(start_expr, local=local) if start_expr is not None else None
+                end = _parse_expr(end_expr, local=local) if end_expr is not None else None
             except (SympifyError, TypeError, ValueError):
                 raise ValueError(f"could not parse curve expression: {val!r}")
 
@@ -128,9 +140,9 @@ def curve_from_value(val: str) -> ParametricCurve:
                     e_expr = end
                     try:
                         if start is not None:
-                            s_expr = parse_expr(str(start), transformations=_transformations, local_dict=local)
+                            s_expr = _parse_expr(str(start), local=local)
                         if end is not None:
-                            e_expr = parse_expr(str(end), transformations=_transformations, local_dict=local)
+                            e_expr = _parse_expr(str(end), local=local)
                     except Exception:
                         s_expr = start
                         e_expr = end

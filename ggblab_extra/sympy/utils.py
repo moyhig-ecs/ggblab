@@ -9,6 +9,170 @@ few functions and delegates heavy work to sibling modules.
 # This module keeps a small set of convenience helpers that previously
 # lived in `ggblab_extra/sympy_utils.py`. It intentionally only exposes a
 from typing import Optional
+import re
+
+def expr_from_value(s: str, transformations=None, local_dict=None, extra_transformations=None):
+    """Parse a GeoGebra-style expression string into a SymPy expression.
+
+    - If `transformations` is provided, it will be passed to SymPy's
+      `parse_expr` directly. Otherwise a sensible default is used.
+    - Handles GeoGebra placeholders like `?` (mapped to `nan`) and
+      brace empty lists like `{?}` which return an empty Python list.
+    - Handles simple "name = expr" wrappers and top-level equations
+      by returning `Eq(lhs, rhs)`.
+    """
+    if s is None:
+        raise ValueError("empty expression")
+    ss = str(s).strip()
+    # Strip leading 'Name = ' or 'Name:' wrappers early so we can
+    # correctly recognise brace placeholders like '{?}' when they
+    # appear after a label (e.g. 'l1 = {?}').
+    m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*[:=]\s*(.+)$", ss)
+    if m:
+        ss = m.group(2).strip()
+
+    # Handle brace empty-list placeholders (after stripping labels)
+    if ss.startswith('{') and ss.endswith('}'):
+        inner = ss[1:-1].strip()
+        if inner == '' or inner == '?' or inner.lower() == 'nan':
+            try:
+                from sympy import EmptySet as _SympyEmptySet
+
+                return _SympyEmptySet
+            except Exception:
+                return []
+
+    try:
+        from sympy.parsing.sympy_parser import (
+            parse_expr,
+            standard_transformations,
+            implicit_multiplication_application,
+            function_exponentiation,
+            convert_xor,
+        )
+    except Exception:
+        raise ImportError("SymPy is required for expr_from_value")
+
+    # Build transformation tuple
+    if transformations is not None:
+        trans = transformations
+    else:
+        trans = standard_transformations + (
+            function_exponentiation,
+            implicit_multiplication_application,
+            convert_xor,
+        )
+        if extra_transformations:
+            trans = trans + tuple(extra_transformations)
+
+    # (Wrapper stripping already handled above)
+
+    # Detect top-level equation
+    eq_index = None
+    depth = 0
+    for idx, ch in enumerate(ss):
+        if ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            depth -= 1
+        elif ch == '=' and depth == 0:
+            eq_index = idx
+            break
+
+    # Prepare local dict and nan mapping
+    ld = dict(local_dict or {})
+    if '?' in ss:
+        ss = ss.replace('?', 'nan')
+        try:
+            from sympy import nan as _sympy_nan
+
+            ld.setdefault('nan', _sympy_nan)
+        except Exception:
+            ld.setdefault('nan', float('nan'))
+
+    if eq_index is not None:
+        lhs_s = ss[:eq_index].strip()
+        rhs_s = ss[eq_index + 1 :].strip()
+        left = parse_expr(lhs_s, transformations=trans, local_dict=ld)
+        right = parse_expr(rhs_s, transformations=trans, local_dict=ld)
+        # Auto-convert tuple-like results to SymPy Point/Tuple when possible
+        def _maybe_convert_tuple(obj):
+            try:
+                # sympy Tuple -> .args, Python tuple/list -> iterate
+                elems = None
+                if getattr(obj, 'is_Tuple', False):
+                    elems = list(obj.args)
+                elif isinstance(obj, (list, tuple)):
+                    elems = list(obj)
+                if elems is None:
+                    return obj
+                # empty tuple/list -> return as sympy.Tuple()
+                if len(elems) == 0:
+                    try:
+                        from sympy import Tuple as _SympyTuple
+
+                        return _SympyTuple()
+                    except Exception:
+                        return tuple(elems)
+                # Try to construct a SymPy Point using helper if available
+                try:
+                    from .point import sympy_point_from_coords
+
+                    if len(elems) >= 2:
+                        return sympy_point_from_coords(*elems)
+                except Exception:
+                    pass
+                # Fallback: return SymPy Tuple
+                try:
+                    from sympy import Tuple as _SympyTuple
+
+                    return _SympyTuple(*elems)
+                except Exception:
+                    return tuple(elems)
+            except Exception:
+                return obj
+
+        left = _maybe_convert_tuple(left)
+        right = _maybe_convert_tuple(right)
+        try:
+            from sympy import Eq
+
+            return Eq(left, right)
+        except Exception:
+            return (left, right)
+
+    res = parse_expr(ss, transformations=trans, local_dict=ld)
+
+    # Auto-convert tuple-like parse results into Points/Tuples when appropriate
+    try:
+        def _maybe_convert(obj):
+            try:
+                if getattr(obj, 'is_Tuple', False):
+                    elems = list(obj.args)
+                elif isinstance(obj, (list, tuple)):
+                    elems = list(obj)
+                else:
+                    return obj
+                if len(elems) == 0:
+                    from sympy import Tuple as _SympyTuple
+
+                    return _SympyTuple()
+                try:
+                    from .point import sympy_point_from_coords
+
+                    if len(elems) >= 2:
+                        return sympy_point_from_coords(*elems)
+                except Exception:
+                    pass
+                from sympy import Tuple as _SympyTuple
+
+                return _SympyTuple(*elems)
+            except Exception:
+                return obj
+
+        return _maybe_convert(res)
+    except Exception:
+        return res
 
 # Module-level applet dimensionality flag. Use `set_applet_3d` / `get_applet_3d`
 _is_applet_3d: Optional[bool] = None
@@ -206,7 +370,9 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             s = s.lstrip("=").strip().strip("()")
             comps = [v.strip() for v in s.split(",")]
             # Parse with sympy if available, otherwise return a tuple of parsed exprs
-            if parse_expr is not None:
+            if 'expr_from_value' in globals():
+                parsed = [expr_from_value(v, transformations=_transformations) for v in comps]
+            elif parse_expr is not None:
                 parsed = [parse_expr(v, transformations=_transformations) for v in comps]
             else:
                 # SymPy not available: try numeric conversion, else leave as string
@@ -250,4 +416,6 @@ __all__ = [
     "is_applet_3d_from_ggblab",
     "is_pointlike",
     "resolve_label_to_point",
+    "expr_from_value",
 ]
+ 

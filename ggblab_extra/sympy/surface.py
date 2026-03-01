@@ -20,6 +20,17 @@ from sympy.core.sympify import SympifyError
 
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
+try:
+    from .utils import expr_from_value
+except Exception:
+    expr_from_value = None
+
+
+def _parse_expr(s: str, local: dict = None):
+    if expr_from_value is not None:
+        return expr_from_value(s, transformations=_transformations, local_dict=local)
+    return parse_expr(s, transformations=_transformations, local_dict=local)
+
 
 @dataclass
 class ParametricSurface:
@@ -80,9 +91,10 @@ def surface_from_value(val: str) -> ParametricSurface:
                 if len(parts) >= 3:
                     x_s, y_s, z_s = parts[0], parts[1], parts[2]
                     u_sym, v_sym = symbols('u v')
-                    x_expr = parse_expr(x_s, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': u_sym, 'u': u_sym, 'v': v_sym})
-                    y_expr = parse_expr(y_s, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': u_sym, 'u': u_sym, 'v': v_sym})
-                    z_expr = parse_expr(z_s, transformations=_transformations, local_dict={'sin': sin, 'cos': cos, 't': u_sym, 'u': u_sym, 'v': v_sym})
+                    local = {'sin': sin, 'cos': cos, 't': u_sym, 'u': u_sym, 'v': v_sym}
+                    x_expr = _parse_expr(x_s, local=local)
+                    y_expr = _parse_expr(y_s, local=local)
+                    z_expr = _parse_expr(z_s, local=local)
                     return ParametricSurface(x=x_expr, y=y_expr, z=z_expr, u=u_sym, v=v_sym)
         except (ValueError, SympifyError, IndexError):
             pass
@@ -119,13 +131,13 @@ def surface_from_value(val: str) -> ParametricSurface:
                 local[str(v_sym)] = v_sym
                 local['u'] = u_sym
                 local['v'] = v_sym
-                x_expr = parse_expr(x_s, transformations=_transformations, local_dict=local)
-                y_expr = parse_expr(y_s, transformations=_transformations, local_dict=local)
-                z_expr = parse_expr(z_s, transformations=_transformations, local_dict=local)
-                u0_expr = parse_expr(u0, transformations=_transformations, local_dict=local) if u0 is not None else None
-                u1_expr = parse_expr(u1, transformations=_transformations, local_dict=local) if u1 is not None else None
-                v0_expr = parse_expr(v0, transformations=_transformations, local_dict=local) if v0 is not None else None
-                v1_expr = parse_expr(v1, transformations=_transformations, local_dict=local) if v1 is not None else None
+                x_expr = _parse_expr(x_s, local=local)
+                y_expr = _parse_expr(y_s, local=local)
+                z_expr = _parse_expr(z_s, local=local)
+                u0_expr = _parse_expr(u0, local=local) if u0 is not None else None
+                u1_expr = _parse_expr(u1, local=local) if u1 is not None else None
+                v0_expr = _parse_expr(v0, local=local) if v0 is not None else None
+                v1_expr = _parse_expr(v1, local=local) if v1 is not None else None
             except (SympifyError, TypeError, ValueError):
                 raise ValueError(f"could not parse surface expression: {val!r}")
 

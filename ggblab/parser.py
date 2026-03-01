@@ -317,6 +317,10 @@ class ggb_parser:
         res = self.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
         def convert_q_to_nan(obj):
             if isinstance(obj, list):
+                # GeoGebra uses '{?}' to represent an empty list; when we see
+                # a single-item list whose only element is '?', treat it as []
+                if len(obj) == 1 and obj[0] == '?':
+                    return []
                 return [convert_q_to_nan(x) for x in obj]
             if isinstance(obj, str) and obj == '?':
                 return math.nan
@@ -444,6 +448,12 @@ class ggb_parser:
                                  ' '.join(result).replace(' , ', ', ')))
         else:
             raise ValueError("Unexpected token type in parsed_tokens.")
+
+    # Note: rich SymPy evaluation helper was removed from the lightweight
+    # core parser. Use `ggblab_extra.sympy.utils.expr_from_value` for
+    # GeoGebra-aware parsing helpers when the optional `ggblab_extra` package
+    # is installed. Keeping the core parser minimal reduces import-time
+    # overhead for lightweight environments.
 
     def tokenize_simplify(self, tokens, rel_tol=1e-9, abs_tol=1e-12):
         """Return a simplified token structure by removing duplicate list elements.

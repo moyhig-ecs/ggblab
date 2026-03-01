@@ -141,14 +141,29 @@ def point_from_value(value_str: str) -> "Point":
         comps = [m[0].strip(), m[1].strip(), m[2].strip()]
     else:
         comps = [c.strip() for c in m.groups()]
-    exprs = [
-        parse_expr(
-            c,
-            transformations=_transformations,
-            local_dict={"sin": sin, "cos": cos, "t": _t},
-        )
-        for c in comps
-    ]
+    # GeoGebra represents NaN values as '?'. If any component is '?',
+    # stop processing here to avoid passing invalid code to sympy's parser.
+    if any((c == "?" or (isinstance(c, str) and "?" in c)) for c in comps):
+        raise ValueError(f"point value contains NaN placeholder '?': {value_str!r}")
+    # Use centralized parser to keep GeoGebra-specific handling consistent
+    # (handles placeholders like '?', brace-lists, assignments, equations, etc.)
+    try:
+        from .utils import expr_from_value
+
+        exprs = [
+            expr_from_value(c, transformations=_transformations, local_dict={"sin": sin, "cos": cos, "t": _t})
+            for c in comps
+        ]
+    except Exception:
+        # Fallback to local parse_expr if utils is unavailable
+        exprs = [
+            parse_expr(
+                c,
+                transformations=_transformations,
+                local_dict={"sin": sin, "cos": cos, "t": _t},
+            )
+            for c in comps
+        ]
     try:
         from .utils import get_applet_3d
 

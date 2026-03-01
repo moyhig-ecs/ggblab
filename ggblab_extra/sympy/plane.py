@@ -11,7 +11,11 @@ from sympy.parsing.sympy_parser import (
 )
 
 from .point import sympy_point_from_coords, point_from_value
-from .utils import is_pointlike, resolve_label_to_point
+try:
+    from .utils import is_pointlike, resolve_label_to_point, expr_from_value
+except Exception:
+    from .utils import is_pointlike, resolve_label_to_point
+    expr_from_value = None
 
 try:
     from sympy.geometry import Plane as SympyPlane
@@ -22,6 +26,12 @@ except ImportError:
 
 _t = symbols("t")
 _transformations = standard_transformations + (implicit_multiplication_application,)
+
+
+def _parse_expr(s: str, local: dict = None):
+    if expr_from_value is not None:
+        return expr_from_value(s, transformations=_transformations, local_dict=local)
+    return parse_expr(s, transformations=_transformations, local_dict=local)
 
 
 def plane_from_value(value_str: str) -> Any:
@@ -41,8 +51,9 @@ def plane_from_value(value_str: str) -> Any:
     else:
         lhs_str, rhs_str = s, "0"
     x, y, z = symbols("x y z")
-    lhs = parse_expr(lhs_str.strip(), transformations=_transformations, local_dict={"x": x, "y": y, "z": z})
-    rhs = parse_expr(rhs_str.strip(), transformations=_transformations, local_dict={"x": x, "y": y, "z": z})
+    local = {"x": x, "y": y, "z": z}
+    lhs = _parse_expr(lhs_str.strip(), local=local)
+    rhs = _parse_expr(rhs_str.strip(), local=local)
     if isinstance(rhs, tuple) or getattr(rhs, "is_Tuple", False):
         raise ValueError(f"RHS parses as tuple, not a plane equation: {value_str!r}")
     if isinstance(lhs, tuple) or getattr(lhs, "is_Tuple", False):

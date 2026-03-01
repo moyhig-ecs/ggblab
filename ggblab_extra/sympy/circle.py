@@ -32,6 +32,17 @@ except ImportError:
 _t = symbols("t")
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
+try:
+    from .utils import expr_from_value
+except Exception:
+    expr_from_value = None
+
+
+def _parse_expr(s: str, local: dict = None):
+    if expr_from_value is not None:
+        return expr_from_value(s, transformations=_transformations, local_dict=local)
+    return parse_expr(s, transformations=_transformations, local_dict=local)
+
 
 @dataclass
 class CircleLike:
@@ -104,11 +115,7 @@ def circle_from_value(value_str: str):
             if center_part.startswith("("):
                 comps = [c.strip() for c in center_part.strip("() ").split(",")]
                 exprs = [
-                    parse_expr(
-                        c,
-                        transformations=_transformations,
-                        local_dict={"sin": sin, "cos": cos, "t": _t},
-                    )
+                    _parse_expr(c, local={"sin": sin, "cos": cos, "t": _t})
                     for c in comps
                 ]
                 center = sympy_point_from_coords(*exprs, is_3d=False)
@@ -118,18 +125,14 @@ def circle_from_value(value_str: str):
                 except (ValueError, TypeError):
                     comps = [c.strip() for c in center_part.strip("() ").split(",")]
                     center = sympy_point_from_coords(
-                        *[parse_expr(c, transformations=_transformations) for c in comps],
+                        *[_parse_expr(c) for c in comps],
                         is_3d=False,
                     )
         except (ValueError, TypeError, AttributeError, IndexError, SympifyError):
             center = None
 
         try:
-            r_expr = parse_expr(
-                radius_part,
-                transformations=_transformations,
-                local_dict={"sin": sin, "cos": cos, "t": _t},
-            )
+            r_expr = _parse_expr(radius_part, local={"sin": sin, "cos": cos, "t": _t})
         except (ValueError, TypeError, SympifyError, SyntaxError):
             r_expr = None
 
@@ -203,22 +206,14 @@ def circle_from_value(value_str: str):
                                 if len(center_parts) not in (2, 3):
                                     raise ValueError("expected 2 or 3 components in center")
                                 center_exprs = [
-                                    parse_expr(
-                                        p,
-                                        transformations=_transformations,
-                                        local_dict={"sin": sin, "cos": cos, "t": _t},
-                                    )
+                                    _parse_expr(p, local={"sin": sin, "cos": cos, "t": _t})
                                     for p in center_parts
                                 ]
                                 vec_parts = [v.strip() for v in vec_str.split(",")]
                                 if len(vec_parts) != 3:
                                     raise ValueError("expected three components in parametric part")
                                 vec_exprs = [
-                                    parse_expr(
-                                        v,
-                                        transformations=_transformations,
-                                        local_dict={"sin": sin, "cos": cos, "t": _t},
-                                    )
+                                    _parse_expr(v, local={"sin": sin, "cos": cos, "t": _t})
                                     for v in vec_parts
                                 ]
                                 cos_coeffs = [expr.expand().coeff(cos(_t), 1) for expr in vec_exprs]
