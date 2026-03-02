@@ -252,39 +252,100 @@ def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elem
     if not isinstance(G, nx.DiGraph):
         raise TypeError("G must be a networkx.DiGraph")
 
+    # Create a synthetic group node named '<list_name><group_suffix>' and
+    # treat that as the visible grouping node. Wire parents -> group and
+    # group -> elements so the group node acts as the list's inputs/outputs.
     group_node = f"{list_name}{group_suffix}"
     if group_node not in G:
         G.add_node(group_node)
 
-    # Ensure parents and elements exist as nodes and wire edges
+    # Attach each parent -> group_node so the group appears as the child
+    # of the provided parents in the dependency graph.
     for p in parents or ():
         if p is None:
             continue
         if p not in G:
             G.add_node(p)
-        try:
+        if not G.has_edge(p, group_node):
             G.add_edge(p, group_node)
-        except Exception:
-            pass
 
+    # Wire group_node -> elements. Ensure elements exist and add edges.
     for e in elements or ():
         if e is None:
             continue
         if e not in G:
             G.add_node(e)
-        try:
+        if not G.has_edge(group_node, e):
             G.add_edge(group_node, e)
-        except Exception:
-            pass
 
-    # Record group membership for downstream consumers
-    try:
-        nx.set_node_attributes(G, {group_node: {'group_members': [list_name] + list(elements)}})
-    except Exception:
-        # best-effort: ignore attribute setting failures
-        pass
+    # Record group membership and label for downstream consumers/renderers.
+    nx.set_node_attributes(
+        G,
+        {group_node: {'group_members': list(elements), 'label': list_name, 'Type': 'list_group'}},
+    )
+
+    # Ensure the original list node exists as an isolated placeholder
+    # indicating the object is a list. Remove any incident edges so the
+    # `list_name` node remains queryable but does not participate in the
+    # parent->group->element wiring used for list grouping.
+    if list_name not in G:
+        G.add_node(list_name)
+    nx.set_node_attributes(G, {list_name: {'Type': 'list'}})
+
+    # Remove any incident edges so the list node acts as an isolated placeholder
+    for u in list(G.predecessors(list_name)):
+        if G.has_edge(u, list_name):
+            G.remove_edge(u, list_name)
+    for v in list(G.successors(list_name)):
+        if G.has_edge(list_name, v):
+            G.remove_edge(list_name, v)
 
     return group_node
+
+
+def visible_successors(G: nx.DiGraph, node: str, *, group_type: str = 'list_group') -> Sequence[str]:
+    """Return successors for display: prefer group nodes if present.
+
+    If the node has outgoing edges to any group nodes (nodes with
+    attribute ``Type==group_type``), return those group node ids. Otherwise
+    return the direct successors.
+    """
+    if node not in G:
+        return []
+    try:
+        succs = list(G.successors(node))
+    except Exception:
+        return []
+    group_succs = [s for s in succs if G.nodes.get(s, {}).get('Type') == group_type]
+    return group_succs or succs
+
+
+def visible_descendants(G: nx.DiGraph, source: str, *, group_type: str = 'list_group') -> set:
+    """Compute descendants but stop traversal at group nodes.
+
+    This returns the set of reachable nodes from ``source`` but does not
+    traverse outgoing edges from nodes whose ``Type`` equals ``group_type``.
+    Useful for display or analyses that want list-group nodes to act as
+    terminal outputs for list objects.
+    """
+    if source not in G:
+        return set()
+    visited = set()
+    stack = [source]
+    while stack:
+        n = stack.pop()
+        for s in G.successors(n):
+            if s in visited:
+                continue
+            visited.add(s)
+            # Do not traverse past group nodes
+            try:
+                if G.nodes.get(s, {}).get('Type') == group_type:
+                    continue
+            except Exception:
+                pass
+            stack.append(s)
+    return visited
 
 
 def tokenize_with_commas(cmd_string, extract_commands=False):
@@ -455,127 +516,34 @@ class ConstructionTreeParser:
         # If the column exists as JSON strings, decode; otherwise compute
         # transitively from the graph. Best-effort: do not fail parse() on errors.
         try:
-            # print("Processing DependsOn column for DataFrame enrichment...")
-            if hasattr(self, 'df') and self.df is not None:
-                if "DependsOn" in self.df.columns:
-                    # print("Found 'DependsOn' column; attempting to decode or compute dependencies...")
-                    try:
-                        raw_col = self.df["DependsOn"].to_list()
-                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
-                        raw_col = list(self.df["DependsOn"])
-                    # Simple grouping: for rows where Type == 'list' and the
-                    # Command is a single Tangent or Intersect, create a
-                    # synthetic group node that collects list members and wires
-                    # the geometric parents above it. This improves clarity for
-                    # downstream consumers.
-                    try:
-                        names_list = self.df['Name'].to_list()
-                        cmds_list = self.df['Command'].to_list()
-                        types_list = self.df['Type'].to_list()
-                    except Exception:
-                        names_list = list(self.df['Name'])
-                        cmds_list = list(self.df['Command'])
-                        types_list = list(self.df['Type'])
+            if not (hasattr(self, 'df') and self.df is not None):
+                # nothing to do when there's no dataframe
+                pass
+            else:
+                # Extract name/command/type lists once for multiple consumers
+                try:
+                    names_list = self.df['Name'].to_list()
+                    cmds_list = self.df['Command'].to_list()
+                    types_list = self.df['Type'].to_list()
+                except Exception:
+                    names_list = list(self.df['Name'])
+                    cmds_list = list(self.df['Command'])
+                    types_list = list(self.df['Type'])
 
-                    # no longer record list elements for a second pass (two-pass removed)
-                    list_elements_map = {}
-
-                    for name, cmd, typ in zip(names_list, cmds_list, types_list):
-                        # print(f"Examining row for '{name}': Type='{typ}', Command='{cmd}'")
-                        if typ != 'list' or not cmd:
-                            continue
-
-                        # Some constructions encode the command wrapped in braces, e.g.
-                        # '{Tangent(C, c)}'. Unwrap such outer braces before analysis.
-                        cmd_text = str(cmd)
+                # Obtain raw DependsOn column if present (may be JSON strings)
+                try:
+                    if "DependsOn" in self.df.columns:
                         try:
-                            brace_match = re.match(r'^\s*\{(.*)\}\s*$', cmd_text, re.DOTALL)
-                            inner_cmd = brace_match.group(1).strip() if brace_match else cmd_text
-                        except Exception:
-                            inner_cmd = cmd_text
+                            raw_col = self.df["DependsOn"].to_list()
+                        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                            raw_col = list(self.df["DependsOn"])
+                    else:
+                        raw_col = None
+                except Exception:
+                    raw_col = None
 
-                        m = re.match(r"^\s*(Tangent|Intersect)\b", inner_cmd, re.IGNORECASE)
-                        if not m:
-                            continue
-
-                        # print(f"Processing list '{name}' with command '{cmd}' and type '{typ}'")
-                        # extract parents from parentheses when present (use inner_cmd)
-                        parents = []
-                        try:
-                            paren = re.search(r"\((.*)\)", inner_cmd)
-                            if paren:
-                                args_text = paren.group(1)
-                                parents = [a.strip().strip('\"\'') for a in re.split(r',\s*', args_text) if a.strip()]
-                        except Exception:
-                            parents = []
-
-                        # discover elements referencing this list
-                        elements = set()
-                        try:
-                            pattern_name = re.compile(rf'^{re.escape(name)}\(\s*\d+\s*\)')
-                            for n in names_list:
-                                if pattern_name.match(str(n)):
-                                    elements.add(n)
-                        except Exception:
-                            pass
-
-                        try:
-                            ref_pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
-                            for n, cstr in zip(names_list, cmds_list):
-                                if not cstr:
-                                    continue
-                                try:
-                                    if ref_pattern.search(str(cstr)):
-                                        elements.add(n)
-                                except Exception:
-                                    continue
-                        except Exception:
-                            pass
-
-                        try:
-                            if name in self.G:
-                                for succ in self.G.successors(name):
-                                    elements.add(succ)
-                        except Exception:
-                            pass
-
-                        if elements:
-                            try:
-                                # record elements for later layer adjustments
-                                list_elements_map[name] = sorted(elements)
-                                group = group_list_nodes(self.G, name, parents, sorted(elements), group_suffix='__list')
-                                try:
-                                    nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
-                                except Exception:
-                                    pass
-                            except Exception:
-                                pass
-
-                    # After processing list-grouping, optionally perform an automatic
-                    # layer assignment for nodes present in the dataframe. This is
-                    # controlled by the instance flag `self.auto_assign_layers`.
-                    # Ensure a default Layer column exists (all zeros) but do NOT
-                    # overwrite an existing `Layer` column. Only add the column
-                    # when it's missing; this preserves user-provided layer values.
-                    try:
-                        if "Layer" not in self.df.columns:
-                            zeros = [0 for _ in range(len(self.df['Name']))]
-                            try:
-                                self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
-                            except Exception:
-                                self.df = self.df.with_columns(pl.Series('Layer', zeros))
-                        else:
-                            # If the column exists but contains nulls, fill them with 0
-                            try:
-                                if any(x is None for x in self.df['Layer']):
-                                    filled = [0 if x is None else x for x in list(self.df['Layer'])]
-                                    self.df = self.df.with_columns(pl.Series('Layer', filled).cast(pl.Int64))
-                            except Exception:
-                                # Best-effort: leave existing Layer column untouched
-                                pass
-                    except Exception:
-                        pass
-
+                # Build converted DependsOn: decode JSON strings or compute ancestors
+                if raw_col is not None:
                     converted = []
                     for v, n in zip(raw_col, self.df["Name"]):
                         if isinstance(v, str):
@@ -591,7 +559,111 @@ class ConstructionTreeParser:
                     converted = [sorted(nx.ancestors(self.G, n)) if n in self.G else [] for n in self.df["Name"]]
 
                 # attach or replace DependsOn as a polars List(Utf8) column
-                self.df = self.df.with_columns(pl.Series("DependsOn", converted).cast(pl.List(pl.Utf8)))
+                try:
+                    self.df = self.df.with_columns(pl.Series("DependsOn", converted).cast(pl.List(pl.Utf8)))
+                except Exception:
+                    # best-effort attach without casting
+                    self.df = self.df.with_columns(pl.Series("DependsOn", converted))
+
+                # After ensuring DependsOn exists on the dataframe, perform
+                # list-grouping and optional Layer assignment so the logic
+                # executes even in a single-pass parse.
+                list_elements_map = {}
+                for name, cmd, typ in zip(names_list, cmds_list, types_list):
+                    # print(f"Processing {name}: type={typ}, command={cmd}")
+                    if typ != 'list' or not cmd:
+                        continue
+
+                    cmd_text = str(cmd)
+                    try:
+                        brace_match = re.match(r'^\s*\{(.*)\}\s*$', cmd_text, re.DOTALL)
+                        inner_cmd = brace_match.group(1).strip() if brace_match else cmd_text
+                    except Exception:
+                        inner_cmd = cmd_text
+
+                    m = re.match(r"^\s*(Tangent|Intersect)\b", inner_cmd, re.IGNORECASE)
+                    if not m:
+                        continue
+
+                    parents = []
+                    try:
+                        paren = re.search(r"\((.*)\)", inner_cmd)
+                        if paren:
+                            args_text = paren.group(1)
+                            parents = [a.strip().strip('\"\'') for a in re.split(r',\s*', args_text) if a.strip()]
+                    except Exception:
+                        parents = []
+
+                    # discover elements referencing this list
+                    elements = set()
+                    try:
+                        pattern_name = re.compile(rf'^{re.escape(name)}\(\s*\d+\s*\)')
+                        for n in names_list:
+                            if pattern_name.match(str(n)):
+                                elements.add(n)
+                    except Exception:
+                        pass
+
+                    try:
+                        ref_pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+                        for n, cstr in zip(names_list, cmds_list):
+                            if not cstr:
+                                continue
+                            try:
+                                if ref_pattern.search(str(cstr)):
+                                    elements.add(n)
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+
+                    try:
+                        if name in self.G:
+                            for succ in self.G.successors(name):
+                                elements.add(succ)
+                    except Exception:
+                        pass
+
+                    # create a grouping node for the list. If `elements` is empty
+                    # create the group anyway so it appears as a leaf (no
+                    # outgoing edges) and is discoverable by downstream logic.
+                    try:
+                        list_elements_map[name] = sorted(elements) if elements else []
+                        group = group_list_nodes(self.G, name, parents, sorted(elements) if elements else [], group_suffix='__list')
+                        try:
+                            nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
+                        except Exception:
+                            pass
+                        # If no elements were found, ensure the group is treated
+                        # as a leaf by recomputing leaves after grouping below.
+                    except Exception:
+                        pass
+
+                # Recompute leaves since grouping may have added new nodes
+                try:
+                    self.leaves = [v for v, d in self.G.out_degree() if d == 0]
+                except Exception:
+                    pass
+
+                # Ensure a default Layer column exists (all zeros) but do NOT
+                # overwrite an existing `Layer` column. Only add the column
+                # when it's missing; this preserves user-provided layer values.
+                try:
+                    if "Layer" not in self.df.columns:
+                        zeros = [0 for _ in range(len(self.df['Name']))]
+                        try:
+                            self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
+                        except Exception:
+                            self.df = self.df.with_columns(pl.Series('Layer', zeros))
+                    else:
+                        try:
+                            if any(x is None for x in self.df['Layer']):
+                                filled = [0 if x is None else x for x in list(self.df['Layer'])]
+                                self.df = self.df.with_columns(pl.Series('Layer', filled).cast(pl.Int64))
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
         except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
             pass
 

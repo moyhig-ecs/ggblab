@@ -25,6 +25,8 @@ from .utils import set_applet_3d, get_applet_3d
 _LAZY_MAP = {
     # point
     "point_from_value": (".point", "point_from_value"),
+    # utils
+    "expr_from_value": (".utils", "expr_from_value"),
     # line
     "line_from_value": (".line", "line_from_value"),
     "segment_from_command": (".line", "segment_from_command"),
