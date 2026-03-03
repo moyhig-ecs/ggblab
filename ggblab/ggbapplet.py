@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+import threading
 
 import ipykernel.connect
 import os
@@ -458,6 +459,38 @@ class GeoGebra:
         })
         return r['value']
 
+    def _run_sync(self, coro):
+        """Run an async coroutine in a background thread and return the result.
+
+        This avoids trying to run a new event loop on the currently running
+        loop (common in notebooks). The coroutine is executed with
+        `asyncio.run` inside the thread.
+        """
+        result = {}
+        exc = {}
+
+        def _target():
+            try:
+                result['value'] = asyncio.run(coro)
+            except Exception as e:
+                exc['error'] = e
+
+        t = threading.Thread(target=_target, daemon=True)
+        t.start()
+        t.join()
+        if 'error' in exc:
+            raise exc['error']
+        return result.get('value')
+
+    def function_sync(self, f, args=None):
+        """Synchronous wrapper around `function`.
+
+        Executes the async `function` coroutine in a background thread and
+        returns the function result. Suitable for callers that cannot use
+        `await` (for example PyCall from Julia or plain Python scripts).
+        """
+        return self._run_sync(self.function(f, args))
+
     async def listen(self, name, enabled=True):
         """Register or unregister an object update listener in the frontend.
 
@@ -677,3 +710,11 @@ class GeoGebra:
             self._applet_objects.add(result['label'])
         
         return result
+
+    def command_sync(self, c):
+        """Synchronous wrapper around `command`.
+
+        Runs the async `command` coroutine in a background thread and
+        returns the result. See `function_sync` for rationale.
+        """
+        return self._run_sync(self.command(c))

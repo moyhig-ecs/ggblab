@@ -24,6 +24,11 @@ import time
 import signal
 import shutil
 import logging
+import json
+try:
+    from jupyter_client.kernelspec import KernelSpecManager
+except Exception:
+    KernelSpecManager = None
 
 
 def find_jupyter_console():
@@ -41,6 +46,9 @@ def main():
     parser = argparse.ArgumentParser(description='Launch proxy kernel and open jupyter console connected to it')
     parser.add_argument('--kernel-python', help='Python executable to run kernel subprocess with')
     parser.add_argument('--kernel-cmd', help='Full kernel command to run for the kernel process (string). Use {connection_file} to place the connection file.')
+    parser.add_argument('--install-kernelspec', action='store_true', help='Install a kernelspec that launches the proxy kernel')
+    parser.add_argument('--kernelspec-name', default='ggblab-proxy', help='Name for the installed kernelspec')
+    parser.add_argument('--kernelspec-display-name', default='ggblab Proxy Kernel', help='Display name for the kernelspec')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     args = parser.parse_args()
 
@@ -53,6 +61,32 @@ def main():
     if not os.path.exists(proxy_path):
         print('proxy_repl.py not found at', proxy_path, file=sys.stderr)
         sys.exit(2)
+
+    def _install_kernelspec(proxy_path, name, display_name):
+        if KernelSpecManager is None:
+            print('jupyter_client not available; install jupyter_client to register kernelspec', file=sys.stderr)
+            return 2
+        # create a temporary kernelspec directory
+        kdir = tempfile.mkdtemp(prefix='ggblab-kernelspec-')
+        kjson = {
+            'argv': [sys.executable, proxy_path, '-f', '{connection_file}'],
+            'display_name': display_name,
+            'language': 'python'
+        }
+        with open(os.path.join(kdir, 'kernel.json'), 'w', encoding='utf-8') as f:
+            json.dump(kjson, f, indent=2)
+        ksm = KernelSpecManager()
+        try:
+            ksm.install_kernel_spec(kdir, kernel_name=name, user=True, replace=True)
+            print('Installed kernelspec', name)
+            return 0
+        except Exception as e:
+            print('Failed to install kernelspec:', e, file=sys.stderr)
+            return 3
+
+    if args.install_kernelspec:
+        rc = _install_kernelspec(proxy_path, args.kernelspec_name, args.kernelspec_display_name)
+        sys.exit(rc)
 
     # create temporary connection file path (the file will be created by the kernel)
     tf = tempfile.NamedTemporaryFile(prefix='ggblab-connection-', suffix='.json', delete=False)
