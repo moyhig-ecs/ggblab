@@ -17,19 +17,37 @@ import sys
 import os
 import argparse
 import time
-from jupyter_client import KernelManager, BlockingKernelClient
+from jupyter_client import KernelManager
 import threading
 import queue
 import subprocess
 import shlex
 import logging
 import json
+import base64
 try:
     from ipykernel.kernelbase import Kernel
     from ipykernel.kernelapp import IPKernelApp
 except Exception:
     Kernel = None  # type: ignore
     IPKernelApp = None  # type: ignore
+
+# Ensure an IPython ZMQ interactive shell is available in this process so
+# code that relies on `get_ipython()` / `get_ipython().kernel` can run.
+try:
+    from ipykernel.zmqshell import ZMQInteractiveShell
+    try:
+        # Create or return the singleton instance
+        ZMQInteractiveShell.instance()
+    except Exception:
+        # Fallback: instantiate (will register singleton)
+        try:
+            ZMQInteractiveShell()
+        except Exception:
+            pass
+except Exception:
+    # ipykernel may not be installed in the environment; ignore
+    pass
 
 
 def start_kernel(kernel_cmd=None, env=None, timeout=10):
@@ -97,7 +115,109 @@ class JuliaProxyKernel(Kernel if Kernel is not None else object):
         if Kernel is None:
             raise RuntimeError('ipykernel not available in this environment')
         super().__init__(**kwargs)
+        # Ensure a comm_manager exists on the kernel instance. Some runtime
+        # embeddings of this class may not have the comm manager initialized
+        # by the usual IPKernelApp bootstrap, so create a lightweight one
+        # if missing so `get_ipython().kernel.comm_manager` is callable.
+        if not hasattr(self, 'comm_manager') or self.comm_manager is None:
+            try:
+                try:
+                    from ipykernel.comm.manager import CommManager
+                except Exception:
+                    # fallback import path
+                    from ipykernel.comm import CommManager
+                try:
+                    # newer CommManager accepts parent=self
+                    self.comm_manager = CommManager(parent=self)
+                except TypeError:
+                    # older CommManager may not accept parent
+                    self.comm_manager = CommManager()
+            except Exception:
+                # give up silently; code using comm_manager should handle missing
+                self.comm_manager = None
         self._start_julia_process()
+        # comms opened by the frontend (target name 'jupyter.ggblab') are stored here
+        self._active_comms = {}
+        self._default_comm_id = None
+        try:
+            # register comm target so front-end applets can open a comm
+            self.comm_manager.register_target('jupyter.ggblab', self._on_comm_open)
+        except Exception:
+            # comm manager may not be ready in some contexts; ignore failures
+            pass
+
+        # Try to initialize the AppletInjector so the frontend connects back
+        try:
+            from ggblab_core.applet import AppletInjector
+            try:
+                self._ggb_injector = AppletInjector()
+                # call open() to create the frontend applet and open comm
+                # We have already registered the kernel-side comm target, so
+                # avoid AppletInjector attempting to register it again.
+                try:
+                    self._ggb_injector.open(register_kernel_comm=False)
+                except Exception:
+                    # fall back to calling without suppression if needed
+                    try:
+                        self._ggb_injector.open()
+                    except Exception:
+                        pass
+            except Exception:
+                # ignore failures; applet may require frontend environment
+                self._ggb_injector = None
+        except Exception:
+            # ggblab_core may not be importable in this environment
+            self._ggb_injector = None
+
+    def _on_comm_open(self, comm, msg):
+        # Store the comm object so we can send messages to the frontend later
+        cid = getattr(comm, 'comm_id', None) or getattr(comm, 'comm_id', None)
+        if cid is None:
+            try:
+                cid = msg.get('content', {}).get('comm_id')
+            except Exception:
+                cid = None
+        if cid is None:
+            # generate a fallback id
+            cid = str(id(comm))
+        self._active_comms[cid] = comm
+        self._default_comm_id = cid
+        # attach message handler
+        try:
+            comm.on_msg(self._on_comm_msg)
+        except Exception:
+            # older comm APIs: set attribute
+            try:
+                comm._msg_callback = self._on_comm_msg
+            except Exception:
+                pass
+
+    def _on_comm_msg(self, msg):
+        # msg is the comm message dict; extract data and forward to Julia
+        try:
+            content = msg.get('content', {})
+            data = content.get('data')
+            # serialize to JSON string
+            jtxt = json.dumps(data, ensure_ascii=False)
+            # escape triple quotes inside the JSON
+            safe = jtxt.replace('"""', '\\"\\"\\"')
+            # call a Julia-side handler __ggblab_recv_str(json_str) if defined
+            code = (
+                'try\n'
+                '  if isdefined(Main, :__ggblab_recv_str)\n'
+                f'    __ggblab_recv_str("""{safe}""")\n'
+                '  end\n'
+                'catch e\n'
+                '  println(stderr, e)\n'
+                'end\n'
+            )
+            try:
+                self._julia_proc.stdin.write(code)
+                self._julia_proc.stdin.flush()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _start_julia_process(self):
         # Start a persistent Julia REPL subprocess. Use -i for interactive
@@ -117,6 +237,120 @@ class JuliaProxyKernel(Kernel if Kernel is not None else object):
         self._out_thread.start()
         self._err_thread.start()
 
+    def _exec_python_from_julia(self, code_str, reply_path=None):
+        # Execute Python code in the kernel's user namespace and optionally
+        # send a JSON reply back to the Julia subprocess if the code sets
+        # __ggblab_reply in the user namespace.
+        try:
+            import io, sys
+            user_ns = getattr(self, 'shell', None)
+            if user_ns is None:
+                # fallback to module globals if kernel shell not available
+                user_ns = globals()
+            else:
+                user_ns = self.shell.user_ns
+            # Ensure get_ipython is available in the exec namespace (some code expects it)
+            try:
+                if 'get_ipython' not in user_ns:
+                    try:
+                        from ipykernel.zmqshell import ZMQInteractiveShell
+                        gi = ZMQInteractiveShell.instance()
+                        try:
+                            gi.kernel = self
+                        except Exception:
+                            pass
+                        user_ns['get_ipython'] = lambda: gi
+                    except Exception:
+                        # Fallback: minimal shim exposing `.kernel`
+                        from types import SimpleNamespace
+                        def _gi():
+                            return SimpleNamespace(kernel=self)
+                        user_ns['get_ipython'] = _gi
+            except Exception:
+                pass
+            old_stdout, old_stderr = sys.stdout, sys.stderr
+            sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
+            try:
+                code_txt = code_str
+                # If it's a simple single-line expression, try eval to return the value
+                do_eval = False
+                if '\n' not in code_txt:
+                    blacklists = ('=', 'def ', 'class ', 'import ', 'from ', 'for ', 'while ', 'try:', 'with ')
+                    if not any(b in code_txt for b in blacklists):
+                        do_eval = True
+                if do_eval:
+                    try:
+                        val = eval(code_txt, user_ns)
+                        user_ns['__ggblab_reply'] = val
+                        out = sys.stdout.getvalue()
+                        err = sys.stderr.getvalue()
+                    except Exception:
+                        # fallback to exec
+                        exec(code_txt, user_ns)
+                        out = sys.stdout.getvalue()
+                        err = sys.stderr.getvalue()
+                else:
+                    exec(code_txt, user_ns)
+                    out = sys.stdout.getvalue()
+                    err = sys.stderr.getvalue()
+            finally:
+                sys.stdout, sys.stderr = old_stdout, old_stderr
+
+            # If the executed code populated __ggblab_reply, send it to Julia
+            reply = None
+            if '__ggblab_reply' in user_ns:
+                try:
+                    reply = user_ns.pop('__ggblab_reply')
+                except Exception:
+                    reply = None
+
+            # If a reply was explicitly provided by the executed code, use it.
+            if reply is None and reply_path:
+                # no explicit reply; synthesize a default reply containing captured output
+                reply = {'ok': True, 'out': out if out else '', 'err': err if err else ''}
+
+            if reply is not None:
+                try:
+                    jtxt = json.dumps(reply, ensure_ascii=False)
+                except Exception:
+                    jtxt = json.dumps(str(reply))
+                # If a reply_path was provided, write the JSON reply to that file
+                if reply_path:
+                    try:
+                        with open(reply_path, 'w', encoding='utf-8') as rf:
+                            rf.write(jtxt)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        # fallback: send as stdin println but encode payload as base64
+                        b64r = base64.b64encode(jtxt.encode('utf-8')).decode('ascii')
+                        # send a println(...) Julia statement so the REPL prints the reply line
+                        try:
+                            self._julia_proc.stdin.write(f'println("""__GGB_PY_REPLY_B64__{b64r}""")\n')
+                            self._julia_proc.stdin.flush()
+                        except Exception:
+                            # fallback to raw token (will likely error in REPL)
+                            self._julia_proc.stdin.write('__GGB_PY_REPLY_B64__' + b64r + '\n')
+                            self._julia_proc.stdin.flush()
+                    except Exception:
+                        pass
+
+            # Forward captured stdout/stderr to front-end iopub streams
+            try:
+                if out:
+                    self.send_response(self.iopub_socket, 'stream', {'name': 'stdout', 'text': out})
+                if err:
+                    self.send_response(self.iopub_socket, 'stream', {'name': 'stderr', 'text': err})
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                self.send_response(self.iopub_socket, 'stream', {'name': 'stderr', 'text': str(e) + '\n'})
+            except Exception:
+                pass
+
     def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=False):
         if not code or not code.strip():
             return {'status': 'ok', 'execution_count': self.execution_count, 'payload': [], 'user_expressions': {}}
@@ -126,10 +360,17 @@ class JuliaProxyKernel(Kernel if Kernel is not None else object):
 
         # Wrap code so that Julia prints the result (if any) and the marker.
         # Use triple-quoted string to embed arbitrary user code safely.
+        # Encode the user code as base64 to avoid issues with quotes/newlines
+        try:
+            b64 = base64.b64encode(code.encode('utf-8')).decode('ascii')
+        except Exception:
+            b64 = ''
         wrapper = (
             'begin\n'
             '  try\n'
-            f'    _ggblab_val = eval(Meta.parse("""{code}"""))\n'
+            '    using Base64\n'
+            f'    _code = String(base64decode("""{b64}"""))\n'
+            '    _ggblab_val = eval(Meta.parse("begin\n" * _code * "\nend"))\n'
             '    if _ggblab_val !== nothing\n'
             '      try\n'
             '        println(_ggblab_val)\n'
@@ -178,6 +419,44 @@ class JuliaProxyKernel(Kernel if Kernel is not None else object):
             except Exception:
                 pass
             collected.append((stream_name, text))
+            # Intercept special protocol messages from Julia
+            # 1) '__GGB_PY__' : execute the following text as Python in this kernel
+            # 2) '__GGB_SEND__': forward payload to frontend comms
+            if '__GGB_PY__' in text:
+                # allow extra underscores after the prefix (e.g. '__GGB_PY____1+1')
+                idx = text.find('__GGB_PY__')
+                payload = text[idx + len('__GGB_PY__'):]
+                # strip leading underscores and whitespace/newline
+                payload = payload.lstrip('_').rstrip('\n')
+                # support optional reply path: <reply_path>__<code>
+                reply_path = None
+                if '__' in payload:
+                    parts = payload.split('__', 1)
+                    # if parts[0] looks like a path or contains a '/', treat as reply path
+                    if '/' in parts[0] or parts[0].startswith('/tmp'):
+                        reply_path = parts[0].strip()
+                        code_txt = parts[1]
+                    else:
+                        code_txt = payload
+                else:
+                    code_txt = payload
+                try:
+                    self._exec_python_from_julia(code_txt, reply_path=reply_path)
+                except Exception:
+                    pass
+            elif text.startswith('__GGB_SEND__'):
+                payload_txt = text.split('__GGB_SEND__', 1)[1].strip()
+                try:
+                    payload = json.loads(payload_txt)
+                except Exception:
+                    payload = payload_txt
+                # send to default comm if available
+                if self._default_comm_id and self._default_comm_id in self._active_comms:
+                    try:
+                        self._active_comms[self._default_comm_id].send(payload)
+                    except Exception:
+                        pass
+                # continue collecting until marker
             if marker in text:
                 found = True
                 break
