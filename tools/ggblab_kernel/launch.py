@@ -31,13 +31,6 @@ try:
 except Exception:
     IPKernelApp = None
 
-    import threading
-    import socketserver
-    import http.server
-    import json
-    import tempfile
-    import atexit
-
 
 def main():
     # Sanitize argv to strip Jupyter application-scoped options that some
@@ -114,108 +107,6 @@ def main():
                         # Fail silently; kernel can still start without ggblab init
                         print('Failed to inject ggblab init into kernel config:', file=sys.stderr)
                         pass
-                    # Start a tiny control HTTP server to accept requests from
-                    # other kernels (Python/Julia) that want to call
-                    # `function_sync`/`command_sync` on this kernel.
-                    try:
-                        class _Handler(http.server.BaseHTTPRequestHandler):
-                            def do_POST(self):
-                                try:
-                                    length = int(self.headers.get('Content-Length', '0'))
-                                    body = self.rfile.read(length) if length else b''
-                                    payload = json.loads(body.decode('utf8') if body else '{}')
-                                except Exception as e:
-                                    self.send_response(400)
-                                    self.end_headers()
-                                    self.wfile.write(b'')
-                                    return
-
-                                resp = {"ok": False}
-                                try:
-                                    # Allowed request types: function_sync, command_sync
-                                    rtype = payload.get('type')
-                                    if rtype == 'function_sync':
-                                        from ggblab_core.applet import function_sync
-                                        name = payload.get('name')
-                                        args = payload.get('args', None)
-                                        timeout = payload.get('timeout', None)
-                                        try:
-                                            result = function_sync(name, args=args, timeout=timeout)
-                                            resp = {"ok": True, "result": result}
-                                        except Exception as e:
-                                            resp = {"ok": False, "error": str(e)}
-                                    elif rtype == 'command_sync':
-                                        from ggblab_core.applet import command_sync
-                                        command = payload.get('command', '')
-                                        timeout = payload.get('timeout', None)
-                                        try:
-                                            result = command_sync(command, timeout=timeout)
-                                            resp = {"ok": True, "result": result}
-                                        except Exception as e:
-                                            resp = {"ok": False, "error": str(e)}
-                                    else:
-                                        resp = {"ok": False, "error": 'unknown request type'}
-                                except Exception as e:
-                                    resp = {"ok": False, "error": str(e)}
-
-                                body_out = json.dumps(resp).encode('utf8')
-                                self.send_response(200 if resp.get('ok') else 500)
-                                self.send_header('Content-Type', 'application/json')
-                                self.send_header('Content-Length', str(len(body_out)))
-                                self.end_headers()
-                                try:
-                                    self.wfile.write(body_out)
-                                except Exception:
-                                    pass
-
-                            def log_message(self, format, *args):
-                                # silence default logging
-                                return
-
-                        # Bind to localhost on an ephemeral port
-                        server = socketserver.TCPServer(('127.0.0.1', 0), _Handler)
-                        server.allow_reuse_address = True
-
-                        def _serve():
-                            try:
-                                server.serve_forever()
-                            except Exception:
-                                pass
-
-                        t = threading.Thread(target=_serve, daemon=True)
-                        t.start()
-
-                        # Write a small port file so external kernels can discover it
-                        try:
-                            info = {'port': server.server_address[1], 'pid': os.getpid()}
-                            portfile_dir = os.path.join(repo_root, '.ggblab')
-                            os.makedirs(portfile_dir, exist_ok=True)
-                            portfile = os.path.join(portfile_dir, 'control_port.json')
-                            with open(portfile, 'w') as f:
-                                json.dump(info, f)
-                        except Exception:
-                            pass
-
-                        # ensure cleanup on exit
-                        def _cleanup():
-                            try:
-                                server.shutdown()
-                            except Exception:
-                                pass
-                            try:
-                                server.server_close()
-                            except Exception:
-                                pass
-                            try:
-                                if os.path.exists(portfile):
-                                    os.remove(portfile)
-                            except Exception:
-                                pass
-
-                        atexit.register(_cleanup)
-                    except Exception:
-                        print('Failed to start ggblab control server', file=sys.stderr)
-                    # Finally initialize the kernel app normally
                     super().initialize(argv)
 
             try:
