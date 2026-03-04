@@ -9,6 +9,13 @@ catch e
     @warn "Required packages (IJulia, JSON, PyCall) not available: $e"
 end
 
+# Load ggblab IJulia helper (defines send_comm); ignore if missing
+try
+    include(joinpath(@__DIR__, "ijulia_comm.jl"))
+catch
+    # helper optional
+end
+
 const TARGET_NAME = "jupyter.ggblab"
 # Exposed Python manager instance (set when available)
 global PY_FORWARD_MANAGER = nothing
@@ -92,7 +99,12 @@ function manual_on_open(comm, msg)
                 println("manual received payload: ", payload)
                 resp = Dict("type" => "value", "id" => get(payload, "id", nothing),
                             "payload" => Dict("value" => "ok"))
-                comm.send(JSON.json(resp))
+                # send reply using the portable helper (if available)
+                try
+                    send_reply_comm(comm, JSON.json(resp))
+                catch e
+                    @warn "send_reply_comm failed: $e"
+                end
             catch e
                 @warn "manual on_msg handler error: $e"
             end
@@ -119,8 +131,13 @@ end
 
 function send_reply_comm(comm_obj, reply_json::AbstractString)
     try
-        comm_obj.send(reply_json)
-        return true
+        # Prefer shared helper if present
+        if isdefined(Main, :GGBlabIJuliaComm) && hasproperty(Main.GGBlabIJuliaComm, :send_comm)
+            return Main.GGBlabIJuliaComm.send_comm(comm_obj, reply_json)
+        else
+            comm_obj.send(reply_json)
+            return true
+        end
     catch e
         @warn "send_reply_comm failed: $e"
         return false
@@ -150,8 +167,12 @@ function _on_comm_msg(comm, m, pymod_tuple)
                 @warn "Python handler raised: $e"
                 js_str = JSON.json(Dict("type"=>"error","id"=>get(payload,"id",nothing),"payload"=>Dict("message"=>string(e))))
             end
-            # send immediate reply
-            comm.send(js_str)
+            # send immediate reply using portable helper
+            try
+                send_reply_comm(comm, js_str)
+            catch e
+                @warn "send_reply_comm failed: $e"
+            end
             # also notify Python manager of the open/msg (so Python can send later)
             try
                 # pass simple comm descriptor and raw message
@@ -164,7 +185,11 @@ function _on_comm_msg(comm, m, pymod_tuple)
             end
         else
             js_str = JSON.json(Dict("type"=>"error","id"=>get(payload,"id",nothing),"payload"=>Dict("message"=>"no python handler")))
-            comm.send(js_str)
+            try
+                send_reply_comm(comm, js_str)
+            catch e
+                @warn "send_reply_comm failed: $e"
+            end
         end
     catch e
         @warn "Failed to handle comm message: $e"

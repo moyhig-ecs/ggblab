@@ -189,6 +189,20 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				dbg('GeoGebra applet loaded:', api);
 				try {
 					await setupAppletOnLoadCommon(api, resources, callRemoteSocketSend, handleIncomingCommMessage, dbg);
+					// Expose this applet's resources to a global registry so resident
+					// frontend comm handlers can locate the applet by kernel id and
+					// perform proxy operations for kernels that lack comm-target
+					// capabilities (e.g., IJulia). This is intentionally minimal and
+					// cleaned up in Resources.dispose().
+					try {
+						const g: any = window as any;
+						g.__ggblab_applets__ = g.__ggblab_applets__ || {};
+						if (resources && resources.kernelId) {
+							g.__ggblab_applets__[resources.kernelId] = resources;
+						}
+					} catch (e) {
+						dbg('Failed to register global applet entry', e);
+					}
 				} catch (e) {
 					dbg('setupAppletOnLoadCommon failed', e);
 				}
@@ -394,6 +408,19 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 						dbg('Error removing applet instance', e);
 					}
 				} catch (e) {
+			// Remove global registry entry on cleanup
+			try {
+				const g: any = window as any;
+				if (g && g.__ggblab_applets__ && resources && resources.kernelId) {
+					try {
+						delete g.__ggblab_applets__[resources.kernelId];
+					} catch (e) {
+						/* ignore */
+					}
+				}
+			} catch (e) {
+				/* ignore */
+			}
 					dbg('Error while removing GeoGebra applet', e);
 				}
 				applet = null;

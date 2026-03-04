@@ -55,6 +55,20 @@ const plugin: JupyterFrontEndPlugin<void> = {
 			})
 			.catch(e => console.warn('Failed to register global ggblab comm targets', e));
 
+		// Small global helper so comm handlers running in the kernelConn scope
+		// can ask the frontend to create/open a ggblab widget for a kernel id.
+		try {
+			(window as any).__ggblab_create_widget_for_kernel = async function (kernelId: string, opts?: any) {
+				try {
+					return await app.commands.execute('ggblab:create', Object.assign({ kernelId, commTarget: 'jupyter.ggblab' }, opts || {}));
+				} catch (e) {
+					console.warn('ggblab: __ggblab_create_widget_for_kernel failed', e);
+				}
+			};
+		} catch (e) {
+			console.debug('ggblab: failed to define __ggblab_create_widget_for_kernel', e);
+		}
+
 		// Ensure we clean up registrations when the page unloads to avoid
 		// leaving dangling front-end KernelConnection objects.
 		window.addEventListener('beforeunload', () => {
