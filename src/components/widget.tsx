@@ -210,7 +210,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 					try {
 						const wrapperDiv = document.getElementById(elementId) as HTMLElement | null;
 						const parentDiv = wrapperDiv?.parentElement;
-    				    const width = parseInt(parentDiv?.style.width || '800');
+						const width = parseInt(parentDiv?.style.width || '800');
 						const height = parseInt(parentDiv?.style.height || '600');
 						// const target = wrapperDiv?.parentElement ?? wrapperDiv;
 						// if (!target) {
@@ -408,19 +408,19 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 						dbg('Error removing applet instance', e);
 					}
 				} catch (e) {
-			// Remove global registry entry on cleanup
-			try {
-				const g: any = window as any;
-				if (g && g.__ggblab_applets__ && resources && resources.kernelId) {
+					// Remove global registry entry on cleanup
 					try {
-						delete g.__ggblab_applets__[resources.kernelId];
+						const g: any = window as any;
+						if (g && g.__ggblab_applets__ && resources && resources.kernelId) {
+							try {
+								delete g.__ggblab_applets__[resources.kernelId];
+							} catch (e) {
+								/* ignore */
+							}
+						}
 					} catch (e) {
 						/* ignore */
 					}
-				}
-			} catch (e) {
-				/* ignore */
-			}
 					dbg('Error while removing GeoGebra applet', e);
 				}
 				applet = null;
