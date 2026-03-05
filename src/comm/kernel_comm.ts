@@ -205,7 +205,6 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 
 	function makeIncomingHandler(processCommandMessage: (cmd: any) => Promise<string>) {
 		let commClosed = false;
-		let handlerRef: any = null;
 		const attachCommCloseHandlerLocal = (c: any) =>
 			attachCommCloseHandler({
 				c,
@@ -270,7 +269,7 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 				(dbg || (() => {}))('Error in handleIncomingCommMessage', e);
 			}
 		};
-		handlerRef = handler;
+		// handler assigned directly; no external ref required
 		return handler;
 	}
 
