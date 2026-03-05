@@ -13,7 +13,7 @@ from .kernel_comm import KernelComm, get_kernel_comm
 from .applet import AppletInjector
 
 # Bridge utility (TCP -> frontend Comm)
-from .py_comm_bridge import start_bridge, stop_bridge
+from .py_comm_bridge import start_bridge, stop_bridge, get_bridge_state
 
 __all__ = [
 	"CommSync",
@@ -23,4 +23,5 @@ __all__ = [
 	"AppletInjector",
 	"start_bridge",
 	"stop_bridge",
+	"get_bridge_state",
 ]
