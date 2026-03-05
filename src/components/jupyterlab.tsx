@@ -316,59 +316,9 @@ except Exception as _e:
 	// kernels can forward requests via that bridge. Historically this could be
 	// controlled via a `bridgeMode` prop; that behavior has been removed and
 	// the bridge is started unconditionally here.
-	try {
-		const bridgeCode = [
-			"try:",
-			"    from ggblab_core import start_bridge",
-			"    start_bridge(port=8765, timeout=10.0)",
-			"    print('ggblab:kernel2_bridge_started')",
-			"except Exception as _e:",
-			"    print('ggblab:kernel2_bridge_error', repr(_e))"
-		].join('\n');
-		await resources.kernel2.requestExecute({ code: bridgeCode }).done;
-		dbg('Requested kernel2 to start py_comm_bridge');
-
-		// Probe the bridge port from kernel2 to ensure it's listening before
-		// allowing frontend injection. Retry briefly to allow the bridge
-		// thread to start.
-		try {
-			const probeCode = `
-try:
-	from ggblab_core import bridge_client as bc
-	try:
-		r = bc.send({'op': 'ping'})
-		print('ggblab:bridge_probe:ok', r)
-	except Exception as _e_inner:
-		print('ggblab:bridge_probe:error', repr(_e_inner))
-except Exception as _e:
-	print('ggblab:bridge_probe:error', repr(_e))
-`;
-			try {
-				const exec = resources.kernel2.requestExecute({ code: probeCode });
-				exec.onIOPub = (msg: any) => {
-					try {
-						const t = msg && msg.content && (msg.content.text || msg.content.data) ? String(msg.content.text || msg.content.data) : '';
-						if (t && t.indexOf('ggblab:bridge_probe:ok') !== -1) {
-							dbg('kernel2 bridge probe reported OK');
-						}
-						if (t && t.indexOf('ggblab:bridge_probe:error') !== -1) {
-							dbg('kernel2 bridge probe reported ERROR');
-						}
-					} catch (e) {
-						/* ignore */
-					}
-				};
-				await exec.done;
-				dbg('kernel2 bridge probe executed');
-			} catch (e) {
-				dbg('kernel2 bridge probe execution failed', e);
-			}
-		} catch (e) {
-			dbg('kernel2 bridge probe failed or timed out', e);
-		}
-	} catch (e) {
-		dbg('kernel2 start_bridge request failed', e);
-	}
+	// Starting the kernel2-side bridge and probing it is not required in this
+	// configuration; skip issuing bridge start/probe code to kernel2.
+	dbg('Skipping kernel2 bridge start and probe (not required)');
 	// Note: auxiliary kernel3 startup/registration removed — comm targets
 	// are handled via the primary kernel or widget registration paths.
 	// ws/socket values managed inside kernel_comm helpers
