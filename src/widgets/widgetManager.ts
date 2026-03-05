@@ -216,6 +216,28 @@ export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => 
 				kc.registerCommTarget('jupyter.ggblab', (commOp: any, msg: any) => {
 					try {
 						dbg('jupyter.ggblab comm opened', { kernelId: id, msg });
+						try {
+							// expose comm globally for debugging and allow pinging from console
+							(globalThis as any)._ggblab_comm = commOp;
+							console.info('[ggblab-debug] exposed comm on window._ggblab_comm', commOp);
+						} catch (e) {
+							// ignore
+						}
+						try {
+							const cid = (commOp as any).commId || (commOp as any).id || (commOp as any)._id || null;
+							console.info('[ggblab-debug] comm id detected', cid);
+						} catch (e) {}
+						// send a debug ping so kernel-side watcher can observe the open
+						try {
+							const dbgMsg = JSON.stringify({ type: 'dbg_open', id: `dbg-${Date.now()}` });
+							if (typeof (commOp as any).send === 'function') {
+								(commOp as any).send(dbgMsg);
+								console.info('[ggblab-debug] sent dbg_open ping');
+							}
+						} catch (e) {
+							console.warn('Failed to send dbg_open ping', e);
+						}
+
 						commOp.onMsg = (m: any) => {
 							dbg('jupyter.ggblab message', { kernelId: id, m });
 						};
