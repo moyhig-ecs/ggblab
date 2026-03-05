@@ -136,8 +136,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 					kernelId: args['kernelId'] || '',
 					commTarget: args['commTarget'] || '',
 					insertMode: args['insertMode'] || 'split-right',
-					// Optional: control whether the frontend should auto-start the kernel2 bridge
-					bridgeMode: typeof args['bridgeMode'] !== 'undefined' ? args['bridgeMode'] : undefined,
+
 					socketPath: args['socketPath'] || '',
 					appName: args['appName'] || 'suite',
 					wsPort: args['wsPort'] || 8888,
@@ -190,7 +189,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 						kernelId,
 						commTarget: p.commTarget || '',
 						socketPath: p.socketPath || '',
-						bridgeMode: typeof p.bridgeMode !== 'undefined' ? p.bridgeMode : undefined,
+
 						appName: p.appName || 'suite',
 						wsPort: p.wsPort || 8888,
 						insertMode: p.insertMode || 'split-right'

@@ -69,90 +69,9 @@ export default async function setupAppletOnLoadCommon(api: any, resources: any, 
 					try { trap('comm-closed', { target: resources.commTarget, commId: null, message: m }); } catch (e2) { dbg('trap in onClose fallback failed', e2); }
 				}
 
-				// If bridgeMode is enabled, attempt to recreate the comm after a short delay.
-				try {
-					if (resources && (resources as any).bridgeMode) {
-						const tryRecreate = async (attemptsLeft: number, delayMs: number) => {
-							if (attemptsLeft <= 0) {
-								dbg('Comm recreate attempts exhausted');
-								return;
-							}
-							try {
-								// Wait for kernelConn and kernel2 to appear before attempting recreate
-								if (!resources.kernelConn) {
-									dbg('No kernelConn available for comm recreate; will retry', { attemptsLeft, delayMs });
-									setTimeout(() => tryRecreate(attemptsLeft - 1, Math.min(delayMs * 2, 10000)), delayMs);
-									return;
-								}
-								if (!resources.kernel2) {
-									dbg('kernel2 not ready yet for comm recreate; will retry', { attemptsLeft, delayMs });
-									setTimeout(() => tryRecreate(attemptsLeft - 1, Math.min(delayMs * 2, 10000)), delayMs);
-									return;
-								}
-
-								// If bridgeMode is active, wait for the bridge readiness probe
-								// instead of relying on socketPath/wsUrl. Bridge readiness is
-								// set by `setupKernelResources` when the kernel2 probe reports OK.
-								if ((resources as any).bridgeMode && !(resources as any).bridgeReady) {
-									dbg('Bridge not ready yet; delaying comm recreate', { attemptsLeft, delayMs });
-									setTimeout(() => tryRecreate(attemptsLeft - 1, Math.min(delayMs * 2, 10000)), delayMs);
-									return;
-								}
-								let newComm: any = null;
-								try {
-									newComm = resources.kernelConn.createComm(resources.commTarget);
-								} catch (e) {
-									dbg('createComm threw; will retry', e);
-									setTimeout(() => tryRecreate(attemptsLeft - 1, Math.min(delayMs * 2, 10000)), delayMs);
-									return;
-								}
-
-								try {
-									const maybeId = (newComm as any)?.comm_id || (newComm as any)?.commId || null;
-									dbg('Recreated kernel comm (onClose handler)', { target: resources.commTarget, commId: maybeId });
-									try { trap('comm-recreated', { target: resources.commTarget, commId: maybeId }); } catch (e) { dbg('trap after recreate failed', e); }
-									resources.comm = newComm;
-									// reattach handlers
-									try {
-										(resources.comm as any).onMsg = handleIncomingCommMessage;
-									} catch (e) {
-										dbg('Failed to attach onMsg to recreated comm', e);
-									}
-									try {
-										(resources.comm as any).onClose = (ev: any) => {
-											try {
-												const closed2 = (ev && ev.content && ev.content.comm_id) || (resources.comm as any)?.comm_id || null;
-												dbg('Recreated comm closed', { target: resources.commTarget, commId: closed2 });
-												try { trap('comm-closed-after-recreate', { target: resources.commTarget, commId: closed2, message: ev }); } catch (e) { dbg('trap in recreated onClose failed', e); }
-											} catch (ee) {
-												dbg('Recreated comm onClose handler error', ee);
-											}
-										};
-									} catch (e) {
-										dbg('Failed to attach onClose to recreated comm', e);
-									}
-									try {
-										resources.comm.open && resources.comm.open('REOPEN from GGB');
-									} catch (e) {
-										dbg('Failed to open recreated comm', e);
-									}
-									return;
-								} catch (e) {
-									dbg('Comm recreate attempt failed, will retry', e);
-									setTimeout(() => tryRecreate(attemptsLeft - 1, Math.min(delayMs * 2, 10000)), delayMs);
-								}
-							} catch (e) {
-								dbg('Unexpected error during comm recreate', e);
-								setTimeout(() => tryRecreate(attemptsLeft - 1, Math.min(delayMs * 2, 10000)), delayMs);
-							}
-						};
-						// start first recreate attempt after a slightly longer delay and
-						// allow multiple retries with exponential backoff to wait for kernel2
-						setTimeout(() => tryRecreate(6, 3000), 3000);
-					}
-				} catch (e) {
-					dbg('Error scheduling comm recreate in onClose handler', e);
-				}
+				// Previously we attempted an automatic comm recreate when a
+				// `bridgeMode` flag was active. That behavior has been removed;
+				// comm recreation is no longer performed automatically here.
 			};
 		} catch (e) {
 			dbg('Unable to attach onClose to kernel comm', e);

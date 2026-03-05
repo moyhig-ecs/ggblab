@@ -25,7 +25,6 @@ export class GeoGebraWidget extends ReactWidget {
 				wsPort={this.props?.wsPort}
 				socketPath={this.props?.socketPath}
 				appName={this.props?.appName}
-				bridgeMode={this.props?.bridgeMode}
 				widgetManager={this.props?.widgetManager}
 			/>
 		);

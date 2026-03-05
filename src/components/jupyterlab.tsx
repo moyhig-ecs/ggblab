@@ -313,33 +313,26 @@ except Exception as _e:
 	}
 
 	// Request kernel2 to start the Python TCP -> frontend bridge so non-Python
-	// kernels can forward requests via that bridge. Control via `props.bridgeMode`:
-	// - undefined (default): preserve existing behavior and attempt to start
-	// - true: explicitly start the bridge
-	// - false: skip starting the bridge
-	dbg('Determining whether to start kernel2 bridge with props.bridgeMode:', props && props.bridgeMode);
+	// kernels can forward requests via that bridge. Historically this could be
+	// controlled via a `bridgeMode` prop; that behavior has been removed and
+	// the bridge is started unconditionally here.
 	try {
-		const bridgeModeDefined = props && typeof props.bridgeMode !== 'undefined';
-			// record bridgeMode on resources so downstream code (appletOnLoadCommon)
-			// can decide whether to attempt comm recreate logic.
-			resources.bridgeMode = (!bridgeModeDefined || props.bridgeMode) ? true : false;
-			if (resources.bridgeMode) {
-			const bridgeCode = [
-				"try:",
-				"    from ggblab_core import start_bridge",
-				"    start_bridge(port=8765, timeout=10.0)",
-				"    print('ggblab:kernel2_bridge_started')",
-				"except Exception as _e:",
-				"    print('ggblab:kernel2_bridge_error', repr(_e))"
-			].join('\n');
-			await resources.kernel2.requestExecute({ code: bridgeCode }).done;
-			dbg('Requested kernel2 to start py_comm_bridge');
+		const bridgeCode = [
+			"try:",
+			"    from ggblab_core import start_bridge",
+			"    start_bridge(port=8765, timeout=10.0)",
+			"    print('ggblab:kernel2_bridge_started')",
+			"except Exception as _e:",
+			"    print('ggblab:kernel2_bridge_error', repr(_e))"
+		].join('\n');
+		await resources.kernel2.requestExecute({ code: bridgeCode }).done;
+		dbg('Requested kernel2 to start py_comm_bridge');
 
-			// Probe the bridge port from kernel2 to ensure it's listening before
-			// allowing frontend injection. Retry briefly to allow the bridge
-			// thread to start.
-			try {
-				const probeCode = `
+		// Probe the bridge port from kernel2 to ensure it's listening before
+		// allowing frontend injection. Retry briefly to allow the bridge
+		// thread to start.
+		try {
+			const probeCode = `
 try:
 	from ggblab_core import bridge_client as bc
 	try:
@@ -350,35 +343,28 @@ try:
 except Exception as _e:
 	print('ggblab:bridge_probe:error', repr(_e))
 `;
-				// Mark bridge readiness false until we observe a successful probe
-				resources.bridgeReady = false;
-				try {
-					const exec = resources.kernel2.requestExecute({ code: probeCode });
-					exec.onIOPub = (msg: any) => {
-						try {
-							const t = msg && msg.content && (msg.content.text || msg.content.data) ? String(msg.content.text || msg.content.data) : '';
-							if (t && t.indexOf('ggblab:bridge_probe:ok') !== -1) {
-								resources.bridgeReady = true;
-								dbg('kernel2 bridge probe reported OK');
-							}
-							if (t && t.indexOf('ggblab:bridge_probe:error') !== -1) {
-								resources.bridgeReady = false;
-								dbg('kernel2 bridge probe reported ERROR');
-							}
-						} catch (e) {
-							/* ignore */
+			try {
+				const exec = resources.kernel2.requestExecute({ code: probeCode });
+				exec.onIOPub = (msg: any) => {
+					try {
+						const t = msg && msg.content && (msg.content.text || msg.content.data) ? String(msg.content.text || msg.content.data) : '';
+						if (t && t.indexOf('ggblab:bridge_probe:ok') !== -1) {
+							dbg('kernel2 bridge probe reported OK');
 						}
-					};
-					await exec.done;
-					dbg('kernel2 bridge probe executed');
-				} catch (e) {
-					dbg('kernel2 bridge probe execution failed', e);
-				}
+						if (t && t.indexOf('ggblab:bridge_probe:error') !== -1) {
+							dbg('kernel2 bridge probe reported ERROR');
+						}
+					} catch (e) {
+						/* ignore */
+					}
+				};
+				await exec.done;
+				dbg('kernel2 bridge probe executed');
 			} catch (e) {
-				dbg('kernel2 bridge probe failed or timed out', e);
+				dbg('kernel2 bridge probe execution failed', e);
 			}
-		} else {
-			dbg('Skipping kernel2 bridge start due to props.bridgeMode=false');
+		} catch (e) {
+			dbg('kernel2 bridge probe failed or timed out', e);
 		}
 	} catch (e) {
 		dbg('kernel2 start_bridge request failed', e);
