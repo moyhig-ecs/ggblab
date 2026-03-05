@@ -6,7 +6,7 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { reactIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
-import { createWidgetManager, registerGlobalGGBlabCommTargets } from './widgets';
+import { createWidgetManager  } from './widgets';
 
 /**
  * Legacy/compatibility note:
@@ -44,16 +44,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
 	activate: (app: JupyterFrontEnd, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null) => {
 		console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
 
-		// Pragmatic global registration (option B): register a `jupyter.ggblab`
-		// comm target on all currently running kernels so kernels that open
-		// comms to that target will be delivered to the front-end. Keep the
-		// returned unregister function so we can clean up on unload.
-		let _unregisterGlobalGGBlab: (() => void) | null = null;
-		registerGlobalGGBlabCommTargets(app)
-			.then(unreg => {
-				_unregisterGlobalGGBlab = unreg;
-			})
-			.catch(e => console.warn('Failed to register global ggblab comm targets', e));
+		// // Pragmatic global registration (option B): register a `jupyter.ggblab`
+		// // comm target on all currently running kernels so kernels that open
+		// // comms to that target will be delivered to the front-end. Keep the
+		// // returned unregister function so we can clean up on unload.
+		// let _unregisterGlobalGGBlab: (() => void) | null = null;
+		// registerGlobalGGBlabCommTargets(app)
+		// 	.then(unreg => {
+		// 		_unregisterGlobalGGBlab = unreg;
+		// 	})
+		// 	.catch(e => console.warn('Failed to register global ggblab comm targets', e));
 
 		// Small global helper so comm handlers running in the kernelConn scope
 		// can ask the frontend to create/open a ggblab widget for a kernel id.
@@ -69,11 +69,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
 			console.debug('ggblab: failed to define __ggblab_create_widget_for_kernel', e);
 		}
 
-		// Ensure we clean up registrations when the page unloads to avoid
-		// leaving dangling front-end KernelConnection objects.
-		window.addEventListener('beforeunload', () => {
-			_unregisterGlobalGGBlab?.();
-		});
+		// // Ensure we clean up registrations when the page unloads to avoid
+		// // leaving dangling front-end KernelConnection objects.
+		// window.addEventListener('beforeunload', () => {
+		// 	_unregisterGlobalGGBlab?.();
+		// });
 
 		if (settingRegistry) {
 			settingRegistry
@@ -131,10 +131,13 @@ const plugin: JupyterFrontEndPlugin<void> = {
 				// for future changes to this behavior.
 				const widgetManager = createWidgetManager();
 
+				// console.log('Creating GeoGebraWidget with args:', args, 'and widgetManager:', widgetManager);
 				const content = new GeoGebraWidget({
 					kernelId: args['kernelId'] || '',
 					commTarget: args['commTarget'] || '',
 					insertMode: args['insertMode'] || 'split-right',
+					// Optional: control whether the frontend should auto-start the kernel2 bridge
+					bridgeMode: typeof args['bridgeMode'] !== 'undefined' ? args['bridgeMode'] : undefined,
 					socketPath: args['socketPath'] || '',
 					appName: args['appName'] || 'suite',
 					wsPort: args['wsPort'] || 8888,
@@ -187,6 +190,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 						kernelId,
 						commTarget: p.commTarget || '',
 						socketPath: p.socketPath || '',
+						bridgeMode: typeof p.bridgeMode !== 'undefined' ? p.bridgeMode : undefined,
 						appName: p.appName || 'suite',
 						wsPort: p.wsPort || 8888,
 						insertMode: p.insertMode || 'split-right'

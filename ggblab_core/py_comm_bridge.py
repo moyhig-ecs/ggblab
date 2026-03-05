@@ -33,13 +33,145 @@ import asyncio
 import json
 import traceback
 from typing import Optional
+import uuid
+import time
 
 try:
     from ipykernel.comm import Comm
 except Exception:
     Comm = None
 
+try:
+    from IPython import get_ipython
+except Exception:
+    get_ipython = None
+
 _bridge_state = {}
+_bridge_state_lock = threading.Lock()
+
+
+def register_comm_target(target_name: str = 'jupyter.ggblab'):
+    """Register an IPython Comm target so frontends can open comms to kernel.
+
+    The callback stores the opened comm in `_bridge_state['target_comm']`
+    and installs an `on_msg` handler that places incoming messages into
+    `_bridge_state['incoming_msgs']` for diagnostics or further routing.
+    """
+    if get_ipython is None:
+        return False
+    try:
+        ip = get_ipython()
+        if ip is None:
+            return False
+        km = getattr(ip, 'kernel', None)
+        if km is None:
+            return False
+        cm = getattr(km, 'comm_manager', None)
+        if cm is None:
+            return False
+
+        def _target_cb(comm, open_msg):
+            try:
+                with _bridge_state_lock:
+                    _bridge_state['target_comm'] = comm
+                    _bridge_state.setdefault('incoming_msgs', [])
+
+                def _on_msg(msg):
+                    try:
+                        data = msg.get('content', {}).get('data', msg)
+                    except Exception:
+                        data = msg
+
+                    # If message contains an 'id', route it to the waiting TCP client
+                    msg_id = None
+                    try:
+                        if isinstance(data, dict):
+                            msg_id = data.get('id')
+                    except Exception:
+                        msg_id = None
+
+                    if msg_id:
+                        # fulfill any pending future associated with this id
+                        with _bridge_state_lock:
+                            pending = _bridge_state.get('pending_replies', {})
+                            entry = pending.pop(msg_id, None) if pending else None
+                        if entry:
+                            fut, fut_loop = entry
+                            try:
+                                if fut_loop is not None and getattr(fut_loop, 'is_running', lambda: False)():
+                                    fut_loop.call_soon_threadsafe(fut.set_result, data.get('payload', data))
+                                else:
+                                    fut.set_result(data.get('payload', data))
+                            except Exception:
+                                try:
+                                    fut.set_result(data)
+                                except Exception:
+                                    pass
+                        return
+
+                    # otherwise, queue as an incoming event
+                    with _bridge_state_lock:
+                        _bridge_state.setdefault('incoming_msgs', []).append(data)
+
+                try:
+                    comm.on_msg(_on_msg)
+                except Exception:
+                    pass
+
+                def _on_close():
+                    try:
+                        with _bridge_state_lock:
+                            _bridge_state.pop('target_comm', None)
+                    except Exception:
+                        pass
+
+                try:
+                    comm.on_close(_on_close)
+                except Exception:
+                    pass
+            except Exception:
+                return
+
+        # register target (best-effort)
+        try:
+            cm.register_target(target_name, _target_cb)
+            _bridge_state['target_name'] = target_name
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
+def unregister_comm_target():
+    """Unregister the previously-registered comm target if possible."""
+    try:
+        ip = get_ipython()
+        if ip is None:
+            return False
+        km = getattr(ip, 'kernel', None)
+        if km is None:
+            return False
+        cm = getattr(km, 'comm_manager', None)
+        if cm is None:
+            return False
+        tname = _bridge_state.get('target_name')
+        if not tname:
+            return False
+        # Some CommManager implementations expose `unregister_target`
+        unregister = getattr(cm, 'unregister_target', None)
+        if callable(unregister):
+            try:
+                unregister(tname)
+            except Exception:
+                pass
+        # clear stored state
+        _bridge_state.pop('target_name', None)
+        _bridge_state.pop('target_comm', None)
+        _bridge_state.pop('incoming_msgs', None)
+        return True
+    except Exception:
+        return False
 
 async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, timeout: float):
     peer = writer.get_extra_info('peername')
@@ -56,6 +188,7 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             # If not JSON, forward raw string
             payload = text
 
+        # Use the registered comm target for sending/receiving messages.
         if Comm is None:
             resp = {"error": "ipykernel.comm.Comm not available in this kernel"}
             writer.write((json.dumps(resp) + "\n").encode())
@@ -64,76 +197,97 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             await writer.wait_closed()
             return
 
-        # Create a comm for this request. The frontend should have a target
-        # 'jupyter.ggblab' or similar registered for this kernel session.
-        comm = None
-        try:
-            comm = Comm(target_name='jupyter.ggblab')
-        except Exception as e:
-            # Try alternative constructor shapes
-            try:
-                comm = Comm(target_name='jupyter.ggblab', data={})
-            except Exception as ee:
-                resp = {"error": "Failed to open Comm: %s" % (str(ee),)}
-                writer.write((json.dumps(resp) + "\n").encode())
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
-                return
-
         loop = asyncio.get_event_loop()
+
+        # Ensure a target_comm is available (wait briefly)
+        waited = 0.0
+        tc = None
+        while waited < 2.0:
+            with _bridge_state_lock:
+                tc = _bridge_state.get('target_comm')
+            if tc:
+                break
+            await asyncio.sleep(0.05)
+            waited += 0.05
+
+        if tc is None:
+            out = {"error": "no frontend comm client connected"}
+            writer.write((json.dumps(out) + "\n").encode())
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        # Determine message id
+        try:
+            if isinstance(payload, dict) and 'id' in payload:
+                msg_id = payload['id']
+            else:
+                msg_id = str(uuid.uuid4())
+                if isinstance(payload, dict):
+                    payload['id'] = msg_id
+        except Exception:
+            msg_id = str(uuid.uuid4())
+
         fut = loop.create_future()
 
-        def _on_msg(msg):
-            try:
-                # msg is a dict-like with content.data
-                d = msg.get('content', {}).get('data', msg)
-            except Exception:
-                d = msg
-            if not fut.done():
-                fut.set_result(d)
+        # store pending future with its loop so comm callback can fulfill it
+        with _bridge_state_lock:
+            _bridge_state.setdefault('pending_replies', {})[msg_id] = (fut, loop)
 
+        # Send message via the stored comm. Use kernel io_loop if available.
+        sent = False
         try:
-            comm.on_msg(_on_msg)
-        except Exception:
-            # some Comm objects expose `on_msg` as attribute or method
             try:
-                comm.on_msg(_on_msg)
+                ip = get_ipython()
+                kernel = getattr(ip, 'kernel', None)
+                io_loop = getattr(kernel, 'io_loop', None)
+                if io_loop is not None and hasattr(io_loop, 'add_callback'):
+                    try:
+                        io_loop.add_callback(lambda: tc.send(payload))
+                        sent = True
+                    except Exception:
+                        sent = False
+                else:
+                    tc.send(payload)
+                    sent = True
             except Exception:
-                pass
-
-        # send payload (ipykernel Comm supports dicts)
-        try:
-            comm.send(payload)
-        except Exception as e:
-            # try sending JSON string
-            try:
-                comm.send(json.dumps(payload))
-            except Exception as ee:
-                resp = {"error": "Failed to send on Comm: %s" % (str(ee),)}
-                writer.write((json.dumps(resp) + "\n").encode())
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
+                # last resort: attempt direct send
                 try:
-                    comm.close()
-                except Exception:
-                    pass
-                return
+                    tc.send(payload)
+                    sent = True
+                except Exception as e:
+                    sent = False
+                    with _bridge_state_lock:
+                        _bridge_state.get('pending_replies', {}).pop(msg_id, None)
+                    out = {"error": f"Failed to send on registered Comm: {e}"}
+                    writer.write((json.dumps(out) + "\n").encode())
+                    await writer.drain()
+                    writer.close()
+                    await writer.wait_closed()
+                    return
+        except Exception as e:
+            with _bridge_state_lock:
+                _bridge_state.get('pending_replies', {}).pop(msg_id, None)
+            out = {"error": f"Failed to send message: {e}", "trace": traceback.format_exc()}
+            writer.write((json.dumps(out, default=str) + "\n").encode())
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            return
 
-        # wait for reply with timeout
+        # Await reply via the pending future
         try:
-            reply = await asyncio.wait_for(fut, timeout=timeout)
-            out = {"reply": reply}
+            reply_payload = await asyncio.wait_for(fut, timeout=timeout)
+            out = {"reply": reply_payload}
         except asyncio.TimeoutError:
+            with _bridge_state_lock:
+                _bridge_state.get('pending_replies', {}).pop(msg_id, None)
             out = {"error": "timeout waiting for reply"}
         except Exception as e:
+            with _bridge_state_lock:
+                _bridge_state.get('pending_replies', {}).pop(msg_id, None)
             out = {"error": str(e), "trace": traceback.format_exc()}
-
-        try:
-            comm.close()
-        except Exception:
-            pass
 
         writer.write((json.dumps(out, default=str) + "\n").encode())
         await writer.drain()
@@ -159,6 +313,16 @@ def start_bridge(port: int = 8765, timeout: float = 10.0):
     if _bridge_state.get('running'):
         print('py_comm_bridge: already running on port', _bridge_state.get('port'))
         return _bridge_state
+
+    # Best-effort: register an IPython Comm target so frontends can open
+    # comms to this kernel under the expected name.
+    try:
+        registered = register_comm_target('jupyter.ggblab')
+        _bridge_state['registered_target'] = bool(registered)
+        if registered:
+            print('py_comm_bridge: registered comm target jupyter.ggblab')
+    except Exception:
+        _bridge_state['registered_target'] = False
 
     def _runner():
         loop = asyncio.new_event_loop()
@@ -195,8 +359,23 @@ def stop_bridge():
             t.join(timeout=1.0)
     except Exception:
         pass
+    # Try to unregister the comm target if we registered it
+    try:
+        if _bridge_state.get('registered_target'):
+            unregister_comm_target()
+    except Exception:
+        pass
     _bridge_state.clear()
 
 
 if __name__ == '__main__':
     print('py_comm_bridge: run start_bridge(port=8765) to launch server')
+
+
+def get_bridge_state():
+    """Return a shallow copy of the bridge internal state for debugging."""
+    try:
+        with _bridge_state_lock:
+            return dict(_bridge_state)
+    except Exception:
+        return dict(_bridge_state)

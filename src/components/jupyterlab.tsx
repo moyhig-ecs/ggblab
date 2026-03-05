@@ -313,19 +313,27 @@ except Exception as _e:
 	}
 
 	// Request kernel2 to start the Python TCP -> frontend bridge so non-Python
-	// kernels can forward requests via that bridge. This is best-effort and
-	// harmless if the bridge is already running.
+	// kernels can forward requests via that bridge. Control via `props.bridgeMode`:
+	// - undefined (default): preserve existing behavior and attempt to start
+	// - true: explicitly start the bridge
+	// - false: skip starting the bridge
+	dbg('Determining whether to start kernel2 bridge with props.bridgeMode:', props && props.bridgeMode);
 	try {
-		const bridgeCode = [
-			"try:",
-			"    from ggblab_core import start_bridge",
-			"    start_bridge(port=8765, timeout=10.0)",
-			"    print('ggblab:kernel2_bridge_started')",
-			"except Exception as _e:",
-			"    print('ggblab:kernel2_bridge_error', repr(_e))"
-		].join('\n');
-		await resources.kernel2.requestExecute({ code: bridgeCode }).done;
-		dbg('Requested kernel2 to start py_comm_bridge');
+		const bridgeModeDefined = props && typeof props.bridgeMode !== 'undefined';
+		if (!bridgeModeDefined || props.bridgeMode) {
+			const bridgeCode = [
+				"try:",
+				"    from ggblab_core import start_bridge",
+				"    start_bridge(port=8765, timeout=10.0)",
+				"    print('ggblab:kernel2_bridge_started')",
+				"except Exception as _e:",
+				"    print('ggblab:kernel2_bridge_error', repr(_e))"
+			].join('\n');
+			await resources.kernel2.requestExecute({ code: bridgeCode }).done;
+			dbg('Requested kernel2 to start py_comm_bridge');
+		} else {
+			dbg('Skipping kernel2 bridge start due to props.bridgeMode=false');
+		}
 	} catch (e) {
 		dbg('kernel2 start_bridge request failed', e);
 	}

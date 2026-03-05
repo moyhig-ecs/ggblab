@@ -33,7 +33,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 	// const [kernels, setKernels] = React.useState<any[]>([]);
 	const widgetRef = useRef<HTMLDivElement>(null);
 
-	dbg('Component props: ', props.kernelId, props.commTarget, props.socketPath, props.wsPort);
+	dbg('Component props: ', props.kernelId, props.commTarget, props.socketPath, props.wsPort, props.bridgeMode);
 
 	const elementId = 'ggb-element-' + (props?.kernelId || '').substring(0, 8);
 	dbg('Element ID:', elementId);
@@ -443,6 +443,12 @@ export interface IGeoGebraAppletProps {
 	kernelId?: string;
 	commTarget?: string;
 	insertMode?: DockLayout.InsertMode;
+	// If defined, controls whether the frontend will attempt to auto-start
+	// the Python `py_comm_bridge` in `kernel2`.
+	// - undefined: preserve default behavior (auto-start as before)
+	// - true: explicitly start the bridge
+	// - false: do not start the bridge
+	bridgeMode?: boolean;
 	wsPort?: number;
 	socketPath?: string;
 	appName?: string;
