@@ -21,9 +21,11 @@ export class GeoGebraWidget extends ReactWidget {
 			<GeoGebraApplet
 				kernelId={this.props?.kernelId}
 				commTarget={this.props?.commTarget}
+				insertMode={this.props?.insertMode}
 				wsPort={this.props?.wsPort}
 				socketPath={this.props?.socketPath}
 				appName={this.props?.appName}
+				bridgeMode={this.props?.bridgeMode}
 				widgetManager={this.props?.widgetManager}
 			/>
 		);

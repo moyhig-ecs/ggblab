@@ -12,4 +12,15 @@ from .utils import load_blocking_client
 from .kernel_comm import KernelComm, get_kernel_comm
 from .applet import AppletInjector
 
-__all__ = ["CommSync", "load_blocking_client", "KernelComm", "get_kernel_comm", "AppletInjector"]
+# Bridge utility (TCP -> frontend Comm)
+from .py_comm_bridge import start_bridge, stop_bridge
+
+__all__ = [
+	"CommSync",
+	"load_blocking_client",
+	"KernelComm",
+	"get_kernel_comm",
+	"AppletInjector",
+	"start_bridge",
+	"stop_bridge",
+]

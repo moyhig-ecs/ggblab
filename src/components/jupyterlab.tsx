@@ -311,6 +311,32 @@ except Exception as _e:
 	} catch (e) {
 		dbg('Failed to import unix_connect/connect in kernel2', e);
 	}
+
+	// Request kernel2 to start the Python TCP -> frontend bridge so non-Python
+	// kernels can forward requests via that bridge. Control via `props.bridgeMode`:
+	// - undefined (default): preserve existing behavior and attempt to start
+	// - true: explicitly start the bridge
+	// - false: skip starting the bridge
+	dbg('Determining whether to start kernel2 bridge with props.bridgeMode:', props && props.bridgeMode);
+	try {
+		const bridgeModeDefined = props && typeof props.bridgeMode !== 'undefined';
+		if (!bridgeModeDefined || props.bridgeMode) {
+			const bridgeCode = [
+				"try:",
+				"    from ggblab_core import start_bridge",
+				"    start_bridge(port=8765, timeout=10.0)",
+				"    print('ggblab:kernel2_bridge_started')",
+				"except Exception as _e:",
+				"    print('ggblab:kernel2_bridge_error', repr(_e))"
+			].join('\n');
+			await resources.kernel2.requestExecute({ code: bridgeCode }).done;
+			dbg('Requested kernel2 to start py_comm_bridge');
+		} else {
+			dbg('Skipping kernel2 bridge start due to props.bridgeMode=false');
+		}
+	} catch (e) {
+		dbg('kernel2 start_bridge request failed', e);
+	}
 	// Note: auxiliary kernel3 startup/registration removed — comm targets
 	// are handled via the primary kernel or widget registration paths.
 	// ws/socket values managed inside kernel_comm helpers
@@ -331,6 +357,43 @@ except Exception as _e:
 			serverSettings: settings
 		});
 		dbg('Connected to kernel:', resources.kernelConn);
+
+		// Ensure the per-kernel connection exposes a control comm target so a
+		// kernel-side client can open `jupyter.ggblab.control` and request the
+		// frontend to inject/open a widget for that kernel. This mirrors the
+		// global registration but guarantees the current kernel's connection
+		// has the handler synchronously available.
+		try {
+			if (resources.kernelConn && typeof resources.kernelConn.registerCommTarget === 'function') {
+				resources.kernelConn.registerCommTarget('jupyter.ggblab.control', (commOp: any, msg: any) => {
+					try {
+						dbg('per-kernel jupyter.ggblab.control opened', { targetKernelId, msg });
+						commOp.onMsg = async (m: any) => {
+							try {
+								const content = m?.content?.data || m;
+								const command = typeof content === 'string' ? JSON.parse(content) : content;
+								if (command && command.type === 'inject') {
+									try {
+										const g: any = window as any;
+										if (g && typeof g.__ggblab_create_widget_for_kernel === 'function') {
+											await g.__ggblab_create_widget_for_kernel(targetKernelId, { insertMode: command.insertMode });
+										}
+									} catch (e) {
+										dbg('per-kernel control inject failed', e);
+									}
+								}
+							} catch (e) {
+								dbg('Error in per-kernel control onMsg', e);
+							}
+						};
+					} catch (e) {
+						dbg('Error registering per-kernel jupyter.ggblab.control handler', e);
+					}
+				});
+			}
+		} catch (e) {
+			dbg('Failed to register per-kernel control target', e);
+		}
 	} else {
 		resources.kernelConn = null;
 		dbg('No existing kernel id found to create KernelConnection; kernelConn set to null');

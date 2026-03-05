@@ -4,7 +4,7 @@
 
 export type WidgetManagerType = any;
 import type { IRegisterWidgetCommOptions } from '../types';
-import { isArrayOfArrays } from '../shared/geoGebraCommon';
+// import { isArrayOfArrays } from '../shared/geoGebraCommon';
 
 let _injectedWidgetManager: WidgetManagerType | undefined = undefined;
 
@@ -92,64 +92,64 @@ export function registerWidgetCommTargets(kernelConn: any, opts: IRegisterWidget
 	opts.dbg && opts.dbg('Widget comm passthrough enabled: no WidgetManager detected');
 	const dbg = opts.dbg || (() => {});
 
-	const simpleHandler = (commOp: any, msg: any) => {
-		dbg('widget comm opened (jupyter.widget)', commOp, msg);
-		try {
-			commOp.onMsg = async (m: any) => {
-				const content = m?.content?.data || m;
-				try {
-					const command = typeof content === 'string' ? JSON.parse(content) : content;
-					let rmsg: any = null;
-					const appletApi = opts.getAppletApi();
-					if (command.type === 'command' && appletApi && typeof appletApi.evalCommandGetLabels === 'function') {
-						const label = appletApi.evalCommandGetLabels(command.payload);
-						rmsg = JSON.stringify({ type: 'created', id: command.id, payload: label });
-					} else if (command.type === 'function' && appletApi) {
-						const apiName = command.payload.name;
-						const args = command.payload.args;
-						const isArrayOfArraysFn = (opts && (opts as any).isArrayOfArrays) ? (opts as any).isArrayOfArrays : isArrayOfArrays;
-						let value: any[] = [];
-						(Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
-							if (isArrayOfArraysFn(args)) {
-								const v2: any[] = [];
-								args.forEach((a: any[]) => {
-									v2.push(typeof appletApi[f] === 'function' ? appletApi[f](...a) : null);
-								});
-								value.push(v2);
-							} else {
-								value.push(args ? (typeof appletApi[f] === 'function' ? appletApi[f](...args) : null) : typeof appletApi[f] === 'function' ? appletApi[f]() : null);
-							}
-						});
-						value = Array.isArray(apiName) ? value : value[0];
-						rmsg = JSON.stringify({ type: 'value', id: command.id, payload: { value } });
-					}
-					if (rmsg) {
-						try {
-							commOp.send(rmsg);
-						} catch (e) {
-							dbg('commOp.send failed', e);
-						}
-						try {
-							await opts.callRemoteSocketSend(rmsg);
-						} catch (e) {
-							dbg('callRemoteSocketSend failed', e);
-						}
-					}
-				} catch (e) {
-					dbg('Error handling widget comm message', e);
-				}
-			};
-		} catch (e) {
-			dbg('Failed to attach onMsg to widget comm', e);
-		}
-	};
+	// const simpleHandler = (commOp: any, msg: any) => {
+	// 	dbg('widget comm opened (jupyter.widget)', commOp, msg);
+	// 	try {
+	// 		commOp.onMsg = async (m: any) => {
+	// 			const content = m?.content?.data || m;
+	// 			try {
+	// 				const command = typeof content === 'string' ? JSON.parse(content) : content;
+	// 				let rmsg: any = null;
+	// 				const appletApi = opts.getAppletApi();
+	// 				if (command.type === 'command' && appletApi && typeof appletApi.evalCommandGetLabels === 'function') {
+	// 					const label = appletApi.evalCommandGetLabels(command.payload);
+	// 					rmsg = JSON.stringify({ type: 'created', id: command.id, payload: label });
+	// 				} else if (command.type === 'function' && appletApi) {
+	// 					const apiName = command.payload.name;
+	// 					const args = command.payload.args;
+	// 					const isArrayOfArraysFn = (opts && (opts as any).isArrayOfArrays) ? (opts as any).isArrayOfArrays : isArrayOfArrays;
+	// 					let value: any[] = [];
+	// 					(Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
+	// 						if (isArrayOfArraysFn(args)) {
+	// 							const v2: any[] = [];
+	// 							args.forEach((a: any[]) => {
+	// 								v2.push(typeof appletApi[f] === 'function' ? appletApi[f](...a) : null);
+	// 							});
+	// 							value.push(v2);
+	// 						} else {
+	// 							value.push(args ? (typeof appletApi[f] === 'function' ? appletApi[f](...args) : null) : typeof appletApi[f] === 'function' ? appletApi[f]() : null);
+	// 						}
+	// 					});
+	// 					value = Array.isArray(apiName) ? value : value[0];
+	// 					rmsg = JSON.stringify({ type: 'value', id: command.id, payload: { value } });
+	// 				}
+	// 				if (rmsg) {
+	// 					try {
+	// 						commOp.send(rmsg);
+	// 					} catch (e) {
+	// 						dbg('commOp.send failed', e);
+	// 					}
+	// 					try {
+	// 						await opts.callRemoteSocketSend(rmsg);
+	// 					} catch (e) {
+	// 						dbg('callRemoteSocketSend failed', e);
+	// 					}
+	// 				}
+	// 			} catch (e) {
+	// 				dbg('Error handling widget comm message', e);
+	// 			}
+	// 		};
+	// 	} catch (e) {
+	// 		dbg('Failed to attach onMsg to widget comm', e);
+	// 	}
+	// };
 
-	try {
-		kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
-		kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
-	} catch (e) {
-		dbg('Widget comm target registration failed', e);
-	}
+	// try {
+	// 	kernelConn.registerCommTarget('jupyter.widget', simpleHandler);
+	// 	kernelConn.registerCommTarget('jupyter.widget.control', simpleHandler);
+	// } catch (e) {
+	// 	dbg('Widget comm target registration failed', e);
+	// }
 
 	return () => {
 		try {
@@ -213,38 +213,128 @@ export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => 
 
 			const kc = new KernelConnection({ model: { name: 'python3', id }, serverSettings: settings });
 			try {
-				kc.registerCommTarget('jupyter.ggblab', (commOp: any, msg: any) => {
-					try {
-						dbg('jupyter.ggblab comm opened', { kernelId: id, msg });
-						try {
-							// expose comm globally for debugging and allow pinging from console
-							(globalThis as any)._ggblab_comm = commOp;
-							console.info('[ggblab-debug] exposed comm on window._ggblab_comm', commOp);
-						} catch (e) {
-							// ignore
-						}
-						try {
-							const cid = (commOp as any).commId || (commOp as any).id || (commOp as any)._id || null;
-							console.info('[ggblab-debug] comm id detected', cid);
-						} catch (e) {}
-						// send a debug ping so kernel-side watcher can observe the open
-						try {
-							const dbgMsg = JSON.stringify({ type: 'dbg_open', id: `dbg-${Date.now()}` });
-							if (typeof (commOp as any).send === 'function') {
-								(commOp as any).send(dbgMsg);
-								console.info('[ggblab-debug] sent dbg_open ping');
-							}
-						} catch (e) {
-							console.warn('Failed to send dbg_open ping', e);
-						}
+				// kc.registerCommTarget('jupyter.ggblab', (commOp: any, msg: any) => {
+				// 	try {
+				// 		dbg('jupyter.ggblab comm opened', { kernelId: id, msg });
+				// 		commOp.onMsg = (m: any) => {
+				// 			dbg('jupyter.ggblab message', { kernelId: id, m });
+				// 		};
+				// 	} catch (e) {
+				// 		console.warn('Error in jupyter.ggblab handler', e);
+				// 	}
+				// });
 
-						commOp.onMsg = (m: any) => {
-							dbg('jupyter.ggblab message', { kernelId: id, m });
+				// Register a control comm target that allows remote clients to request
+				// the frontend to inject/open a GeoGebra applet for a given kernel.
+				kc.registerCommTarget('jupyter.ggblab.control', (commOp: any, msg: any) => {
+					try {
+						dbg('jupyter.ggblab.control comm opened', { kernelId: id, msg });
+						commOp.onMsg = async (m: any) => {
+							try {
+								const content = m?.content?.data || m;
+								const command = typeof content === 'string' ? JSON.parse(content) : content;
+								if (command && command.type === 'inject') {
+									try {
+										if (app && app.commands && typeof app.commands.execute === 'function') {
+											await app.commands.execute('ggblab:create', {
+												kernelId: id,
+												commTarget: 'jupyter.ggblab',
+												insertMode: command.insertMode || 'split-right'
+											});
+										}
+									} catch (e) {
+										dbg('Failed to execute ggblab:create for inject request', e);
+									}
+								}
+								// other control message types can be handled here
+							} catch (e) {
+								dbg('Error handling jupyter.ggblab.control message', e);
+							}
 						};
 					} catch (e) {
-						console.warn('Error in jupyter.ggblab handler', e);
+						dbg('Error registering jupyter.ggblab.control handler', e);
 					}
 				});
+
+				// // Proxy: listen for special GGB_REQ markers on iopub streams from
+				// // kernels that cannot open comms and reply by executing a print of
+				// // a GGB_REPLY payload back into that kernel's stdout so the origin
+				// // can consume it. This is a best-effort fallback and relies on a
+				// // simple text sentinel agreed by the kernel-side helper.
+				// try {
+				// 	(kc as any).iopubMessage.connect((sender: any, msg: any) => {
+				// 		try {
+				// 			const mtype = msg && msg.header && msg.header.msg_type;
+				// 			if (mtype !== 'stream') {
+				// 				return;
+				// 			}
+				// 			const text = (msg && msg.content && msg.content.text) || '';
+				// 			if (!text || typeof text !== 'string') {
+				// 				return;
+				// 			}
+				// 			const prefix = 'GGB_REQ:';
+				// 			if (!text.startsWith(prefix)) {
+				// 				return;
+				// 			}
+				// 			const payloadText = text.slice(prefix.length).trim();
+				// 			let payload: any = null;
+				// 			try {
+				// 				payload = JSON.parse(payloadText);
+				// 			} catch (e) {
+				// 				dbg('Failed to parse GGB_REQ payload', e, payloadText);
+				// 				return;
+				// 			}
+				// 			try {
+				// 				// Lookup applet resources registered by the widget
+				// 				const g: any = (window as any) || {};
+				// 				const lookupKey = payload && payload.kernelId ? payload.kernelId : id;
+				// 				const res = g.__ggblab_applets__ && g.__ggblab_applets__[lookupKey];
+				// 				if (!res || !res.appletApi) {
+				// 					dbg('No appletApi found for proxy request', lookupKey);
+				// 					return;
+				// 				}
+				// 				const appletApi = res.appletApi;
+				// 				let result: any = null;
+				// 				if (payload && payload.type === 'function') {
+				// 					const apiName = payload.payload && payload.payload.name;
+				// 					const args = payload.payload && payload.payload.args;
+				// 					try {
+				// 						if (Array.isArray(apiName)) {
+				// 							result = apiName.map((f: any) => (typeof appletApi[f] === 'function' ? appletApi[f].apply(appletApi, args || []) : null));
+				// 						} else {
+				// 							result = (typeof appletApi[apiName] === 'function' ? appletApi[apiName].apply(appletApi, args || []) : null);
+				// 						}
+				// 					} catch (e) {
+				// 						dbg('Error invoking appletApi function for proxy', e);
+				// 						result = { error: String(e) };
+				// 					}
+				// 				} else if (payload && payload.type === 'command') {
+				// 					try {
+				// 						result = appletApi.evalCommandGetLabels ? appletApi.evalCommandGetLabels(payload.payload) : null;
+				// 					} catch (e) {
+				// 						result = { error: String(e) };
+				// 					}
+				// 				}
+				// 				const reply = { type: 'value', id: payload.id, payload: { value: result } };
+				// 				// Send reply by executing a print in that kernel so the origin
+				// 				// can read the GGB_REPLY sentinel from stdout.
+				// 				try {
+				// 					const jsonStr = JSON.stringify(reply).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+				// 					const code = `print('GGB_REPLY:${jsonStr}')`;
+				// 					kc.requestExecute({ code }).done.catch((e: any) => dbg('proxy requestExecute failed', e));
+				// 				} catch (e) {
+				// 					dbg('Failed to send GGB_REPLY via execute', e);
+				// 				}
+				// 			} catch (e) {
+				// 				dbg('Error processing GGB_REQ', e);
+				// 			}
+				// 		} catch (e) {
+				// 			dbg('iopubMessage handler error', e);
+				// 		}
+				// 	});
+				// } catch (e) {
+				// 	dbg('Failed to attach iopub proxy for kernel', id, e);
+				// }
 			} catch (e) {
 				console.warn('Failed to register jupyter.ggblab on kernel', id, e);
 			}

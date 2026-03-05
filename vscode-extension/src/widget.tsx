@@ -19,6 +19,8 @@ export interface GeoGebraWidgetProps {
   socketPath?: string;
   wsPort?: number;
   serverSettings?: any;
+  // Optional: allow the host to request bridge auto-start behavior
+  bridgeMode?: boolean;
 }
 
 export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
@@ -146,8 +148,9 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
       dbg('VSCode widget: calling setupKernelResources', { kernelId: resources.kernelId, socketPath: resources.socketPath });
       let callRemoteSocketSend: (m: string) => Promise<void> = async () => {};
       let makeIncomingHandler: (h: any) => any = (h: any) => null;
-      // const { callRemoteSocketSend, makeIncomingHandler } 
-      const res = await setupKernelResources(resources, { kernelId: resources.kernelId, serverSettings }, dbg);
+      // Pass bridgeMode through if provided via props or serverSettings
+      const bridgeModeProp = typeof (serverSettings && (serverSettings.bridgeMode)) !== 'undefined' ? serverSettings.bridgeMode : (typeof bridgeMode !== 'undefined' ? bridgeMode : undefined);
+      const res = await setupKernelResources(resources, { kernelId: resources.kernelId, serverSettings, bridgeMode: bridgeModeProp }, dbg);
       // Prefer the shared kernel_comm helpers for consistent behavior
       // with the main widget. Fall back to values returned by
       // setupKernelResources when initialization fails.
