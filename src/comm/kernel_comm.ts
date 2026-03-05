@@ -151,29 +151,14 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 	}
 
 	function attachCommCloseHandler(opts: any) {
-		const { c, setClosed, commTarget, dbg: _dbg, recreate, recreateDelaySeconds } = opts;
+		const { c, setClosed, commTarget, dbg: _dbg } = opts;
 		try {
 			(c as any).onClose = (m: any) => {
 				try {
 					setClosed(true);
 					const closedId = (m && m.content && m.content.comm_id) || (c as any)?.comm_id || (c as any)?.commId || null;
 					_dbg && _dbg('Kernel comm closed', { target: commTarget, commId: closedId, message: m });
-					// If a recreate callback was provided, schedule a retry after a short delay
-					try {
-						const delayMs = (typeof recreateDelaySeconds === 'number' ? recreateDelaySeconds : 2) * 1000;
-						if (typeof recreate === 'function') {
-							_dbg && _dbg('Scheduling comm recreate', { target: commTarget, delayMs });
-							setTimeout(() => {
-								try {
-									recreate();
-								} catch (e) {
-									_dbg && _dbg('Comm recreate callback failed', e);
-								}
-							}, delayMs);
-						}
-					} catch (e) {
-						// ignore scheduling errors
-					}
+					// Automatic comm recreation removed; consumers may recreate manually if needed.
 				} catch (e) {
 					_dbg && _dbg('Kernel comm closed (no id available)', commTarget, m);
 				}
@@ -228,25 +213,7 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 					commClosed = v;
 				},
 				commTarget: resources.commTarget,
-				dbg,
-				recreate: async () => {
-					try {
-						const created = await ensureKernelComm({
-							kernelConn: resources.kernelConn,
-							commTarget: resources.commTarget,
-							handleIncomingCommMessage: handlerRef,
-							attachCloseHandler: attachCommCloseHandlerLocal,
-							dbg: dbg
-						});
-						if (created) {
-							resources.comm = created;
-							commClosed = false;
-						}
-					} catch (e) {
-						dbg && dbg('Recreate ensureKernelComm failed', e);
-					}
-				},
-				recreateDelaySeconds: (resources && (resources as any).recreateDelaySeconds) || 2
+				dbg
 			});
 
 		const handler = async function (msg: any) {
