@@ -50,6 +50,33 @@ _bridge_state = {}
 _bridge_state_lock = threading.Lock()
 
 
+def _log_diag(msg: str) -> None:
+    """Record a diagnostic message into `_bridge_state['diag']` (thread-safe).
+
+    This avoids relying on stdout/stderr from background threads; callers
+    can inspect the bridge state via `get_bridge_state()` to see recent
+    diagnostic entries.
+    """
+    try:
+        ts = time.time()
+        entry = (ts, str(msg))
+        with _bridge_state_lock:
+            lst = _bridge_state.setdefault('diag', [])
+            lst.append(entry)
+            # keep last 200 entries
+            if len(lst) > 200:
+                del lst[:-200]
+    except Exception:
+        try:
+            # Best-effort fallback to stderr
+            import sys
+
+            sys.stderr.write(f"py_comm_bridge(diag): {msg}\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+
 def register_comm_target(target_name: str = 'jupyter.ggblab'):
     """Register an IPython Comm target so frontends can open comms to kernel.
 
@@ -82,13 +109,52 @@ def register_comm_target(target_name: str = 'jupyter.ggblab'):
                     except Exception:
                         data = msg
 
-                    # If message contains an 'id', route it to the waiting TCP client
+                    # If the frontend sent a JSON string in content.data, parse it
+                    # so we can inspect fields like `id`.
+                    try:
+                        if isinstance(data, (bytes, bytearray)):
+                            try:
+                                s = data.decode('utf-8')
+                                data = json.loads(s)
+                            except Exception:
+                                try:
+                                    data = s
+                                except Exception:
+                                    pass
+                        elif isinstance(data, str):
+                            try:
+                                parsed = json.loads(data)
+                                data = parsed
+                            except Exception:
+                                # leave as string if it's not JSON
+                                pass
+                    except Exception:
+                        pass
+
+                    # Try to find a matching message id in various common locations
                     msg_id = None
                     try:
                         if isinstance(data, dict):
-                            msg_id = data.get('id')
+                            msg_id = (
+                                data.get('id')
+                                or (data.get('payload') and isinstance(data.get('payload'), dict) and data['payload'].get('id'))
+                                or (data.get('reply') and isinstance(data.get('reply'), dict) and data['reply'].get('id'))
+                                or data.get('requestId')
+                                or data.get('request_id')
+                                or data.get('correlation_id')
+                            )
+                            if not msg_id and 'data' in data and isinstance(data['data'], dict):
+                                msg_id = data['data'].get('id')
                     except Exception:
                         msg_id = None
+
+                    # Log incoming message and current pending ids for diagnostics
+                    try:
+                        with _bridge_state_lock:
+                            pending_keys = list(_bridge_state.get('pending_replies', {}).keys())
+                        _log_diag(f"received comm msg, id={msg_id}, pending={pending_keys}, data={data}")
+                    except Exception:
+                        pass
 
                     if msg_id:
                         # fulfill any pending future associated with this id
@@ -98,16 +164,19 @@ def register_comm_target(target_name: str = 'jupyter.ggblab'):
                         if entry:
                             fut, fut_loop = entry
                             try:
+                                result_payload = None
+                                if isinstance(data, dict):
+                                    result_payload = data.get('payload', data.get('reply', data))
                                 if fut_loop is not None and getattr(fut_loop, 'is_running', lambda: False)():
-                                    fut_loop.call_soon_threadsafe(fut.set_result, data.get('payload', data))
+                                    fut_loop.call_soon_threadsafe(fut.set_result, result_payload)
                                 else:
-                                    fut.set_result(data.get('payload', data))
+                                    fut.set_result(result_payload)
                             except Exception:
                                 try:
                                     fut.set_result(data)
                                 except Exception:
                                     pass
-                        return
+                            return
 
                     # otherwise, queue as an incoming event
                     with _bridge_state_lock:
@@ -188,6 +257,22 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             # If not JSON, forward raw string
             payload = text
 
+        # Fast-path: respond to local health-check pings without involving the frontend.
+        try:
+            if isinstance(payload, dict) and payload.get('op') == 'ping':
+                try:
+                    _log_diag('received local ping; replying pong')
+                except Exception:
+                    pass
+                writer.write((json.dumps({'op': 'pong', 'echo': payload}) + "\n").encode())
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+        except Exception:
+            # ignore and continue to normal forwarding
+            pass
+
         # Use the registered comm target for sending/receiving messages.
         if Comm is None:
             resp = {"error": "ipykernel.comm.Comm not available in this kernel"}
@@ -234,6 +319,12 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
         # store pending future with its loop so comm callback can fulfill it
         with _bridge_state_lock:
             _bridge_state.setdefault('pending_replies', {})[msg_id] = (fut, loop)
+        try:
+            with _bridge_state_lock:
+                pending_keys = list(_bridge_state.get('pending_replies', {}).keys())
+            _log_diag(f"stored pending reply id={msg_id}, pending={pending_keys}")
+        except Exception:
+            pass
 
         # Send message via the stored comm. Use kernel io_loop if available.
         sent = False
@@ -242,19 +333,42 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
                 ip = get_ipython()
                 kernel = getattr(ip, 'kernel', None)
                 io_loop = getattr(kernel, 'io_loop', None)
+                # Ensure we send a JSON string for object payloads so frontend
+                # handlers that call JSON.parse(msg.content.data) will succeed.
+                send_payload = payload
+                try:
+                    if not isinstance(payload, (str, bytes)):
+                        send_payload = json.dumps(payload)
+                except Exception:
+                    try:
+                        send_payload = str(payload)
+                    except Exception:
+                        send_payload = payload
+
                 if io_loop is not None and hasattr(io_loop, 'add_callback'):
                     try:
-                        io_loop.add_callback(lambda: tc.send(payload))
+                        io_loop.add_callback(lambda: tc.send(send_payload))
                         sent = True
                     except Exception:
                         sent = False
                 else:
-                    tc.send(payload)
+                    tc.send(send_payload)
                     sent = True
             except Exception:
                 # last resort: attempt direct send
                 try:
-                    tc.send(payload)
+                    # mirror same serialization fallback when sending directly
+                    send_payload = payload
+                    try:
+                        if not isinstance(payload, (str, bytes)):
+                            send_payload = json.dumps(payload)
+                    except Exception:
+                        try:
+                            send_payload = str(payload)
+                        except Exception:
+                            send_payload = payload
+
+                    tc.send(send_payload)
                     sent = True
                 except Exception as e:
                     sent = False
@@ -284,6 +398,10 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             with _bridge_state_lock:
                 _bridge_state.get('pending_replies', {}).pop(msg_id, None)
             out = {"error": "timeout waiting for reply"}
+            try:
+                _log_diag(f"timeout waiting for reply id={msg_id}")
+            except Exception:
+                pass
         except Exception as e:
             with _bridge_state_lock:
                 _bridge_state.get('pending_replies', {}).pop(msg_id, None)
