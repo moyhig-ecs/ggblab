@@ -1,0 +1,10 @@
+name = "GeoGebra"
+uuid = "c0ffee00-0000-4000-8000-000000000001"
+authors = ["ggblab <noreply@example.com>"]
+version = "0.1.0"
+
+[deps]
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+
+[compat]
+julia = ">= 1.8, < 2.0"
