@@ -215,165 +215,33 @@ class GeoGebra:
             >>> ggb = await GeoGebra().init()
             >>> # GeoGebra panel opens in split-right position
         """
-        # Validate `appName` against supported GeoGebra flavors.
-        valid_app_names = {
-            'graphing',
-            'geometry',
-            '3d',
-            'classic',
-            'suite',
-            'evaluator',
-            'scientific',
-            'notes'
-        }
-        try:
-            appName_str = str(appName)
-        except Exception:
-            raise ValueError(f"Invalid appName: {appName!r}")
-        appName_norm = appName_str.lower()
-        if appName_norm not in valid_app_names:
-            raise ValueError(
-                f"Invalid appName '{appName}'; allowed values: {', '.join(sorted(valid_app_names))}"
-            )
+        # appName validation is centralized in ggblab_core2.applet
 
+        # Decide whether to open a frontend panel (ipylab) or publish
+        # connection info for VS Code. Only run comm startup when the
+        # caller explicitly requests `use_vscode=True` to avoid surprising
+        # side-effects during import or light-weight usage.
         if not self.initialized:
-            self.comm = ggb_comm()
-            self.comm.start()
-            while self.comm.socketPath is None:
-                await asyncio.sleep(.01)
-            self.comm.register_target()
-
-            _connection_file = ipykernel.connect.get_connection_file()
-            self.kernel_id = re.search(r'kernel-(.*)\.json', _connection_file).group(1)
-
-            # Decide whether to open a frontend panel (ipylab) or simply
-            # publish the kernel/socket info for an external host (e.g.
-            # VS Code webview) to consume.
-            # Precedence:
-            # 1. explicit `use_vscode` argument to `init()` if not None
-            # 2. environment variable `GGBLAB_USE_VSCODE` if present
-            # 3. auto-detect: presence of `VSCODE_PID` implies VS Code
             try:
-                if use_vscode is None:
-                    env_vscode = os.environ.get('GGBLAB_USE_VSCODE')
-                    if env_vscode is not None:
-                        use_vscode = str(env_vscode).lower() in ('1', 'true', 'yes')
-                    else:
-                        use_vscode = ('VSCODE_PID' in os.environ)
+                if use_vscode:
+                    from ggblab_core2.applet import setup_comm_and_kernel, publish_connection_for_vscode
+                    info = await setup_comm_and_kernel(self)
+                    self.kernel_id = info.get('kernel_id')
+                    try:
+                        await publish_connection_for_vscode(self)
+                    except Exception:
+                        pass
+                else:
+                    # No comm startup performed here. Users who want a
+                    # full comm+frontend experience should use the
+                    # AppletInjector2 helpers in `ggblab_core2`.
+                    pass
             except Exception:
-                use_vscode = False
+                # Best-effort: don't fail init if publishing/setup fails
+                pass
 
-            # If `use_vscode` is requested, skip ipylab and publish kernel/socket
-            if use_vscode:
-                try:
-                    # display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
-
-                    # Build payload to write for the extension. Include kernelId
-                    # and socketPath so the extension can connect without prompts.
-                    payload = {'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}
-
-                    # connection file path
-                    try:
-                        conn_file = ipykernel.connect.get_connection_file()
-                        payload['connection_file'] = conn_file
-                    except Exception:
-                        conn_file = None
-
-                    # Try to discover a running Jupyter server and token (best-effort)
-                    try:
-                        from jupyter_server.serverapp import list_running_servers
-                        servers = list(list_running_servers())
-                        if servers:
-                            srv = None
-                            try:
-                                if conn_file and Path(conn_file).exists():
-                                    try:
-                                        with open(conn_file, 'r', encoding='utf8') as cf:
-                                            conn_json = json.load(cf)
-                                    except Exception:
-                                        conn_json = {}
-                                    conn_ip = conn_json.get('ip') or conn_json.get('ip')
-                                    for s in servers:
-                                        raw_url = s.get('url') or s.get('server_url') or ''
-                                        if not raw_url:
-                                            continue
-                                        parts = urlsplit(raw_url)
-                                        host = parts.hostname
-                                        if conn_ip and host and (conn_ip == host or (conn_ip in ('127.0.0.1', '::1') and host in ('localhost', '127.0.0.1'))):
-                                            srv = s
-                                            break
-                            except Exception:
-                                srv = None
-
-                            if srv is None:
-                                srv = servers[0]
-
-                            base_url = srv.get('base_url') or srv.get('baseUrl') or None
-                            raw_url = srv.get('url') or srv.get('server_url') or None
-                            token = srv.get('token') or srv.get('password') or None
-                            if raw_url:
-                                parts = urlsplit(raw_url)
-                                qs = parse_qs(parts.query)
-                                for k in ('token', 'access_token'):
-                                    if k in qs and qs[k]:
-                                        token = token or qs[k][0]
-                                base_no_q = urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
-                                if (not base_url) or (str(base_url).strip() == '/'):
-                                    base_url = base_no_q
-                            if base_url:
-                                payload['baseUrl'] = base_url
-                            payload['token'] = token or ''
-                    except Exception:
-                        # ignore if jupyter_server is not available
-                        pass
-
-                    # Write to .vscode/ggblab.json in cwd (best-effort workspace)
-                    try:
-                        ws_file = Path.cwd() / '.vscode' / 'ggblab.json'
-                        ws_file.parent.mkdir(parents=True, exist_ok=True)
-                        with open(ws_file, 'w', encoding='utf8') as fh:
-                            json.dump(payload, fh, indent=2)
-                    except Exception:
-                        pass
-
-                    # Also copy the connection JSON to the clipboard (best-effort)
-                    try:
-                        await self.copy_connection_to_clipboard()
-                    except Exception:
-                        pass
-                except Exception:
-                    print('ggblab: kernelId=%s socketPath=%s' % (self.kernel_id, self.comm.socketPath))
-            else:
-                # Attempt to open an ipylab panel; if unavailable, fall back
-                # to publishing the kernel/socket info so external hosts can
-                # still pick it up.
-                try:
-                    import ipylab  # type: ignore
-                    JupyterFrontEnd = getattr(ipylab, 'JupyterFrontEnd', None)
-                    if JupyterFrontEnd is None:
-                        try:
-                            display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
-                        except Exception:
-                            print('ggblab: kernelId=%s socketPath=%s' % (self.kernel_id, self.comm.socketPath))
-                    else:
-                        self.app = JupyterFrontEnd()
-                        self.app.commands.execute('ggblab:create', {
-                            'kernelId': self.kernel_id,
-                            'commTarget': 'jupyter.ggblab',
-                            'insertMode': 'split-right',
-                            'socketPath': self.comm.socketPath,
-                            'appName': appName,
-                        })
-                except Exception:
-                    try:
-                        display(JSON({'kernelId': self.kernel_id, 'socketPath': self.comm.socketPath}))
-                    except Exception:
-                        print('ggblab: kernelId=%s socketPath=%s' % (self.kernel_id, self.comm.socketPath))
-            
             # Initialize object cache
-            # await self.refresh_object_cache()
             self._applet_objects = set()
-            
             self.initialized = True
         return self
     
@@ -436,93 +304,23 @@ class GeoGebra:
             print(f"Warning: Could not refresh object cache: {type(e).__name__} {e}")
     
     async def function(self, f, args=None):
-        """Call a GeoGebra API function.
-        
-        Args:
-            f (str): GeoGebra API function name (e.g., "getValue", "getXML").
-            args (list, optional): Function arguments. Defaults to None.
-        
-        Returns:
-            Any: Function return value from GeoGebra.
-            
-        Example:
-            >>> value = await ggb.function("getValue", ["A"])
-            >>> xml = await ggb.function("getXML", ["A"])
-            >>> all_objs = await ggb.function("getAllObjectNames")
+        """Call a GeoGebra API function via the communication layer.
+
+        Sends a 'function' request to the frontend and returns the inner
+        value from the response payload.
         """
         r = await self.comm.send_recv({
             "type": "function",
-            "payload": {
-                "name": f,
-                "args": args
-            }
+            "payload": {"name": f, "args": args},
         })
-        return r['value']
-
-    def _run_sync(self, coro):
-        """Run an async coroutine in a background thread and return the result.
-
-        This avoids trying to run a new event loop on the currently running
-        loop (common in notebooks). The coroutine is executed with
-        `asyncio.run` inside the thread.
-        """
-        result = {}
-        exc = {}
-
-        def _target():
-            try:
-                result['value'] = asyncio.run(coro)
-            except Exception as e:
-                exc['error'] = e
-
-        t = threading.Thread(target=_target, daemon=True)
-        t.start()
-        t.join()
-        if 'error' in exc:
-            raise exc['error']
-        return result.get('value')
-
-    def function_sync(self, f, args=None):
-        """Synchronous wrapper around `function`.
-
-        Executes the async `function` coroutine in a background thread and
-        returns the function result. Suitable for callers that cannot use
-        `await` (for example PyCall from Julia or plain Python scripts).
-        """
-        return self._run_sync(self.function(f, args))
-
-    async def listen(self, name, enabled=True):
-        """Register or unregister an object update listener in the frontend.
-
-        Args:
-            name (str): Object name to listen for updates on.
-            enabled (bool): If True, register listener; if False, unregister.
-
-        Returns:
-            Any: The frontend's registration result (may be a token or status dict).
-
-        Example:
-            >>> result = await ggb.listen('A', True)
-            >>> await ggb.listen('A', False)
-        """
-        payload = [name, bool(enabled)]
-        r = await self.comm.send_recv({
-            "type": "listen",
-            "payload": payload,
-        })
-        # If listener is being disabled, remove any cached value from
-        # the comm's shared_objects so consumers don't see stale values.
-        if not bool(enabled):
-            # Prefer to use the comm instance lock if available
-            if getattr(self, 'comm', None) and getattr(self.comm, 'thread_lock', None):
-                with self.comm.thread_lock:
-                    ggb_comm.shared_objects.pop(name, None)
-            else:
-                ggb_comm.shared_objects.pop(name, None)
-
-        # Frontend returns { result: ... } inside payload; normalize return value
-        if isinstance(r, dict) and 'result' in r:
-            return r['result']
+        # Normalize common response shapes
+        if isinstance(r, dict):
+            if 'value' in r:
+                return r['value']
+            if 'payload' in r and isinstance(r['payload'], dict) and 'value' in r['payload']:
+                return r['payload']['value']
+            if 'reply' in r:
+                return r['reply']
         return r
 
     @asynccontextmanager
