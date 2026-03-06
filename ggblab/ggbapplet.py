@@ -235,7 +235,51 @@ class GeoGebra:
                     # No comm startup performed here. Users who want a
                     # full comm+frontend experience should use the
                     # AppletInjector2 helpers in `ggblab_core2`.
-                    pass
+                    # Backwards-compatibility: attempt to use the AppletInjector2
+                    # helper from `ggblab_core2` so that calling `GeoGebra.init()`
+                    # will open the frontend panel for older callsites.
+                    # NOTE: This behavior is deprecated; emit a warning so callers
+                    # migrate to explicit `ggblab_core2.applet.AppletInjector2` usage.
+                    try:
+                        import warnings
+                        import logging as _logging
+                        try:
+                            warnings.warn(
+                                'Calling AppletInjector2 via GeoGebra.init() is deprecated; '
+                                'create and use ggblab_core2.applet.AppletInjector2() explicitly instead.',
+                                DeprecationWarning,
+                                stacklevel=2,
+                            )
+                        except Exception:
+                            # best-effort: some environments may restrict warnings
+                            _logging.getLogger(__name__).warning(
+                                'Deprecated: AppletInjector2 invocation via GeoGebra.init()'
+                            )
+
+                        # Prevent recursive injection when AppletInjector2.open() calls
+                        # back into GeoGebra.init() on the same singleton instance.
+                        if not getattr(self, '_applet_injected', False):
+                            from ggblab_core2.applet import AppletInjector2
+                            # mark as attempted before calling open() to avoid recursion
+                            self._applet_injected = True
+                            try:
+                                app = AppletInjector2()
+                                # open() returns an initialized GeoGebra instance
+                                # on success; ignore the return value (singleton)
+                                try:
+                                    app.open(appName)
+                                except TypeError:
+                                    # older versions may have different signature
+                                    try:
+                                        app.open()
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                # best-effort; do not fail init on injector errors
+                                pass
+                    except Exception:
+                        # best-effort: ignore any import/warning failures
+                        pass
             except Exception:
                 # Best-effort: don't fail init if publishing/setup fails
                 pass
