@@ -115,8 +115,22 @@ strings and sent inside the `payload` object:
 function send_function(name, args...; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
     name_str = isa(name, Symbol) ? string(name) : string(name)
     arg_strs = [string(a) for a in args]
-    payload = Dict("type"=>"function", "payload"=>Dict("name"=>name_str, "args"=>arg_strs))
-    return request(payload; host=host, port=port)
+    args_field = length(arg_strs) == 0 ? nothing : arg_strs
+    payload = Dict("type"=>"function", "payload"=>Dict("name"=>name_str, "args"=>args_field))
+    resp = request(payload; host=host, port=port)
+    try
+        if resp isa AbstractDict && haskey(resp, "value")
+            return resp["value"]
+        elseif resp isa AbstractDict && haskey(resp, "payload")
+            p = resp["payload"]
+            if p isa AbstractDict && haskey(p, "value")
+                return p["value"]
+            end
+        end
+    catch
+        # fall through and return original response on any error
+    end
+    return resp
 end
 
 """Helper called by the macro: evaluate an argument tuple and call `send_command`."""
