@@ -34,6 +34,14 @@ def _import_server_client():
         return None, None
 
 
+def _get_server_module():
+    try:
+        import comm_bridge.server as _server  # type: ignore
+        return _server
+    except Exception:
+        return None
+
+
 def start_bridge(port: int = 0, timeout: float = 10.0) -> dict:
     """Start the local comm bridge server.
 
@@ -91,6 +99,20 @@ def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: fl
     Raises
     - RuntimeError if the bridge client module is not available.
     """
+    # Prefer same-process fast-path when a local bridge is running.
+    server = _get_server_module()
+    if server is not None:
+        try:
+            state = getattr(server, 'get_state', lambda: {})()
+            if state.get('running') and hasattr(server, 'local_send'):
+                try:
+                    return server.local_send(payload, timeout=timeout)
+                except Exception:
+                    # fall through to TCP client fallback
+                    pass
+        except Exception:
+            pass
+
     _, client = _import_server_client()
     if client is None:
         raise RuntimeError('comm_bridge.client not available')
@@ -124,6 +146,19 @@ def request_with_retry(payload: Any, host: str = '127.0.0.1', port: int = 8765,
     Returns
     - Any: the bridge response if successful, or a dict with ``error``.
     """
+    # Try same-process fast-path first
+    server = _get_server_module()
+    if server is not None:
+        try:
+            state = getattr(server, 'get_state', lambda: {})()
+            if state.get('running') and hasattr(server, 'local_send'):
+                try:
+                    return server.local_send(payload, timeout=timeout)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     _, client = _import_server_client()
     if client is None:
         raise RuntimeError('comm_bridge.client not available')
