@@ -18,6 +18,64 @@ used for diagnostics.
 from typing import Optional, Dict, Any
 from .kernel_comm import get_kernel_comm
 
+# Optional bridge helpers (used for proxy-response mode)
+_py_comm_bridge = None
+_bridge_client = None
+
+def _import_comm_bridge():
+    """Attempt to import comm_bridge.server/client via multiple strategies.
+
+    Returns (server_mod, client_mod) or (None, None) if unavailable.
+    """
+    import importlib
+    import importlib.util
+    import os
+    import sys
+
+    names_to_try = [
+        ('comm_bridge.server', 'comm_bridge.client'),
+        ('ggblab.comm_bridge.server', 'ggblab.comm_bridge.client'),
+        ('ggblab_core.comm_bridge.server', 'ggblab_core.comm_bridge.client'),
+    ]
+
+    for sname, cname in names_to_try:
+        try:
+            server = importlib.import_module(sname)
+            client = importlib.import_module(cname)
+            return server, client
+        except Exception:
+            continue
+
+    # As a last resort, try to load from a sibling "comm_bridge" directory
+    # located at the repository root (two levels up from this file may vary).
+    try_paths = [
+        os.path.join(os.path.dirname(__file__), '..', 'comm_bridge', 'server.py'),
+        os.path.join(os.getcwd(), 'comm_bridge', 'server.py'),
+    ]
+
+    for server_path in try_paths:
+        try:
+            server_path = os.path.abspath(server_path)
+            client_path = os.path.splitext(server_path)[0].replace('server', 'client') + '.py'
+            if os.path.exists(server_path) and os.path.exists(client_path):
+                spec_s = importlib.util.spec_from_file_location('comm_bridge.server', server_path)
+                spec_c = importlib.util.spec_from_file_location('comm_bridge.client', client_path)
+                if spec_s and spec_c:
+                    server = importlib.util.module_from_spec(spec_s)
+                    client = importlib.util.module_from_spec(spec_c)
+                    sys.modules['comm_bridge.server'] = server
+                    sys.modules['comm_bridge.client'] = client
+                    spec_s.loader.exec_module(server)  # type: ignore
+                    spec_c.loader.exec_module(client)  # type: ignore
+                    return server, client
+        except Exception:
+            continue
+
+    return None, None
+
+
+_py_comm_bridge, _bridge_client = _import_comm_bridge()
+
 
 class AppletInjector:
     """Programmatically open the GeoGebra applet panel via `ipylab`.
@@ -32,9 +90,11 @@ class AppletInjector:
     def __init__(self, kernel_id: Optional[str] = None, comm_target: str = 'jupyter.ggblab'):
         self.kernel_id = kernel_id
         self.comm_target = comm_target
+    # If proxy mode started via `start_proxy_mode`, store bridge info here
+    _proxy_bridge: Optional[Dict[str, Any]] = None
 
     def open(self, appName: str = 'suite', insertMode: str = 'split-right', socketPath: Optional[str] = None,
-             register_kernel_comm: bool = True, wait_for_open: bool = True, wait_timeout: Optional[float] = None) -> Dict[str, Any]:
+             register_kernel_comm: bool = True) -> Dict[str, Any]:
         """Open the applet using `ipylab` and return the payload sent.
 
         Raises `RuntimeError` if `ipylab` is not available in the environment.
@@ -86,58 +146,136 @@ class AppletInjector:
         except Exception as e:
             raise RuntimeError(f"Failed to execute frontend command: {e}")
 
-        # Optionally wait for the frontend to open the comm we registered
-        if register_kernel_comm and wait_for_open:
-            try:
-                kc = get_kernel_comm()
-                kc.wait_for_open(timeout=wait_timeout)
-            except Exception:
-                # propagate timeout/other errors to caller
-                raise
+        # Note: we do not block waiting for the comm to open here. Callers who
+        # need to ensure a comm is open should call `get_kernel_comm().register_target()`
+        # prior to injection and check `get_kernel_comm().is_open`.
 
         return payload
 
+    @classmethod
+    def start_proxy_mode(cls, appName: str = 'suite', insertMode: str = 'split-right', socketPath: Optional[str] = None,
+                         kernel_id: Optional[str] = None, comm_target: str = 'jupyter.ggblab',
+                         register_kernel_comm: bool = True,
+                         bridge_host: str = '127.0.0.1', bridge_port: int = 0, bridge_timeout: float = 10.0) -> Dict[str, Any]:
+        """Inject the applet and start a local py_comm_bridge on an ephemeral port.
+
+        Returns a dict with keys:
+          - payload: the frontend payload sent by the injector
+          - bridge: the dict returned by `start_bridge()` (includes bound `port`)
+        """
+        injector = cls(kernel_id=kernel_id, comm_target=comm_target)
+        # In proxy-mode we don't register the kernel-side comm target here;
+        # the bridge will handle comm registration/attachment.
+        payload = injector.open(appName=appName, insertMode=insertMode, socketPath=socketPath,
+                    register_kernel_comm=False)
+
+        if _py_comm_bridge is None:
+            raise RuntimeError('comm_bridge.server not available in this environment')
+
+        # start on requested port (use 0 to request an ephemeral port)
+        state = _py_comm_bridge.start_server(port=bridge_port or 0, timeout=bridge_timeout)
+        # Remember bridge host/port for subsequent convenience calls
+        try:
+            bound_port = state.get('port') if isinstance(state, dict) else None
+            if bound_port:
+                cls._proxy_bridge = {'host': bridge_host, 'port': bound_port}
+        except Exception:
+            cls._proxy_bridge = None
+        return {'payload': payload, 'bridge': state}
+
+    @classmethod
+    def function_sync(cls, name: str, args: Optional[list] = None, timeout: Optional[float] = None,
+                      host: Optional[str] = None, port: Optional[int] = None):
+        """Call GeoGebra API function synchronously.
+
+        If `port` is provided, the call is forwarded via the TCP bridge; otherwise
+        the kernel-side Comm is used as before.
+        """
+        # If no explicit port, but proxy mode was started, use stored bridge
+        use_port = port
+        if use_port is None and getattr(cls, '_proxy_bridge', None):
+            use_port = cls._proxy_bridge.get('port')
+
+        def _unwrap_value(resp):
+            # Try common response shapes and return inner 'value' when present
+            try:
+                if isinstance(resp, dict):
+                    if 'reply' in resp:
+                        return _unwrap_value(resp.get('reply'))
+                    if 'payload' in resp:
+                        return _unwrap_value(resp.get('payload'))
+                    if 'value' in resp:
+                        return resp.get('value')
+                return resp
+            except Exception:
+                return resp
+
+        if use_port is not None:
+            if _bridge_client is None:
+                raise RuntimeError('bridge_client not available')
+            payload = {'type': 'function', 'payload': {'name': name, 'args': args}}
+            resp = _bridge_client.request(payload, host=host or cls._proxy_bridge.get('host', '127.0.0.1') if getattr(cls, '_proxy_bridge', None) else (host or '127.0.0.1'), port=use_port, timeout=timeout or 10.0)
+            # Bridge returns {'reply': ...} or {'error': ...}
+            return _unwrap_value(resp)
+
+        # Fallback to kernel-side Comm
+        kc = get_kernel_comm()
+        if not kc.is_open:
+            try:
+                kc.register_target()
+            except Exception:
+                pass
+            if not kc.is_open:
+                raise RuntimeError('Comm is not open; call register_target() or ensure frontend opened a comm')
+        resp = kc.send_recv({
+            'type': 'function',
+            'payload': {
+                'name': name,
+                'args': args
+            }
+        }, timeout=timeout)
+        return _unwrap_value(resp)
+
+    @classmethod
+    def command_sync(cls, command: str, timeout: Optional[float] = None,
+                     host: Optional[str] = None, port: Optional[int] = None):
+        """Execute a GeoGebra command synchronously. Uses bridge if `port` provided."""
+        # If no explicit port, but proxy mode was started, use stored bridge
+        use_port = port
+        if use_port is None and getattr(cls, '_proxy_bridge', None):
+            use_port = cls._proxy_bridge.get('port')
+
+        if use_port is not None:
+            if _bridge_client is None:
+                raise RuntimeError('bridge_client not available')
+            payload = {'type': 'command', 'payload': command}
+            resp = _bridge_client.request(payload, host=host or cls._proxy_bridge.get('host', '127.0.0.1') if getattr(cls, '_proxy_bridge', None) else (host or '127.0.0.1'), port=use_port, timeout=timeout or 10.0)
+            if isinstance(resp, dict):
+                return resp.get('reply', resp) or resp
+            return resp
+
+        kc = get_kernel_comm()
+        if not kc.is_open:
+            try:
+                kc.register_target()
+            except Exception:
+                pass
+            if not kc.is_open:
+                raise RuntimeError('Comm is not open; call register_target() or ensure frontend opened a comm')
+        resp = kc.send_recv({
+            'type': 'command',
+            'payload': command
+        }, timeout=timeout)
+        if isinstance(resp, dict):
+            return resp.get('payload', resp)
+        return resp
+
 
 def function_sync(name: str, args: Optional[list] = None, timeout: Optional[float] = None):
-    """Call a GeoGebra API function synchronously via the kernel-side Comm.
-
-    Returns the function result (frontend should return {'id': ..., 'value': ...}).
-    """
-    kc = get_kernel_comm()
-    if not kc.is_open:
-        # If the comm isn't open, try to wait a short while
-        kc.wait_for_open(timeout=timeout or kc.timeout)
-    resp = kc.send_recv({
-        'type': 'function',
-        'payload': {
-            'name': name,
-            'args': args
-        }
-    }, timeout=timeout)
-    # ggblab frontend replies use { type: 'value', id, payload: { value: ... } }
-    if isinstance(resp, dict):
-        pl = resp.get('payload') or {}
-        if 'value' in pl:
-            return pl['value']
-        # older format support: direct 'value' key
-        if 'value' in resp:
-            return resp['value']
-    return resp
+    """Compatibility wrapper: call `AppletInjector.function_sync` using kernel Comm."""
+    return AppletInjector.function_sync(name, args=args, timeout=timeout)
 
 
 def command_sync(command: str, timeout: Optional[float] = None):
-    """Execute a GeoGebra command synchronously via the kernel-side Comm.
-
-    Returns the frontend response (may include 'label' or other metadata).
-    """
-    kc = get_kernel_comm()
-    if not kc.is_open:
-        kc.wait_for_open(timeout=timeout or kc.timeout)
-    resp = kc.send_recv({
-        'type': 'command',
-        'payload': command
-    }, timeout=timeout)
-    # For commands the frontend returns { type: 'created'|'error', id, payload: ... }
-    if isinstance(resp, dict):
-        return resp.get('payload', resp)
-    return resp
+    """Compatibility wrapper: call `AppletInjector.command_sync` using kernel Comm."""
+    return AppletInjector.command_sync(command, timeout=timeout)

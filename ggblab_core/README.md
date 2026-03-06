@@ -21,8 +21,8 @@ the first reply and returns it as a single-line JSON response.
 Usage (in a Python kernel):
 
 ```python
-from ggblab_core import start_bridge, stop_bridge
-start_bridge(port=8765, timeout=10.0)
+from ggblab_core import start_server, stop_server
+start_server(port=8765, timeout=10.0)
 # ... when finished
 stop_bridge()
 ```

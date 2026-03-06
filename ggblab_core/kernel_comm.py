@@ -88,69 +88,8 @@ class KernelComm:
         except Exception:
             _log.exception('Failed to scan existing comms on register_target')
 
-    def wait_for_open(self, timeout: Optional[float] = None) -> None:
-        """Block until a frontend opens a comm to the registered target.
-
-        Raises `TimeoutError` if no open arrives within `timeout` seconds.
-        """
-        if timeout is None:
-            timeout = self.timeout
-        ok = self._open_event.wait(timeout=timeout)
-        if not ok:
-            raise TimeoutError(f"No frontend opened a comm to target {self.target_name} within {timeout}s")
-
-    def attach_existing_comm(self, comm_id: str) -> bool:
-        """Attempt to attach to an already-open comm with id `comm_id`.
-
-        Returns True if attached, False otherwise.
-        """
-        ip = get_ipython()
-        kernel = getattr(ip, 'kernel', None)
-        if kernel is None:
-            raise RuntimeError('No kernel available to inspect comms')
-
-        cm = getattr(kernel, 'comm_manager', None)
-        if cm is None:
-            return False
-
-        # Try common dict attributes that may hold comm objects
-        comms_dict = None
-        if hasattr(cm, 'comms'):
-            comms_dict = cm.comms
-        elif hasattr(cm, '_comms'):
-            comms_dict = cm._comms
-
-        if not comms_dict:
-            return False
-
-        for cid, comm in list(comms_dict.items()):
-            try:
-                # check a variety of attributes that may store the id
-                cand = None
-                for attr in ('comm_id', 'id', '_id', 'topic', 'comm_id', 'comm_id_hex'):
-                    if hasattr(comm, attr):
-                        cand = getattr(comm, attr)
-                        break
-                # Some comm implementations store the id under ._id or .id, and some use the dict key
-                if cand is None:
-                    cand = cid
-
-                if str(cand) == str(comm_id):
-                    # attach
-                    self.comm = comm
-                    try:
-                        comm.on_msg(self._on_msg)
-                    except Exception:
-                        pass
-                    try:
-                        self._open_event.set()
-                    except Exception:
-                        pass
-                    return True
-            except Exception:
-                _log.exception('Error while checking existing comm %r', cid)
-
-        return False
+    # Removed compatibility helpers: callers should use `register_target()` and
+    # check `is_open` for existing comm attachment.
 
     @property
     def is_open(self) -> bool:
@@ -241,104 +180,7 @@ def get_kernel_comm() -> KernelComm:
     return _kernel_comm_instance
 
 
-def attach_existing_comm(comm_id: str) -> bool:
-    """Module-level helper: attach the existing comm with id `comm_id`.
-
-    Returns True if attached, False otherwise.
-    """
-    kc = get_kernel_comm()
-    if not hasattr(kc, 'attach_existing_comm'):
-        raise AttributeError("KernelComm object has no attribute 'attach_existing_comm'. Please reload the module to pick up recent changes.")
-    # First try the direct attach
-    ok = kc.attach_existing_comm(comm_id)
-    if ok:
-        return True
-
-    # If not found, perform a more thorough scan and try loose matching
-    def _scan_and_try_attach(kc_obj: KernelComm, cid: str) -> bool:
-        ip = get_ipython()
-        kernel = getattr(ip, 'kernel', None)
-        if kernel is None:
-            return False
-        cm = getattr(kernel, 'comm_manager', None)
-        if cm is None:
-            return False
-
-        # Candidate dicts to inspect
-        candidates = []
-        for name in ("comms", "_comms", "_comms_by_msgid", "_targets_by_id", "_targets"):
-            if hasattr(cm, name):
-                try:
-                    val = getattr(cm, name)
-                    if isinstance(val, dict) and val:
-                        candidates.append((name, val))
-                except Exception:
-                    continue
-
-        # Inspect each comm object for attributes or repr that contain the comm id
-        for name, d in candidates:
-            for key, comm in list(d.items()):
-                try:
-                    # check known attributes
-                    attrs = {}
-                    for a in ('comm_id', 'id', '_id', 'topic', 'target_name', 'target', '_target'):
-                        if hasattr(comm, a):
-                            try:
-                                attrs[a] = getattr(comm, a)
-                            except Exception:
-                                attrs[a] = '<error>'
-
-                    # check repr and __dict__ for an occurrence of comm_id string
-                    found = False
-                    try:
-                        if isinstance(key, str) and key == cid:
-                            found = True
-                        else:
-                            r = repr(comm)
-                            if cid in r:
-                                found = True
-                    except Exception:
-                        pass
-
-                    if not found:
-                        try:
-                            for v in list(getattr(comm, '__dict__', {}).values()):
-                                try:
-                                    if isinstance(v, str) and cid in v:
-                                        found = True
-                                        break
-                                except Exception:
-                                    continue
-                        except Exception:
-                            pass
-
-                    if found:
-                        # attach and return
-                        try:
-                            kc_obj.comm = comm
-                            try:
-                                comm.on_msg(kc_obj._on_msg)
-                            except Exception:
-                                pass
-                            try:
-                                kc_obj._open_event.set()
-                            except Exception:
-                                pass
-                            return True
-                        except Exception:
-                            _log.exception('Failed to attach to comm object during loose scan')
-                except Exception:
-                    _log.exception('Error inspecting comm during loose scan')
-
-        return False
-
-    ok = _scan_and_try_attach(kc, comm_id)
-    if not ok:
-        try:
-            _log.debug('attach_existing_comm: loose scan did not find %s; dumping comm manager summary', comm_id)
-        except Exception:
-            pass
-    return ok
+# Compatibility helper removed to reduce maintenance and confusion.
 
 
 def describe_comm_manager() -> Dict[str, Any]:
@@ -390,23 +232,4 @@ def describe_comm_manager() -> Dict[str, Any]:
     return out
 
 
-def attach_existing_comm_verbose(comm_id: str) -> Dict[str, Any]:
-    """Attempt to attach and return diagnostic information.
-
-    Returns a dict with keys: attached (bool), attempts (list of inspected locations),
-    and a comm_manager summary.
-    """
-    info: Dict[str, Any] = {'attached': False, 'inspected': []}
-    try:
-        ok = attach_existing_comm(comm_id)
-        info['attached'] = bool(ok)
-    except Exception as e:
-        info['error'] = repr(e)
-        info['attached'] = False
-
-    try:
-        info['comm_manager'] = describe_comm_manager()
-    except Exception:
-        info['comm_manager'] = {'error': 'describe-failed'}
-
-    return info
+# (verbose attach helper removed)

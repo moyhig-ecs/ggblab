@@ -13,7 +13,13 @@ from .kernel_comm import KernelComm, get_kernel_comm
 from .applet import AppletInjector
 
 # Bridge utility (TCP -> frontend Comm)
-from .py_comm_bridge import start_bridge, stop_bridge, get_bridge_state
+try:
+	from comm_bridge.server import start_server, stop_server, get_state
+except Exception:
+	def _bridge_unavailable(*args, **kwargs):
+		raise RuntimeError('comm_bridge.server not available in this environment')
+
+	start_server = stop_server = get_state = _bridge_unavailable
 
 __all__ = [
 	"CommSync",
@@ -21,7 +27,7 @@ __all__ = [
 	"KernelComm",
 	"get_kernel_comm",
 	"AppletInjector",
-	"start_bridge",
-	"stop_bridge",
-	"get_bridge_state",
+	"start_server",
+	"stop_server",
+	"get_state",
 ]
