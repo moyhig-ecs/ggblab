@@ -184,3 +184,55 @@ try:
             pass
 except Exception:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Module-level forwarding to a default GeoGebra instance (deprecated)
+# Allows callers using PyCall/pyimport to do `ggb = pyimport("ggblab")`
+# and then call `ggb.init()` etc. This is a compatibility shim and will
+# emit a `DeprecationWarning` when used. Prefer `from ggblab import GeoGebra`.
+# ---------------------------------------------------------------------------
+import warnings as _warnings
+
+__default_geo = None
+_module_api_warned = False
+
+def _create_default_instance():
+    global _default_geo, _module_api_warned
+    if _default_geo is None:
+        if not _module_api_warned:
+            _warnings.warn(
+                "Using the module-level ggblab API is deprecated. "
+                "Import `GeoGebra` and instantiate it explicitly: `from ggblab import GeoGebra; ggb = GeoGebra()`.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            _module_api_warned = True
+        try:
+            _default_geo = GeoGebra()
+        except Exception:
+            # If construction fails, leave _default_geo as None and
+            # let attribute access raise an informative error later.
+            _default_geo = None
+    return _default_geo
+
+def __getattr__(name):
+    """Forward unknown module attributes to a default GeoGebra instance.
+
+    This enables `ggb = pyimport('ggblab'); ggb.init()` to work while
+    keeping the explicit `GeoGebra` class available for direct use.
+    """
+    inst = _create_default_instance()
+    if inst is None:
+        raise AttributeError(f"ggblab module attribute '{name}' not found and default GeoGebra instance could not be created")
+    return getattr(inst, name)
+
+def __dir__():
+    names = list(globals().keys())
+    inst = _default_geo
+    if inst is not None:
+        try:
+            names.extend([n for n in dir(inst) if n not in names])
+        except Exception:
+            pass
+    return sorted(names)
