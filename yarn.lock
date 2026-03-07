@@ -6862,7 +6862,6 @@ __metadata:
     eslint-config-prettier: ^8.8.0
     eslint-plugin-prettier: ^5.0.0
     jest: ^29.2.0
-    node-gyp: ^12.2.0
     npm-run-all2: ^7.0.1
     prettier: ^3.0.0
     react: ^19.2.4
@@ -8944,7 +8943,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-gyp@npm:^12.2.0, node-gyp@npm:latest":
+"node-gyp@npm:latest":
   version: 12.2.0
   resolution: "node-gyp@npm:12.2.0"
   dependencies:

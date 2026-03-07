@@ -1,3 +1,0 @@
-recursive-include ggblab/labextension *
-recursive-include ggblab/schema *
-recursive-include ggblab/style *
