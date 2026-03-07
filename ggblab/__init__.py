@@ -255,8 +255,21 @@ try:
             # the module object is replaced.
             try:
                 setattr(inst, 'GeoGebra', GeoGebra)
-                setattr(inst, 'ggb_comm', ggb_comm)
-                setattr(inst, 'ggb_file', ggb_file)
+                # setattr(inst, 'ggb_comm', ggb_comm)
+                # setattr(inst, 'ggb_file', ggb_file)
+            except Exception:
+                pass
+            # Copy core module metadata so tools like autoreload that expect
+            # module objects (with __name__, __spec__, etc.) continue to work.
+            try:
+                mod = _sys.modules.get(__name__)
+                if mod is not None:
+                    for attr in ('__name__', '__package__', '__spec__', '__file__', '__path__', '__loader__'):
+                        if hasattr(mod, attr):
+                            try:
+                                setattr(inst, attr, getattr(mod, attr))
+                            except Exception:
+                                pass
             except Exception:
                 pass
         except Exception:
