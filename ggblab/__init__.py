@@ -197,10 +197,10 @@ import warnings as _warnings
 _default_geo = None
 _module_api_warned = False
 
-def _create_default_instance():
+def _create_default_instance(suppress_warning: bool = False):
     global _default_geo, _module_api_warned
     if _default_geo is None:
-        if not _module_api_warned:
+        if not _module_api_warned and not suppress_warning:
             _warnings.warn(
                 "Using the module-level ggblab API is deprecated. "
                 "Import `GeoGebra` and instantiate it explicitly: `from ggblab import GeoGebra; ggb = GeoGebra()`.",
@@ -247,7 +247,7 @@ def __dir__():
 # ---------------------------------------------------------------------------
 try:
     import sys as _sys
-    inst = _default_geo or _create_default_instance()
+    inst = _default_geo or _create_default_instance(suppress_warning=True)
     if inst is not None:
         try:
             # Copy a few helpful module-level symbols onto the instance so
