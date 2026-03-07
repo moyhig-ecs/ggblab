@@ -11,6 +11,39 @@ Main Components:
     - ggb_parser: Dependency graph parser for GeoGebra constructions
 
 Example:
+
+
+# ---------------------------------------------------------------------------
+# Replace the module object in `sys.modules` with the default GeoGebra
+# instance so `import ggblab as ggb` yields an object that behaves like
+# a `GeoGebra` instance. This is intentional for PyCall/pyimport usage
+# where callers expect the imported object to provide the instance API.
+# We do NOT call `init()` here; only construct the controller object.
+# ---------------------------------------------------------------------------
+try:
+    import sys as _sys
+    inst = _default_geo or _create_default_instance()
+    if inst is not None:
+        try:
+            # Copy a few helpful module-level symbols onto the instance so
+            # existing import patterns like `ggb.GeoGebra` still work when
+            # the module object is replaced.
+            try:
+                setattr(inst, 'GeoGebra', GeoGebra)
+                setattr(inst, 'ggb_comm', ggb_comm)
+                setattr(inst, 'ggb_file', ggb_file)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            _sys.modules[__name__] = inst
+        except Exception:
+            # If replacing sys.modules fails for any reason, do nothing.
+            pass
+except Exception:
+    # Never let import fail because of this compatibility step
+    pass
     >>> from ggblab import GeoGebra
     >>> ggb = await GeoGebra().init()
     >>> await ggb.command("A=(0,0)")
