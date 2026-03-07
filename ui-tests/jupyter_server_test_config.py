@@ -7,6 +7,7 @@ JavaScript objects through the global window variable.
 
 from jupyterlab.galata import configure_jupyter_server
 
+c = globals().get("c")
 configure_jupyter_server(c)
 
 # Uncomment to set server log level to debug level

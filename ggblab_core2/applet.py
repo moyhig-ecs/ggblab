@@ -6,9 +6,13 @@ frontend-specific code in the kernel-focused package.
 """
 
 import asyncio
+import json
 import re
+import subprocess
 import threading
+from pathlib import Path
 from typing import Optional
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import ipykernel.connect
 

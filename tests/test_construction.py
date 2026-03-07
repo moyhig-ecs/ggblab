@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from ggblab import ggb_construction
 from ggblab.file import ggb_file
 
 # Test fixtures
