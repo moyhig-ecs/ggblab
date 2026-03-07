@@ -194,7 +194,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 import warnings as _warnings
 
-__default_geo = None
+_default_geo = None
 _module_api_warned = False
 
 def _create_default_instance():
