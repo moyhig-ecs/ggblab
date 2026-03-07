@@ -25,7 +25,7 @@ import re
 import time
 from itertools import chain, combinations
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import networkx as nx
 import polars as pl
@@ -35,7 +35,7 @@ from ggblab.persistent_counter import PersistentCounter
 from ggblab.utils import flatten
 
 if TYPE_CHECKING:
-    from ggblab.ggbapplet import GeoGebra
+    pass
 
 # module logger
 logger = logging.getLogger(__name__)
@@ -44,7 +44,9 @@ logger = logging.getLogger(__name__)
 _ggb_parser = ggb_parser()
 
 
-def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = False) -> nx.DiGraph:
+def build_graph_from_df(
+    df, col: str = "DependsOn", reduce_transitive: bool = False
+) -> nx.DiGraph:
     """Reconstruct a NetworkX DiGraph from a DataFrame's dependency column.
 
     Args:
@@ -61,7 +63,16 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
     G = nx.DiGraph()
     try:
         names = df["Name"].to_list()
-    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+    except (
+        AttributeError,
+        TypeError,
+        KeyError,
+        IndexError,
+        ValueError,
+        OSError,
+        json.JSONDecodeError,
+        nx.NetworkXError,
+    ):
         # fallback for dict-like or pandas
         names = list(df["Name"])
 
@@ -72,11 +83,29 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
         if "Type" in df.columns:
             try:
                 types_list = df["Type"].to_list()
-            except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+            except (
+                AttributeError,
+                TypeError,
+                KeyError,
+                IndexError,
+                ValueError,
+                OSError,
+                json.JSONDecodeError,
+                nx.NetworkXError,
+            ):
                 types_list = list(df["Type"])
             type_map = {name: t for name, t in zip(names, types_list)}
             nx.set_node_attributes(G, type_map, "Type")
-    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+    except (
+        AttributeError,
+        TypeError,
+        KeyError,
+        IndexError,
+        ValueError,
+        OSError,
+        json.JSONDecodeError,
+        nx.NetworkXError,
+    ):
         pass
 
     # obtain raw dependency column values
@@ -85,7 +114,16 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
 
     try:
         raw = df[col].to_list()
-    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+    except (
+        AttributeError,
+        TypeError,
+        KeyError,
+        IndexError,
+        ValueError,
+        OSError,
+        json.JSONDecodeError,
+        nx.NetworkXError,
+    ):
         raw = list(df[col])
 
     for name, v in zip(names, raw):
@@ -158,7 +196,16 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
             anc_map = {}
             try:
                 raw_col = df[col].to_list()
-            except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+            except (
+                AttributeError,
+                TypeError,
+                KeyError,
+                IndexError,
+                ValueError,
+                OSError,
+                json.JSONDecodeError,
+                nx.NetworkXError,
+            ):
                 raw_col = list(df[col])
 
             for name, v in zip(names, raw_col):
@@ -178,17 +225,15 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
 
             # compute minimal parents per node: remove any d if it is an ancestor
             # of some other declared dependency in the same row
-            minimal_map = {}
             for name, deps in anc_map.items():
-                minimal = set()
                 for d in deps:
                     # if d is an ancestor of any other dep in this row, skip it
-                    is_transitive = False
                     for other in deps:
                         try:
                             if nx.is_directed_acyclic_graph(G):
                                 try:
-                                    from networkx.algorithms.dag import transitive_reduction
+                                    from networkx.algorithms.dag import \
+                                        transitive_reduction
 
                                     G = transitive_reduction(G)
                                 except (ImportError, nx.NetworkXError):
@@ -217,16 +262,37 @@ def build_graph_from_df(df, col: str = "DependsOn", reduce_transitive: bool = Fa
                                     except nx.NetworkXError:
                                         pass
                                 G.remove_edges_from(to_remove)
-                        except (AttributeError, TypeError, nx.NetworkXError, ValueError):
+                        except (
+                            AttributeError,
+                            TypeError,
+                            nx.NetworkXError,
+                            ValueError,
+                        ):
                             # best-effort: if reduction fails, return original graph
                             pass
-        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+        except (
+            AttributeError,
+            TypeError,
+            KeyError,
+            IndexError,
+            ValueError,
+            OSError,
+            json.JSONDecodeError,
+            nx.NetworkXError,
+        ):
             pass
 
     return G
 
 
-def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elements: Sequence[str], *, group_suffix: str = '__list') -> str:
+def group_list_nodes(
+    G: nx.DiGraph,
+    list_name: str,
+    parents: Sequence[str],
+    elements: Sequence[str],
+    *,
+    group_suffix: str = "__list",
+) -> str:
     """Create a grouping node for a list-like construction and wire parents/elements.
 
     Given a directed graph ``G``, a ``list_name`` (e.g. ``l1``), a sequence
@@ -281,7 +347,13 @@ def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elem
     # Record group membership and label for downstream consumers/renderers.
     nx.set_node_attributes(
         G,
-        {group_node: {'group_members': list(elements), 'label': list_name, 'Type': 'list_group'}},
+        {
+            group_node: {
+                "group_members": list(elements),
+                "label": list_name,
+                "Type": "list_group",
+            }
+        },
     )
 
     # Ensure the original list node exists as an isolated placeholder
@@ -290,7 +362,7 @@ def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elem
     # parent->group->element wiring used for list grouping.
     if list_name not in G:
         G.add_node(list_name)
-    nx.set_node_attributes(G, {list_name: {'Type': 'list'}})
+    nx.set_node_attributes(G, {list_name: {"Type": "list"}})
 
     # Remove any incident edges so the list node acts as an isolated placeholder
     for u in list(G.predecessors(list_name)):
@@ -303,7 +375,9 @@ def group_list_nodes(G: nx.DiGraph, list_name: str, parents: Sequence[str], elem
     return group_node
 
 
-def visible_successors(G: nx.DiGraph, node: str, *, group_type: str = 'list_group') -> Sequence[str]:
+def visible_successors(
+    G: nx.DiGraph, node: str, *, group_type: str = "list_group"
+) -> Sequence[str]:
     """Return successors for display: prefer group nodes if present.
 
     If the node has outgoing edges to any group nodes (nodes with
@@ -316,11 +390,13 @@ def visible_successors(G: nx.DiGraph, node: str, *, group_type: str = 'list_grou
         succs = list(G.successors(node))
     except Exception:
         return []
-    group_succs = [s for s in succs if G.nodes.get(s, {}).get('Type') == group_type]
+    group_succs = [s for s in succs if G.nodes.get(s, {}).get("Type") == group_type]
     return group_succs or succs
 
 
-def visible_descendants(G: nx.DiGraph, source: str, *, group_type: str = 'list_group') -> set:
+def visible_descendants(
+    G: nx.DiGraph, source: str, *, group_type: str = "list_group"
+) -> set:
     """Compute descendants but stop traversal at group nodes.
 
     This returns the set of reachable nodes from ``source`` but does not
@@ -340,7 +416,7 @@ def visible_descendants(G: nx.DiGraph, source: str, *, group_type: str = 'list_g
             visited.add(s)
             # Do not traverse past group nodes
             try:
-                if G.nodes.get(s, {}).get('Type') == group_type:
+                if G.nodes.get(s, {}).get("Type") == group_type:
                     continue
             except Exception:
                 pass
@@ -349,7 +425,10 @@ def visible_descendants(G: nx.DiGraph, source: str, *, group_type: str = 'list_g
 
 
 def tokenize_with_commas(cmd_string, extract_commands=False):
-    return _ggb_parser.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
+    return _ggb_parser.tokenize_with_commas(
+        cmd_string, extract_commands=extract_commands
+    )
+
 
 # Tokenization is provided by the core package `ggblab.parser`.
 # We import `tokenize_with_commas` directly above and use it in-place.
@@ -398,12 +477,45 @@ class ConstructionTreeParser:
 
     pl.Config.set_tbl_rows(-1)
     COLUMNS = ["Type", "Command", "Value", "Caption", "Layer"]
-    SHAPES = ["point", "segment", "vector", "ray", "line", "circle", "conic", "polygon", "triangle", "quadrilateral", "boolean", "numeric", "angle"]
-    SHAPES3D = ['conic3dpart', 'segment3d', 'vector3d', 'quadricpart', 'quadric', 'line3d', 'polygon3d', 'quadriclimited', 'plane3d', 'conic3d', 'point3d']
+    SHAPES = [
+        "point",
+        "segment",
+        "vector",
+        "ray",
+        "line",
+        "circle",
+        "conic",
+        "polygon",
+        "triangle",
+        "quadrilateral",
+        "boolean",
+        "numeric",
+        "angle",
+    ]
+    SHAPES3D = [
+        "conic3dpart",
+        "segment3d",
+        "vector3d",
+        "quadricpart",
+        "quadric",
+        "line3d",
+        "polygon3d",
+        "quadriclimited",
+        "plane3d",
+        "conic3d",
+        "point3d",
+    ]
     # Default container types to include when searching for composite objects
     DEFAULT_CONTAINER_TYPES = {"polygon", "segment", "circle"}
 
-    def __init__(self, df=None, cache_path=None, cache_enabled=True, auto_assign_layers: bool = False, **kwargs):
+    def __init__(
+        self,
+        df=None,
+        cache_path=None,
+        cache_enabled=True,
+        auto_assign_layers: bool = False,
+        **kwargs,
+    ):
         """Initialize the parser with optional construction dataframe and command caching.
 
         Args:
@@ -426,8 +538,10 @@ class ConstructionTreeParser:
         self.roots = []
         self.leaves = []
 
-        cache_path = cache_path or '.ggblab_command_cache'
-        self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
+        cache_path = cache_path or ".ggblab_command_cache"
+        self.command_cache = PersistentCounter(
+            cache_path=cache_path, enabled=cache_enabled
+        )
         # (Note) Two-pass parent-child adjustment removed; layering is single-pass
         # Backwards-compatible: accept `auto_assign_layers` kw but feature is
         # currently disabled; parameter is ignored.
@@ -459,11 +573,17 @@ class ConstructionTreeParser:
         self.rd = {v: k for k, v in enumerate(self.df["Name"])}
 
         # tokenized function, flattened (delegate to external tokenizer)
-        self.ft = {n: list([e for e in flatten(tokenize_with_commas(c)) if e != ','])
-             for n, c in self.df.filter(pl.col("Type").is_in(self.SHAPES + self.SHAPES3D)).select(["Name", "Command"]).iter_rows()}
+        self.ft = {
+            n: list([e for e in flatten(tokenize_with_commas(c)) if e != ","])
+            for n, c in self.df.filter(
+                pl.col("Type").is_in(self.SHAPES + self.SHAPES3D)
+            )
+            .select(["Name", "Command"])
+            .iter_rows()
+        }
 
         for o in list(self.rd.keys()):
-            for n in ['xAxis', 'yAxis', 'zAxis', 'xOyPlane', 'xOzPlane', 'yOzPlane']:
+            for n in ["xAxis", "yAxis", "zAxis", "xOyPlane", "xOzPlane", "yOzPlane"]:
                 if n in self.ft.get(o, []):
                     # print(f"found {n} dependency in {o}")
                     self.rd[n] = None
@@ -473,8 +593,8 @@ class ConstructionTreeParser:
         for command_str in self.df["Command"]:
             if command_str:
                 result = tokenize_with_commas(command_str, extract_commands=True)
-                if 'commands' in result:
-                    self.command_cache.increment(result['commands'])
+                if "commands" in result:
+                    self.command_cache.increment(result["commands"])
 
         # graph in forward/backward dependency
         # self.graph  = {k: self.ffd(k) for k in self.df.filter(pl.col("Type") != "text")["Name"]}
@@ -495,18 +615,49 @@ class ConstructionTreeParser:
 
         # attach Type attributes from the dataframe to graph nodes when available
         try:
-            if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
+            if (
+                hasattr(self, "df")
+                and self.df is not None
+                and "Type" in self.df.columns
+            ):
                 try:
                     types_list = self.df["Type"].to_list()
-                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                except (
+                    AttributeError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    ValueError,
+                    OSError,
+                    json.JSONDecodeError,
+                    nx.NetworkXError,
+                ):
                     types_list = list(self.df["Type"])
                 try:
                     names_list = self.df["Name"].to_list()
-                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                except (
+                    AttributeError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    ValueError,
+                    OSError,
+                    json.JSONDecodeError,
+                    nx.NetworkXError,
+                ):
                     names_list = list(self.df["Name"])
                 type_map = {name: t for name, t in zip(names_list, types_list)}
                 nx.set_node_attributes(self.G, type_map, "Type")
-        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+        except (
+            AttributeError,
+            TypeError,
+            KeyError,
+            IndexError,
+            ValueError,
+            OSError,
+            json.JSONDecodeError,
+            nx.NetworkXError,
+        ):
             pass
 
         self.roots = [v for v, d in self.G.in_degree() if d == 0]
@@ -516,26 +667,35 @@ class ConstructionTreeParser:
         # If the column exists as JSON strings, decode; otherwise compute
         # transitively from the graph. Best-effort: do not fail parse() on errors.
         try:
-            if not (hasattr(self, 'df') and self.df is not None):
+            if not (hasattr(self, "df") and self.df is not None):
                 # nothing to do when there's no dataframe
                 pass
             else:
                 # Extract name/command/type lists once for multiple consumers
                 try:
-                    names_list = self.df['Name'].to_list()
-                    cmds_list = self.df['Command'].to_list()
-                    types_list = self.df['Type'].to_list()
+                    names_list = self.df["Name"].to_list()
+                    cmds_list = self.df["Command"].to_list()
+                    types_list = self.df["Type"].to_list()
                 except Exception:
-                    names_list = list(self.df['Name'])
-                    cmds_list = list(self.df['Command'])
-                    types_list = list(self.df['Type'])
+                    names_list = list(self.df["Name"])
+                    cmds_list = list(self.df["Command"])
+                    types_list = list(self.df["Type"])
 
                 # Obtain raw DependsOn column if present (may be JSON strings)
                 try:
                     if "DependsOn" in self.df.columns:
                         try:
                             raw_col = self.df["DependsOn"].to_list()
-                        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                        except (
+                            AttributeError,
+                            TypeError,
+                            KeyError,
+                            IndexError,
+                            ValueError,
+                            OSError,
+                            json.JSONDecodeError,
+                            nx.NetworkXError,
+                        ):
                             raw_col = list(self.df["DependsOn"])
                     else:
                         raw_col = None
@@ -550,17 +710,28 @@ class ConstructionTreeParser:
                             try:
                                 converted.append(json.loads(v))
                             except (json.JSONDecodeError, TypeError, ValueError):
-                                converted.append(sorted(nx.ancestors(self.G, n)) if n in self.G else [])
+                                converted.append(
+                                    sorted(nx.ancestors(self.G, n))
+                                    if n in self.G
+                                    else []
+                                )
                         elif v is None:
-                            converted.append(sorted(nx.ancestors(self.G, n)) if n in self.G else [])
+                            converted.append(
+                                sorted(nx.ancestors(self.G, n)) if n in self.G else []
+                            )
                         else:
                             converted.append(v)
                 else:
-                    converted = [sorted(nx.ancestors(self.G, n)) if n in self.G else [] for n in self.df["Name"]]
+                    converted = [
+                        sorted(nx.ancestors(self.G, n)) if n in self.G else []
+                        for n in self.df["Name"]
+                    ]
 
                 # attach or replace DependsOn as a polars List(Utf8) column
                 try:
-                    self.df = self.df.with_columns(pl.Series("DependsOn", converted).cast(pl.List(pl.Utf8)))
+                    self.df = self.df.with_columns(
+                        pl.Series("DependsOn", converted).cast(pl.List(pl.Utf8))
+                    )
                 except Exception:
                     # best-effort attach without casting
                     self.df = self.df.with_columns(pl.Series("DependsOn", converted))
@@ -571,13 +742,15 @@ class ConstructionTreeParser:
                 list_elements_map = {}
                 for name, cmd, typ in zip(names_list, cmds_list, types_list):
                     # print(f"Processing {name}: type={typ}, command={cmd}")
-                    if typ != 'list' or not cmd:
+                    if typ != "list" or not cmd:
                         continue
 
                     cmd_text = str(cmd)
                     try:
-                        brace_match = re.match(r'^\s*\{(.*)\}\s*$', cmd_text, re.DOTALL)
-                        inner_cmd = brace_match.group(1).strip() if brace_match else cmd_text
+                        brace_match = re.match(r"^\s*\{(.*)\}\s*$", cmd_text, re.DOTALL)
+                        inner_cmd = (
+                            brace_match.group(1).strip() if brace_match else cmd_text
+                        )
                     except Exception:
                         inner_cmd = cmd_text
 
@@ -590,14 +763,18 @@ class ConstructionTreeParser:
                         paren = re.search(r"\((.*)\)", inner_cmd)
                         if paren:
                             args_text = paren.group(1)
-                            parents = [a.strip().strip('\"\'') for a in re.split(r',\s*', args_text) if a.strip()]
+                            parents = [
+                                a.strip().strip("\"'")
+                                for a in re.split(r",\s*", args_text)
+                                if a.strip()
+                            ]
                     except Exception:
                         parents = []
 
                     # discover elements referencing this list
                     elements = set()
                     try:
-                        pattern_name = re.compile(rf'^{re.escape(name)}\(\s*\d+\s*\)')
+                        pattern_name = re.compile(rf"^{re.escape(name)}\(\s*\d+\s*\)")
                         for n in names_list:
                             if pattern_name.match(str(n)):
                                 elements.add(n)
@@ -629,9 +806,17 @@ class ConstructionTreeParser:
                     # outgoing edges) and is discoverable by downstream logic.
                     try:
                         list_elements_map[name] = sorted(elements) if elements else []
-                        group = group_list_nodes(self.G, name, parents, sorted(elements) if elements else [], group_suffix='__list')
+                        group = group_list_nodes(
+                            self.G,
+                            name,
+                            parents,
+                            sorted(elements) if elements else [],
+                            group_suffix="__list",
+                        )
                         try:
-                            nx.set_node_attributes(self.G, {group: {'Type': 'list_group'}})
+                            nx.set_node_attributes(
+                                self.G, {group: {"Type": "list_group"}}
+                            )
                         except Exception:
                             pass
                         # If no elements were found, ensure the group is treated
@@ -650,21 +835,37 @@ class ConstructionTreeParser:
                 # when it's missing; this preserves user-provided layer values.
                 try:
                     if "Layer" not in self.df.columns:
-                        zeros = [0 for _ in range(len(self.df['Name']))]
+                        zeros = [0 for _ in range(len(self.df["Name"]))]
                         try:
-                            self.df = self.df.with_columns(pl.Series('Layer', zeros).cast(pl.Int64))
+                            self.df = self.df.with_columns(
+                                pl.Series("Layer", zeros).cast(pl.Int64)
+                            )
                         except Exception:
-                            self.df = self.df.with_columns(pl.Series('Layer', zeros))
+                            self.df = self.df.with_columns(pl.Series("Layer", zeros))
                     else:
                         try:
-                            if any(x is None for x in self.df['Layer']):
-                                filled = [0 if x is None else x for x in list(self.df['Layer'])]
-                                self.df = self.df.with_columns(pl.Series('Layer', filled).cast(pl.Int64))
+                            if any(x is None for x in self.df["Layer"]):
+                                filled = [
+                                    0 if x is None else x
+                                    for x in list(self.df["Layer"])
+                                ]
+                                self.df = self.df.with_columns(
+                                    pl.Series("Layer", filled).cast(pl.Int64)
+                                )
                         except Exception:
                             pass
                 except Exception:
                     pass
-        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+        except (
+            AttributeError,
+            TypeError,
+            KeyError,
+            IndexError,
+            ValueError,
+            OSError,
+            json.JSONDecodeError,
+            nx.NetworkXError,
+        ):
             pass
 
         # Validate token map (self.ft) for anomalies: self-references, missing refs, cycles
@@ -672,7 +873,9 @@ class ConstructionTreeParser:
             # determine FT report output path:
             # precedence: instance attribute `ft_report_dir` -> env `GGBLAB_FT_REPORT_DIR`
             # Default: disabled (do not write reports) unless explicitly set.
-            out_dir = getattr(self, 'ft_report_dir', None) or os.environ.get('GGBLAB_FT_REPORT_DIR')
+            out_dir = getattr(self, "ft_report_dir", None) or os.environ.get(
+                "GGBLAB_FT_REPORT_DIR"
+            )
             if out_dir:
                 out_dir = Path(out_dir)
                 try:
@@ -682,17 +885,24 @@ class ConstructionTreeParser:
                     pass
 
                 # allow overriding filename via instance attribute `ft_report_name`
-                fname = getattr(self, 'ft_report_name', None)
+                fname = getattr(self, "ft_report_name", None)
                 if not fname:
                     # deterministic default: short sha1 of canonicalized ft content
                     try:
-                        canonical = [(k, list(self.ft.get(k) or [])) for k in sorted(self.ft.keys())]
-                        canonical_json = _json.dumps(canonical, ensure_ascii=False, sort_keys=True)
-                        digest = hashlib.sha1(canonical_json.encode('utf8')).hexdigest()[:8]
-                        fname = f'ft_anomalies_{digest}.json'
+                        canonical = [
+                            (k, list(self.ft.get(k) or []))
+                            for k in sorted(self.ft.keys())
+                        ]
+                        canonical_json = _json.dumps(
+                            canonical, ensure_ascii=False, sort_keys=True
+                        )
+                        digest = hashlib.sha1(
+                            canonical_json.encode("utf8")
+                        ).hexdigest()[:8]
+                        fname = f"ft_anomalies_{digest}.json"
                     except (TypeError, ValueError):
                         # fallback to fixed name if hashing fails
-                        fname = 'ft_anomalies.json'
+                        fname = "ft_anomalies.json"
 
                 report_path = str(out_dir / fname)
                 self._validate_ft(out_path=report_path)
@@ -703,11 +913,13 @@ class ConstructionTreeParser:
                 pass
         except (OSError, PermissionError):
             # Do not fail parse on logging or I/O errors
-            logger.exception('ft validation failed')
+            logger.exception("ft validation failed")
 
         return self.G
 
-    def parse_subgraph(self, max_depth: Optional[int] = None, timeout_seconds: Optional[float] = 10.0):
+    def parse_subgraph(
+        self, max_depth: Optional[int] = None, timeout_seconds: Optional[float] = 10.0
+    ):
         """
         Extract a simplified dependency subgraph (G2) from the full graph (G).
 
@@ -745,18 +957,49 @@ class ConstructionTreeParser:
 
         # attach Type attributes from the dataframe to G2 nodes when available
         try:
-            if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
+            if (
+                hasattr(self, "df")
+                and self.df is not None
+                and "Type" in self.df.columns
+            ):
                 try:
                     types_list = self.df["Type"].to_list()
-                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                except (
+                    AttributeError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    ValueError,
+                    OSError,
+                    json.JSONDecodeError,
+                    nx.NetworkXError,
+                ):
                     types_list = list(self.df["Type"])
                 try:
                     names_list = self.df["Name"].to_list()
-                except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                except (
+                    AttributeError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    ValueError,
+                    OSError,
+                    json.JSONDecodeError,
+                    nx.NetworkXError,
+                ):
                     names_list = list(self.df["Name"])
                 type_map = {name: t for name, t in zip(names_list, types_list)}
                 nx.set_node_attributes(self.G2, type_map, "Type")
-        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+        except (
+            AttributeError,
+            TypeError,
+            KeyError,
+            IndexError,
+            ValueError,
+            OSError,
+            json.JSONDecodeError,
+            nx.NetworkXError,
+        ):
             pass
 
         explored = set()
@@ -765,33 +1008,59 @@ class ConstructionTreeParser:
 
         while frontier:
             # Check timeout at start of each iteration
-            if timeout_seconds is not None and (time.monotonic() - start_time) > timeout_seconds:
-                logger.warning("parse_subgraph: timeout exceeded (%.2fs), falling back to parse_subgraph_legacy", timeout_seconds)
+            if (
+                timeout_seconds is not None
+                and (time.monotonic() - start_time) > timeout_seconds
+            ):
+                logger.warning(
+                    "parse_subgraph: timeout exceeded (%.2fs), falling back to parse_subgraph_legacy",
+                    timeout_seconds,
+                )
                 return self.parse_subgraph_legacy()
             # Build all candidate active-sets from the current frontier
-            candidate_active_sets = [explored | set(combo)
-                                     for combo in chain.from_iterable(combinations(frontier, r)
-                                                                     for r in range(1, len(frontier) + 1))]
+            candidate_active_sets = [
+                explored | set(combo)
+                for combo in chain.from_iterable(
+                    combinations(frontier, r) for r in range(1, len(frontier) + 1)
+                )
+            ]
 
             collected_matches = set()
 
             for active_set in candidate_active_sets:
                 # Periodically check timeout inside heavy loops
-                if timeout_seconds is not None and (time.monotonic() - start_time) > timeout_seconds:
-                    logger.warning("parse_subgraph: timeout exceeded during candidate evaluation (%.2fs), falling back to parse_subgraph_legacy", timeout_seconds)
+                if (
+                    timeout_seconds is not None
+                    and (time.monotonic() - start_time) > timeout_seconds
+                ):
+                    logger.warning(
+                        "parse_subgraph: timeout exceeded during candidate evaluation (%.2fs), falling back to parse_subgraph_legacy",
+                        timeout_seconds,
+                    )
                     return self.parse_subgraph_legacy()
                 # neighbors_of_active: union of neighbors of each node in active_set
                 neighbor_sets = [set(self.G.neighbors(node)) for node in active_set]
-                potential_targets = set().union(*neighbor_sets) if neighbor_sets else set()
+                potential_targets = (
+                    set().union(*neighbor_sets) if neighbor_sets else set()
+                )
 
                 matched_targets = set()
                 for target in potential_targets:
                     # Build a map of predecessor -> descendants for this target
-                    pred_desc_map = {pred: nx.descendants(self.G, pred) for pred in self.G.predecessors(target)}
+                    pred_desc_map = {
+                        pred: nx.descendants(self.G, pred)
+                        for pred in self.G.predecessors(target)
+                    }
 
                     # If some predecessor's descendants indicate unique reachability
-                    for pred in sorted(pred_desc_map.keys(), key=lambda e: len(pred_desc_map[e]), reverse=True):
-                        if len(pred_desc_map[pred]) and not nx.ancestors(self.G, target) - (active_set | {pred}):
+                    for pred in sorted(
+                        pred_desc_map.keys(),
+                        key=lambda e: len(pred_desc_map[e]),
+                        reverse=True,
+                    ):
+                        if len(pred_desc_map[pred]) and not nx.ancestors(
+                            self.G, target
+                        ) - (active_set | {pred}):
                             matched_targets.add(target)
                             break
 
@@ -803,7 +1072,9 @@ class ConstructionTreeParser:
                         self.G2.add_edge(parent, target)
                     elif len(new_parents) == 2:
                         p1, p2 = tuple(new_parents)
-                        if not (p1 in self.G2 and target in self.G2.neighbors(p1)) and not (p2 in self.G2 and target in self.G2.neighbors(p2)):
+                        if not (
+                            p1 in self.G2 and target in self.G2.neighbors(p1)
+                        ) and not (p2 in self.G2 and target in self.G2.neighbors(p2)):
                             self.G2.add_edge(p1, target)
                             self.G2.add_edge(p2, target)
                     else:
@@ -824,29 +1095,69 @@ class ConstructionTreeParser:
 
             # attempt to attach Type attributes from the dataframe to G2 nodes
             try:
-                if hasattr(self, 'df') and self.df is not None and "Type" in self.df.columns:
+                if (
+                    hasattr(self, "df")
+                    and self.df is not None
+                    and "Type" in self.df.columns
+                ):
                     try:
                         types_list = self.df["Type"].to_list()
-                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                    except (
+                        AttributeError,
+                        TypeError,
+                        KeyError,
+                        IndexError,
+                        ValueError,
+                        OSError,
+                        json.JSONDecodeError,
+                        nx.NetworkXError,
+                    ):
                         types_list = list(self.df["Type"])
                     try:
                         names_list = self.df["Name"].to_list()
-                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                    except (
+                        AttributeError,
+                        TypeError,
+                        KeyError,
+                        IndexError,
+                        ValueError,
+                        OSError,
+                        json.JSONDecodeError,
+                        nx.NetworkXError,
+                    ):
                         names_list = list(self.df["Name"])
                     type_map = {name: t for name, t in zip(names_list, types_list)}
                     nx.set_node_attributes(self.G2, type_map, "Type")
-            except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+            except (
+                AttributeError,
+                TypeError,
+                KeyError,
+                IndexError,
+                ValueError,
+                OSError,
+                json.JSONDecodeError,
+                nx.NetworkXError,
+            ):
                 pass
 
             # If a DataFrame is present, ensure `DependsOn_minimal` is a list-type column.
         # If the column exists as JSON strings, decode; otherwise compute using
         # direct predecessors from G2 (fallback to G). Best-effort: do not fail.
         try:
-            if hasattr(self, 'df') and self.df is not None:
+            if hasattr(self, "df") and self.df is not None:
                 if "DependsOn_minimal" in self.df.columns:
                     try:
                         raw_col = self.df["DependsOn_minimal"].to_list()
-                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                    except (
+                        AttributeError,
+                        TypeError,
+                        KeyError,
+                        IndexError,
+                        ValueError,
+                        OSError,
+                        json.JSONDecodeError,
+                        nx.NetworkXError,
+                    ):
                         raw_col = list(self.df["DependsOn_minimal"])
                     converted_min = []
                     for v, n in zip(raw_col, self.df["Name"]):
@@ -854,17 +1165,25 @@ class ConstructionTreeParser:
                             try:
                                 converted_min.append(json.loads(v))
                             except (json.JSONDecodeError, TypeError, ValueError):
-                                if hasattr(self, 'G2') and n in self.G2:
-                                    converted_min.append(sorted(list(self.G2.predecessors(n))))
-                                elif hasattr(self, 'G') and n in self.G:
-                                    converted_min.append(sorted(list(self.G.predecessors(n))))
+                                if hasattr(self, "G2") and n in self.G2:
+                                    converted_min.append(
+                                        sorted(list(self.G2.predecessors(n)))
+                                    )
+                                elif hasattr(self, "G") and n in self.G:
+                                    converted_min.append(
+                                        sorted(list(self.G.predecessors(n)))
+                                    )
                                 else:
                                     converted_min.append([])
                         elif v is None:
-                            if hasattr(self, 'G2') and n in self.G2:
-                                converted_min.append(sorted(list(self.G2.predecessors(n))))
-                            elif hasattr(self, 'G') and n in self.G:
-                                converted_min.append(sorted(list(self.G.predecessors(n))))
+                            if hasattr(self, "G2") and n in self.G2:
+                                converted_min.append(
+                                    sorted(list(self.G2.predecessors(n)))
+                                )
+                            elif hasattr(self, "G") and n in self.G:
+                                converted_min.append(
+                                    sorted(list(self.G.predecessors(n)))
+                                )
                             else:
                                 converted_min.append([])
                         else:
@@ -872,15 +1191,26 @@ class ConstructionTreeParser:
                 else:
                     converted_min = []
                     for n in self.df["Name"]:
-                        if hasattr(self, 'G2') and n in self.G2:
+                        if hasattr(self, "G2") and n in self.G2:
                             converted_min.append(sorted(list(self.G2.predecessors(n))))
-                        elif hasattr(self, 'G') and n in self.G:
+                        elif hasattr(self, "G") and n in self.G:
                             converted_min.append(sorted(list(self.G.predecessors(n))))
                         else:
                             converted_min.append([])
 
-                self.df = self.df.with_columns(pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8)))
-        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                self.df = self.df.with_columns(
+                    pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8))
+                )
+        except (
+            AttributeError,
+            TypeError,
+            KeyError,
+            IndexError,
+            ValueError,
+            OSError,
+            json.JSONDecodeError,
+            nx.NetworkXError,
+        ):
             pass
 
         return self.G2
@@ -910,8 +1240,11 @@ class ConstructionTreeParser:
 
         while _nodes1:
             _paths = []
-            for __p in (list(chain.from_iterable(combinations(_nodes1, r)
-                        for r in range(1, len(_nodes1) + 1)))):
+            for __p in list(
+                chain.from_iterable(
+                    combinations(_nodes1, r) for r in range(1, len(_nodes1) + 1)
+                )
+            ):
                 _paths.append(_nodes0 | set(__p))
 
             for _nodes2 in _paths:
@@ -921,18 +1254,25 @@ class ConstructionTreeParser:
 
                     for n0 in set().union(*_n):
                         d = {n: nx.descendants(self.G, n) for n in self.G.neighbors(n0)}
-                        for n1 in sorted(d.keys(), key=lambda e: len(d[e]), reverse=True):
-                            if len(d[n1]) and not nx.ancestors(self.G, n0) - (_nodes2 | {n1}):
+                        for n1 in sorted(
+                            d.keys(), key=lambda e: len(d[e]), reverse=True
+                        ):
+                            if len(d[n1]) and not nx.ancestors(self.G, n0) - (
+                                _nodes2 | {n1}
+                            ):
                                 _nodes3 |= {n0}
 
                 for n in _nodes3 - _nodes2 - _nodes1:
                     match len(_nodes2 - _nodes0):
                         case 1:
-                            o, = tuple(_nodes2 - _nodes0)
+                            (o,) = tuple(_nodes2 - _nodes0)
                             # legacy: originally printed debug info here
                             self.G2.add_edge(o, n)
                         case 2:
-                            o1, o2, = tuple(_nodes2 - _nodes0)
+                            (
+                                o1,
+                                o2,
+                            ) = tuple(_nodes2 - _nodes0)
                             if o1 in self.G2 and n in self.G2.neighbors(o1):
                                 pass
                             elif o2 in self.G2 and n in self.G2.neighbors(o2):
@@ -950,11 +1290,20 @@ class ConstructionTreeParser:
         # Preserve original post-processing: attach DependsOn_minimal similar to
         # the refactored version to keep DataFrame outputs compatible.
         try:
-            if hasattr(self, 'df') and self.df is not None:
+            if hasattr(self, "df") and self.df is not None:
                 if "DependsOn_minimal" in self.df.columns:
                     try:
                         raw_col = self.df["DependsOn_minimal"].to_list()
-                    except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                    except (
+                        AttributeError,
+                        TypeError,
+                        KeyError,
+                        IndexError,
+                        ValueError,
+                        OSError,
+                        json.JSONDecodeError,
+                        nx.NetworkXError,
+                    ):
                         raw_col = list(self.df["DependsOn_minimal"])
                     converted_min = []
                     for v, n in zip(raw_col, self.df["Name"]):
@@ -962,17 +1311,25 @@ class ConstructionTreeParser:
                             try:
                                 converted_min.append(json.loads(v))
                             except (json.JSONDecodeError, TypeError, ValueError):
-                                if hasattr(self, 'G2') and n in self.G2:
-                                    converted_min.append(sorted(list(self.G2.predecessors(n))))
-                                elif hasattr(self, 'G') and n in self.G:
-                                    converted_min.append(sorted(list(self.G.predecessors(n))))
+                                if hasattr(self, "G2") and n in self.G2:
+                                    converted_min.append(
+                                        sorted(list(self.G2.predecessors(n)))
+                                    )
+                                elif hasattr(self, "G") and n in self.G:
+                                    converted_min.append(
+                                        sorted(list(self.G.predecessors(n)))
+                                    )
                                 else:
                                     converted_min.append([])
                         elif v is None:
-                            if hasattr(self, 'G2') and n in self.G2:
-                                converted_min.append(sorted(list(self.G2.predecessors(n))))
-                            elif hasattr(self, 'G') and n in self.G:
-                                converted_min.append(sorted(list(self.G.predecessors(n))))
+                            if hasattr(self, "G2") and n in self.G2:
+                                converted_min.append(
+                                    sorted(list(self.G2.predecessors(n)))
+                                )
+                            elif hasattr(self, "G") and n in self.G:
+                                converted_min.append(
+                                    sorted(list(self.G.predecessors(n)))
+                                )
                             else:
                                 converted_min.append([])
                         else:
@@ -980,15 +1337,26 @@ class ConstructionTreeParser:
                 else:
                     converted_min = []
                     for n in self.df["Name"]:
-                        if hasattr(self, 'G2') and n in self.G2:
+                        if hasattr(self, "G2") and n in self.G2:
                             converted_min.append(sorted(list(self.G2.predecessors(n))))
-                        elif hasattr(self, 'G') and n in self.G:
+                        elif hasattr(self, "G") and n in self.G:
                             converted_min.append(sorted(list(self.G.predecessors(n))))
                         else:
                             converted_min.append([])
 
-                self.df = self.df.with_columns(pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8)))
-        except (AttributeError, TypeError, KeyError, IndexError, ValueError, OSError, json.JSONDecodeError, nx.NetworkXError):
+                self.df = self.df.with_columns(
+                    pl.Series("DependsOn_minimal", converted_min).cast(pl.List(pl.Utf8))
+                )
+        except (
+            AttributeError,
+            TypeError,
+            KeyError,
+            IndexError,
+            ValueError,
+            OSError,
+            json.JSONDecodeError,
+            nx.NetworkXError,
+        ):
             pass
 
         return self.G2
@@ -1025,6 +1393,7 @@ class ConstructionTreeParser:
     def ffd(self, k, recursive=True):
         """Return forward-facing dependencies for node `k`."""
         if recursive:
+
             def _ffd(k, seen):
                 # Protect against cycles by tracking visited nodes in `seen`.
                 if k in seen:
@@ -1058,6 +1427,7 @@ class ConstructionTreeParser:
     def fbd(self, k, recursive=True):
         """Return backward-facing dependencies for node `k`."""
         if recursive:
+
             def _fbd(k, seen):
                 # Protect against cycles by tracking visited nodes in `seen`.
                 if k in seen:
@@ -1085,7 +1455,9 @@ class ConstructionTreeParser:
         else:
             return {e for e in self.ft[k] if e in self.ft}
 
-    def roots_to_targets_with_containers(self, targets, roots=None, include_types=None, max_container_depth=1):
+    def roots_to_targets_with_containers(
+        self, targets, roots=None, include_types=None, max_container_depth=1
+    ):
         """Return an induced subgraph containing paths from roots to targets
         and composite objects that contain those targets.
 
@@ -1101,12 +1473,12 @@ class ConstructionTreeParser:
             nx.DiGraph: induced subgraph containing paths and selected containers.
         """
         if roots is None:
-            roots = getattr(self, 'roots', [])
+            roots = getattr(self, "roots", [])
         targets = set(targets)
 
         # determine include_types: if None, use class default; otherwise coerce to set
         if include_types is None:
-            include_types = set(getattr(self, 'DEFAULT_CONTAINER_TYPES', []))
+            include_types = set(getattr(self, "DEFAULT_CONTAINER_TYPES", []))
         else:
             try:
                 include_types = set(include_types)
@@ -1145,7 +1517,7 @@ class ConstructionTreeParser:
                         if child in visited:
                             continue
                         visited.add(child)
-                        node_type = self.G.nodes.get(child, {}).get('Type')
+                        node_type = self.G.nodes.get(child, {}).get("Type")
                         if include_types is None or node_type in include_types:
                             containers.add(child)
                         next_front.add(child)
@@ -1194,7 +1566,9 @@ class ConstructionTreeParser:
         if file is not None:
             # Import real implementation class from ggblab.construction_io and call its async initializer
             Impl, _ = _cio._import_impl()
-            norm_df = asyncio.run(Impl.initialize_dataframe(None, parquet_file=file, file=file))
+            norm_df = asyncio.run(
+                Impl.initialize_dataframe(None, parquet_file=file, file=file)
+            )
             self.df = norm_df
             return self
 
@@ -1202,7 +1576,6 @@ class ConstructionTreeParser:
 
     def write_parquet(self, file=None):
         """Write the parser's DataFrame by delegating to ConstructionIO.save_dataframe."""
-        import asyncio
         import warnings
 
         import ggblab.construction_io as _cio
@@ -1216,13 +1589,20 @@ class ConstructionTreeParser:
         # Delegate to canonical implementation
         Impl, _ = _cio._import_impl()
         # call sync wrapper if needed
-        return Impl.save_dataframe(self.df, ggb=None, fmt='parquet', out_dir=None, overwrite=False)
+        return Impl.save_dataframe(
+            self.df, ggb=None, fmt="parquet", out_dir=None, overwrite=False
+        )
 
     def vertex_on_regular_polygon(self, v):
         """Return vertex name on a regular polygon if applicable, else empty list."""
         try:
             if self.ft[v][0] == "Polygon" and int(self.ft[v][3]):
-                return [self.df.filter((pl.col("Command") == self.df[self.rd[v]]["Command"]) & (pl.col("Type") == "polygon"))["Name"].item()]
+                return [
+                    self.df.filter(
+                        (pl.col("Command") == self.df[self.rd[v]]["Command"])
+                        & (pl.col("Type") == "polygon")
+                    )["Name"].item()
+                ]
         except (IndexError, ValueError):
             return []
         else:
@@ -1237,16 +1617,20 @@ class ConstructionTreeParser:
         Returns:
             dict: Structured report containing lists of anomalies and diagnostics.
         """
-        report = {'self_refs': [], 'unknown_refs': {}, 'cycles': []}
-        if not hasattr(self, 'ft') or not isinstance(self.ft, dict):
-            logger.debug('No ft to validate')
+        report = {"self_refs": [], "unknown_refs": {}, "cycles": []}
+        if not hasattr(self, "ft") or not isinstance(self.ft, dict):
+            logger.debug("No ft to validate")
             return report
 
         # direct self-references
-        self_refs = [n for n, toks in self.ft.items() if isinstance(toks, (list, tuple)) and n in toks]
-        report['self_refs'] = self_refs
+        self_refs = [
+            n
+            for n, toks in self.ft.items()
+            if isinstance(toks, (list, tuple)) and n in toks
+        ]
+        report["self_refs"] = self_refs
         if self_refs:
-            logger.warning('Direct self-references detected in ft: %s', self_refs)
+            logger.warning("Direct self-references detected in ft: %s", self_refs)
 
         # unknown references
         known = set(self.ft.keys())
@@ -1257,9 +1641,12 @@ class ConstructionTreeParser:
             bad = [t for t in toks if isinstance(t, str) and t not in known]
             if bad:
                 unknown_refs[n] = bad
-        report['unknown_refs'] = unknown_refs
+        report["unknown_refs"] = unknown_refs
         if unknown_refs:
-            logger.info('Unknown token references found in ft (node -> unknowns): %s', unknown_refs)
+            logger.info(
+                "Unknown token references found in ft (node -> unknowns): %s",
+                unknown_refs,
+            )
 
         # build ft-graph and detect cycles
         H = nx.DiGraph()
@@ -1272,24 +1659,28 @@ class ConstructionTreeParser:
                     H.add_edge(n, t)
 
         cycles = list(nx.simple_cycles(H))
-        report['cycles'] = cycles
+        report["cycles"] = cycles
         if cycles:
-            logger.warning('Cycles detected in ft token graph: %d cycles (showing up to 10): %s', len(cycles), cycles[:10])
+            logger.warning(
+                "Cycles detected in ft token graph: %d cycles (showing up to 10): %s",
+                len(cycles),
+                cycles[:10],
+            )
 
         # optional JSON dump
         if out_path:
             try:
                 safe = {
-                    'self_refs': report['self_refs'],
-                    'unknown_refs': report['unknown_refs'],
-                    'cycles': [list(c) for c in report['cycles']],
-                    'node_count': len(self.ft),
+                    "self_refs": report["self_refs"],
+                    "unknown_refs": report["unknown_refs"],
+                    "cycles": [list(c) for c in report["cycles"]],
+                    "node_count": len(self.ft),
                 }
-                with open(out_path, 'w', encoding='utf8') as fh:
+                with open(out_path, "w", encoding="utf8") as fh:
                     json.dump(safe, fh, ensure_ascii=False, indent=2)
-                logger.info('Wrote ft validation report to %s', out_path)
+                logger.info("Wrote ft validation report to %s", out_path)
             except (OSError, PermissionError):
-                logger.exception('Failed to write ft validation report to %s', out_path)
+                logger.exception("Failed to write ft validation report to %s", out_path)
 
         return report
 

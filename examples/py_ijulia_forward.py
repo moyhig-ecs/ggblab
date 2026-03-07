@@ -1,5 +1,6 @@
 import json
 
+
 def handle_payload(payload):
     """Handle an incoming payload from the frontend.
 
@@ -21,6 +22,7 @@ def handle_payload(payload):
     # Try to delegate to ggblab_core if present
     try:
         import ggblab_core
+
         if hasattr(ggblab_core, "handle_payload"):
             reply = ggblab_core.handle_payload(p)
             if isinstance(reply, str):

@@ -1,19 +1,17 @@
 """Line helpers (moved into sympy subpackage).
 """
-from dataclasses import dataclass
-from typing import Protocol, Any, TypeVar, Generic, Union, Optional
+
 import re
 import tokenize as _tokenize
+from dataclasses import dataclass
+from typing import Any, Generic, Optional, Protocol, TypeVar, Union
 
 _HAS_SYMPY = True
 try:
-    from sympy import Matrix
-    from sympy import symbols
+    from sympy import Matrix, symbols
     from sympy.parsing.sympy_parser import (
-        implicit_multiplication_application,
-        parse_expr,
-        standard_transformations,
-    )
+        implicit_multiplication_application, parse_expr,
+        standard_transformations)
 except Exception:
     Matrix = None
     symbols = None
@@ -77,6 +75,7 @@ class Line(Generic[AnyLine]):
 @dataclass
 class SimpleLine3D:
     """Simple container for a 3D line with `point` and `direction` attrs."""
+
     pass
 
 
@@ -144,7 +143,7 @@ def to_sympy_line(simple) -> object:
     except (AttributeError, TypeError, IndexError):
         return simple
 
-        
+
 from .point import sympy_point_from_coords
 
 try:
@@ -193,6 +192,7 @@ def _try_parse_line_equation(s: str):
             return None
         x, y, z = symbols("x y z")
         lhs_str, rhs_str = s.split("=", 1)
+
         # Sanitize common notation issues from GeoGebra/LaTeX-like strings
         def _sanitize(sym_str: str) -> str:
             # remove LaTeX-style braces which confuse the parser: v_{1} -> v_1
@@ -202,6 +202,7 @@ def _try_parse_line_equation(s: str):
             # collapse repeated whitespace
             t = re.sub(r"\s+", " ", t)
             return t
+
         lhs_str = _sanitize(lhs_str)
         rhs_str = _sanitize(rhs_str)
         try:
@@ -263,16 +264,20 @@ def line_from_value(value_str: str) -> object:
         if len(c_parts) != 3 or len(d_parts) != 3:
             raise ValueError(f"expected three components in line value: {value_str!r}")
         exprs_c = [
-            _parse_expr(p, local={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")})
+            _parse_expr(
+                p, local={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")}
+            )
             for p in c_parts
         ]
         exprs_d = [
-            _parse_expr(p, local={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")})
+            _parse_expr(
+                p, local={"x": symbols("x"), "y": symbols("y"), "z": symbols("z")}
+            )
             for p in d_parts
         ]
         P = sympy_point_from_coords(*exprs_c)
         D = Matrix(exprs_d)
-        P2 = sympy_point_from_coords(*(exprs_c[i] + exprs_d[i] for i in range(3)))
+        sympy_point_from_coords(*(exprs_c[i] + exprs_d[i] for i in range(3)))
         # Always return a lightweight object exposing `.point` and `.direction`.
         sline = SimpleLine3D()
         setattr(sline, "point", P)
@@ -314,19 +319,34 @@ class RayCommand:
         return f"Ray(p1={self.p1}, p2={self.p2})"
 
 
-
-def segment_from_command(command_str: str, df=None, name_col: str = "Name", value_col: str = "Value", obj_col: str = "object3d"):
+def segment_from_command(
+    command_str: str,
+    df=None,
+    name_col: str = "Name",
+    value_col: str = "Value",
+    obj_col: str = "object3d",
+):
     if command_str is None:
         raise ValueError("empty command")
     s = command_str.strip()
-    m = re.search(r"Segment\s*\(\s*([^,]+?)\s*,\s*([^,\)]+?)(?:\s*,\s*([^\)]+))?\s*\)", s)
+    m = re.search(
+        r"Segment\s*\(\s*([^,]+?)\s*,\s*([^,\)]+?)(?:\s*,\s*([^\)]+))?\s*\)", s
+    )
     if not m:
         raise ValueError(f"not a Segment command: {command_str!r}")
     a = m.group(1).strip()
     b = m.group(2).strip()
     c = m.group(3).strip() if m.group(3) is not None else None
-    ra = a if is_pointlike(a) else resolve_label_to_point(a, df, name_col, value_col, obj_col)
-    rb = b if is_pointlike(b) else resolve_label_to_point(b, df, name_col, value_col, obj_col)
+    ra = (
+        a
+        if is_pointlike(a)
+        else resolve_label_to_point(a, df, name_col, value_col, obj_col)
+    )
+    rb = (
+        b
+        if is_pointlike(b)
+        else resolve_label_to_point(b, df, name_col, value_col, obj_col)
+    )
     if is_pointlike(ra) and is_pointlike(rb):
         if SympySegment is not None:
             try:
@@ -337,7 +357,13 @@ def segment_from_command(command_str: str, df=None, name_col: str = "Name", valu
     return SegmentCommand(p1=a, p2=b, parent=c)
 
 
-def ray_from_command(command_str: str, df=None, name_col: str = "Name", value_col: str = "Value", obj_col: str = "object3d"):
+def ray_from_command(
+    command_str: str,
+    df=None,
+    name_col: str = "Name",
+    value_col: str = "Value",
+    obj_col: str = "object3d",
+):
     if command_str is None:
         raise ValueError("empty command")
     s = command_str.strip()
@@ -346,13 +372,25 @@ def ray_from_command(command_str: str, df=None, name_col: str = "Name", value_co
         raise ValueError(f"not a Ray command: {command_str!r}")
     a = m.group(1).strip()
     b = m.group(2).strip()
-    ra = a if is_pointlike(a) else resolve_label_to_point(a, df, name_col, value_col, obj_col)
-    rb = b if is_pointlike(b) else resolve_label_to_point(b, df, name_col, value_col, obj_col)
+    ra = (
+        a
+        if is_pointlike(a)
+        else resolve_label_to_point(a, df, name_col, value_col, obj_col)
+    )
+    rb = (
+        b
+        if is_pointlike(b)
+        else resolve_label_to_point(b, df, name_col, value_col, obj_col)
+    )
     if is_pointlike(ra) and is_pointlike(rb):
         try:
             z0 = getattr(ra, "z", 0)
             z1 = getattr(rb, "z", 0)
-            if (z0 == 0 or z0 is None) and (z1 == 0 or z1 is None) and SympyRay is not None:
+            if (
+                (z0 == 0 or z0 is None)
+                and (z1 == 0 or z1 is None)
+                and SympyRay is not None
+            ):
                 try:
                     return SympyRay(ra, rb)
                 except (TypeError, ValueError, AttributeError):

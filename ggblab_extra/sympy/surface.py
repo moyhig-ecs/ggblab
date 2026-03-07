@@ -6,17 +6,15 @@ When SymPy is available the parser will attempt to construct a SymPy
 surface object; otherwise a simple `ParametricSurface` wrapper is
 returned.
 """
+
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
-import re
 
-from sympy.parsing.sympy_parser import (
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
-from sympy import symbols, sin, cos, tan, sqrt, pi, E
+from sympy import E, cos, pi, sin, sqrt, symbols, tan
 from sympy.core.sympify import SympifyError
+from sympy.parsing.sympy_parser import (implicit_multiplication_application,
+                                        parse_expr, standard_transformations)
 
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
@@ -57,17 +55,17 @@ def _split_top_level_commas(s: str):
     depth = 0
     cur = []
     for ch in s:
-        if ch == '(':
+        if ch == "(":
             depth += 1
-        elif ch == ')':
+        elif ch == ")":
             depth -= 1
-        if ch == ',' and depth == 0:
-            parts.append(''.join(cur).strip())
+        if ch == "," and depth == 0:
+            parts.append("".join(cur).strip())
             cur = []
         else:
             cur.append(ch)
     if cur:
-        parts.append(''.join(cur).strip())
+        parts.append("".join(cur).strip())
     return parts
 
 
@@ -81,21 +79,23 @@ def surface_from_value(val: str) -> ParametricSurface:
         raise ValueError("empty value")
     s = val
     # value-like: name:(x(u,v), y(u,v), z(u,v))
-    if ':' in s and not s.strip().lower().startswith('surface'):
+    if ":" in s and not s.strip().lower().startswith("surface"):
         try:
-            _, rest = s.split(':', 1)
+            _, rest = s.split(":", 1)
             rest = rest.strip()
-            if rest.startswith('(') and rest.endswith(')'):
+            if rest.startswith("(") and rest.endswith(")"):
                 inner = rest[1:-1]
                 parts = _split_top_level_commas(inner)
                 if len(parts) >= 3:
                     x_s, y_s, z_s = parts[0], parts[1], parts[2]
-                    u_sym, v_sym = symbols('u v')
-                    local = {'sin': sin, 'cos': cos, 't': u_sym, 'u': u_sym, 'v': v_sym}
+                    u_sym, v_sym = symbols("u v")
+                    local = {"sin": sin, "cos": cos, "t": u_sym, "u": u_sym, "v": v_sym}
                     x_expr = _parse_expr(x_s, local=local)
                     y_expr = _parse_expr(y_s, local=local)
                     z_expr = _parse_expr(z_s, local=local)
-                    return ParametricSurface(x=x_expr, y=y_expr, z=z_expr, u=u_sym, v=v_sym)
+                    return ParametricSurface(
+                        x=x_expr, y=y_expr, z=z_expr, u=u_sym, v=v_sym
+                    )
         except (ValueError, SympifyError, IndexError):
             pass
 
@@ -108,8 +108,8 @@ def surface_from_value(val: str) -> ParametricSurface:
         if len(parts) >= 3:
             x_s, y_s, z_s = parts[0], parts[1], parts[2]
             # default param names
-            u_name = 'u'
-            v_name = 'v'
+            u_name = "u"
+            v_name = "v"
             u0 = u1 = v0 = v1 = None
             try:
                 if len(parts) >= 4:
@@ -126,11 +126,18 @@ def surface_from_value(val: str) -> ParametricSurface:
             try:
                 u_sym = symbols(str(u_name).strip())
                 v_sym = symbols(str(v_name).strip())
-                local = {'sin': sin, 'cos': cos, 'tan': tan, 'sqrt': sqrt, 'pi': pi, 'E': E}
+                local = {
+                    "sin": sin,
+                    "cos": cos,
+                    "tan": tan,
+                    "sqrt": sqrt,
+                    "pi": pi,
+                    "E": E,
+                }
                 local[str(u_sym)] = u_sym
                 local[str(v_sym)] = v_sym
-                local['u'] = u_sym
-                local['v'] = v_sym
+                local["u"] = u_sym
+                local["v"] = v_sym
                 x_expr = _parse_expr(x_s, local=local)
                 y_expr = _parse_expr(y_s, local=local)
                 z_expr = _parse_expr(z_s, local=local)
@@ -154,13 +161,34 @@ def surface_from_value(val: str) -> ParametricSurface:
                     try:
                         # SymPy surface constructors vary; try a reasonable signature
                         sym = SympySurface((x_expr, y_expr, z_expr), (u_sym, v_sym))
-                        return ParametricSurface(x=x_expr, y=y_expr, z=z_expr, u=u_sym, v=v_sym, u_start=u0_expr, u_end=u1_expr, v_start=v0_expr, v_end=v1_expr, sympy=sym)
+                        return ParametricSurface(
+                            x=x_expr,
+                            y=y_expr,
+                            z=z_expr,
+                            u=u_sym,
+                            v=v_sym,
+                            u_start=u0_expr,
+                            u_end=u1_expr,
+                            v_start=v0_expr,
+                            v_end=v1_expr,
+                            sympy=sym,
+                        )
                     except Exception:
                         pass
             except Exception:
                 pass
 
-            return ParametricSurface(x=x_expr, y=y_expr, z=z_expr, u=u_sym, v=v_sym, u_start=u0_expr, u_end=u1_expr, v_start=v0_expr, v_end=v1_expr)
+            return ParametricSurface(
+                x=x_expr,
+                y=y_expr,
+                z=z_expr,
+                u=u_sym,
+                v=v_sym,
+                u_start=u0_expr,
+                u_end=u1_expr,
+                v_start=v0_expr,
+                v_end=v1_expr,
+            )
 
     raise ValueError(f"not a recognized surface value: {val!r}")
 

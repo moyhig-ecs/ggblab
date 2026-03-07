@@ -21,6 +21,7 @@ println(resp)
 """
 
 using JSON
+using PythonCall
 
 # Defaults are mutable so users can change the bridge host/port at runtime
 DEFAULT_HOST = "127.0.0.1"
@@ -283,6 +284,26 @@ macro ggblab(args...)
     end
 end
 
-export request, poll_reply, request_with_retry, set_default_host, set_default_port, send_command, send_function, send_command_eval, send_function_eval, @ggblab
+macro ggb(args...)
+    return Expr(:macrocall, Symbol("@ggblab"), args...)
+end
+
+"""Run a Python coroutine (PythonCall.PyObject) with asyncio.run.
+
+Usage:
+```
+# obtain a coroutine object, e.g. via `py"coro()"` or `pyeval("coro()")`
+# coro = py"coro()"
+result = @await coro
+```
+"""
+macro await(expr)
+    return :(let _asyncio = PythonCall.pyimport("asyncio")
+                _coro = $(esc(expr))
+                _asyncio.run(_coro)
+             end)
+end
+
+export request, poll_reply, request_with_retry, set_default_host, set_default_port, send_command, send_function, send_command_eval, send_function_eval, @ggblab, @ggb, @await
 
 end # module

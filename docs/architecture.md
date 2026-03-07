@@ -20,8 +20,8 @@ ggblab addresses this limitation with two complementary communication channels:
 
 ## Channel 1: IPython Comm (Primary Channel)
 
-**Technology**: IPython Comm over WebSocket  
-**Managed by**: Jupyter/JupyterHub infrastructure  
+**Technology**: IPython Comm over WebSocket
+**Managed by**: Jupyter/JupyterHub infrastructure
 **Purpose**: Main control channel
 
 ### Responsibilities
@@ -46,8 +46,8 @@ The IPython Comm channel benefits from Jupyter/JupyterHub's robust infrastructur
 
 ## Channel 2: Out-of-Band Socket (Secondary Channel)
 
-**Technology**: Unix Domain Socket (POSIX) / TCP WebSocket (Windows)  
-**Managed by**: ggblab backend (`ggb_comm`)  
+**Technology**: Unix Domain Socket (POSIX) / TCP WebSocket (Windows)
+**Managed by**: ggblab backend (`ggb_comm`)
 **Purpose**: Response delivery during cell execution
 
 ### Responsibilities
@@ -506,7 +506,7 @@ To match responses with requests when multiple operations are in flight:
 
 ### Primary Channel (IPython Comm) Error Handling
 
-**Responsibility**: Jupyter/JupyterHub infrastructure  
+**Responsibility**: Jupyter/JupyterHub infrastructure
 **Status**: Robust and automatic
 
 The IPython Comm channel inherits error handling from Jupyter:
@@ -520,7 +520,7 @@ No explicit error handling required in ggblab for the primary channel.
 
 ### Out-of-Band Channel Error Handling
 
-**Responsibility**: ggblab backend and frontend  
+**Responsibility**: ggblab backend and frontend
 **Status**: Timeout-based with event queueing
 
 The out-of-band channel operates independently with dual responsibilities:
@@ -747,10 +747,10 @@ The out-of-band socket server uses `async with` context managers:
 
 ### Concurrency
 
-**IPython Comm**: Single-threaded by design (IPython event loop)  
+**IPython Comm**: Single-threaded by design (IPython event loop)
 **Out-of-band socket**: Async/await pattern, multiple pending responses possible
 
-**Limitation**: Singleton `GeoGebra` instance per kernel session  
+**Limitation**: Singleton `GeoGebra` instance per kernel session
 **Rationale**: Avoids complexity of managing multiple Comm targets and socket servers
 
 ## Future Enhancements

@@ -1,5 +1,7 @@
 """Launch the ProxyKernel via IPKernelApp entrypoint."""
+
 from ipykernel.kernelapp import IPKernelApp
+
 from . import ProxyKernel
 
 

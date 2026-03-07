@@ -11,8 +11,8 @@ import base64
 import io
 import json
 import os
-import xml.etree.ElementTree as ET
 import re
+import xml.etree.ElementTree as ET
 import zipfile
 
 from .schema import ggb_schema
@@ -20,28 +20,28 @@ from .schema import ggb_schema
 
 class ggb_file:
     """GeoGebra file (.ggb) loader and saver.
-    
+
     Handles multiple file formats:
     - .ggb files (base64-encoded ZIP archives)
     - Plain ZIP archives
     - JSON format
     - Plain XML (geogebra.xml)
-    
+
     The loader automatically detects file type from magic bytes and extracts
     the construction XML. The geogebra_xml is automatically stripped to the
     <construction> element and scientific notation is normalized.
-    
+
     Attributes:
         ggb_schema: XML schema for validation
         source_file (str): Path to the loaded file
         base64_buffer (bytes): Base64-encoded .ggb archive (if applicable)
         geogebra_xml (str): Extracted construction XML
-    
+
     Example:
         >>> file = ggb_file()
         >>> file.load('myfile.ggb')
         >>> file.save('output.ggb')
-    
+
     Note:
         The heavy DataFrame-based I/O helpers and convenience persistence
         functions (for example, ``ConstructionIO.save_dataframe``) live in
@@ -49,34 +49,34 @@ class ggb_file:
         provides a lightweight file loader/saver here; install
         ``ggblab_extra`` for richer high-level workflows.
     """
-    
+
     def __init__(self):
         """Initialize the `ggb_file` helper and load the XML schema."""
         self.ggb_schema = ggb_schema().schema
-    
+
     def load(self, file):
         """Load a GeoGebra construction from file.
-        
+
         Supports multiple formats:
         - Base64-encoded .ggb (starts with 'UEsD')
         - ZIP archive (starts with 'PK')
         - JSON format (starts with '{' or '[')
         - Plain XML
-        
+
         The construction XML is automatically extracted and normalized:
         - Stripped to <construction> element only
         - Scientific notation fixed (e-1 → E-1)
-        
+
         Args:
             file (str): Path to the .ggb, .zip, .json, or .xml file.
-        
+
         Returns:
             ggb_file: Self reference for method chaining.
-            
+
         Raises:
             FileNotFoundError: If the file does not exist.
             RuntimeError: If file loading fails.
-            
+
         Example:
             >>> f = ggb_file().load('circle.ggb')
             >>> print(f.geogebra_xml[:100])
@@ -87,12 +87,13 @@ class ggb_file:
         self.geogebra_xml = None
 
         try:
-            with open(self.source_file, 'rb') as f:
+            with open(self.source_file, "rb") as f:
+
                 def unzip(buff):
-                    with zipfile.ZipFile(io.BytesIO(base64.b64decode(buff)), 'r') as zf:
+                    with zipfile.ZipFile(io.BytesIO(base64.b64decode(buff)), "r") as zf:
                         # for fileinfo in zf.infolist():
                         #     print(fileinfo)
-                        with zf.open('geogebra.xml', 'r') as zff:
+                        with zf.open("geogebra.xml", "r") as zff:
                             try:
                                 s = zff.read()
                             except:
@@ -100,30 +101,32 @@ class ggb_file:
                     return s
 
                 match tuple(f.read(4).decode()):
-                    case ('U', 'E', 's', 'D'):
+                    case ("U", "E", "s", "D"):
                         # base64 encoded zip
                         f.close()
-                        with open(self.source_file, 'rb') as f2:
-                            self.base64_buffer = f2.read()  # base64.b64decode(f2.read())
+                        with open(self.source_file, "rb") as f2:
+                            self.base64_buffer = (
+                                f2.read()
+                            )  # base64.b64decode(f2.read())
                             self.geogebra_xml = unzip(self.base64_buffer)
-                    case ('P', 'K', _, _):
+                    case ("P", "K", _, _):
                         # zip
                         f.close()
-                        with open(self.source_file, 'rb') as f2:
+                        with open(self.source_file, "rb") as f2:
                             # b64encode for sending GeoGebra Applet
                             self.base64_buffer = base64.b64encode(f2.read())
                             self.geogebra_xml = unzip(self.base64_buffer)
-                    case ('{', _, _, _) | ('[', _, _, _):
+                    case ("{", _, _, _) | ("[", _, _, _):
                         # json
                         f.close()
-                        with open(self.source_file, 'r', encoding='utf-8') as f2:
+                        with open(self.source_file, "r", encoding="utf-8") as f2:
                             self.base64_buffer = json.load(f2)
-                            for f in self.base64_buffer['archive']:
-                                if f['fileName'] == 'geogebra.xml':
-                                    self.geogebra_xml = f['fileContent']
+                            for f in self.base64_buffer["archive"]:
+                                if f["fileName"] == "geogebra.xml":
+                                    self.geogebra_xml = f["fileContent"]
                     case _:
                         # xml?
-                        with open(self.source_file, 'r', encoding='utf-8') as f2:
+                        with open(self.source_file, "r", encoding="utf-8") as f2:
                             self.geogebra_xml = f2.read()
             # return self.initialize_dataframe(file)
         except FileNotFoundError:
@@ -133,8 +136,9 @@ class ggb_file:
 
         # strip to construction element and normalize XML (scientific
         # notation, legacy tokens, etc.)
-        raw_xml = ET.tostring(ET.fromstring(self.geogebra_xml)
-                      .find('./construction'), encoding='unicode')
+        raw_xml = ET.tostring(
+            ET.fromstring(self.geogebra_xml).find("./construction"), encoding="unicode"
+        )
         self.geogebra_xml = self._normalize_geogebra_xml(raw_xml)
 
         return self
@@ -158,19 +162,19 @@ class ggb_file:
             # Replace a lower-case 'e' that appears after a digit or dot and
             # is followed by an optional sign and digits with 'E' plus the
             # exponent. This avoids changing unrelated 'e' characters.
-            xml = re.sub(r'(?<=[0-9\.])e([+-]?\d+)', r'E\1', xml)
+            xml = re.sub(r"(?<=[0-9\.])e([+-]?\d+)", r"E\1", xml)
         except Exception:
             pass
 
         try:
-            xml = xml.replace('cartesian3d', 'cartesian')
+            xml = xml.replace("cartesian3d", "cartesian")
         except Exception:
             pass
 
         # Default errata: strip braces around single-digit subscripts,
         # e.g. O_{1} -> O_1. Conservative: only single digits after '_'.
         try:
-            xml = re.sub(r'_\{([0-9])\}', r'_\1', xml)
+            xml = re.sub(r"_\{([0-9])\}", r"_\1", xml)
         except Exception:
             pass
 
@@ -180,6 +184,7 @@ class ggb_file:
     # callables to this list to perform conservative fixes before schema
     # decoding (for example, historic label formatting like `O_{1}`).
     XML_ERRATA_HANDLERS = []
+
     @staticmethod
     def _apply_xml_errata(xml: str) -> str:
         """Apply registered errata handlers (in order) and the unified
@@ -195,30 +200,30 @@ class ggb_file:
                 pass
         out = ggb_file._normalize_geogebra_xml(out)
         return out
-    
+
     def save(self, overwrite=False, file=None):
         """Save the construction to a file.
-        
+
         Saving behavior:
         - If base64_buffer is set: writes decoded archive (.ggb format)
         - If base64_buffer is None: writes plain XML (geogebra_xml)
         - Target extension does not enforce format (e.g., saving to .ggb with
           no base64_buffer will write plain XML bytes)
-        
+
         Args:
             overwrite (bool): If True, overwrite source_file. Defaults to False.
             file (str, optional): Target file path. If None, auto-generates
                 next available filename (name_1.ggb, name_2.ggb, ...).
-        
+
         Returns:
             ggb_construction: Self reference for method chaining.
-            
+
         Example:
             >>> c = ggb_construction().load('circle.ggb')
             >>> c.save()  # Saves to circle_1.ggb
             >>> c.save(overwrite=True)  # Overwrites circle.ggb
             >>> c.save(file='output.ggb')  # Saves to output.ggb
-        
+
         Note:
             getBase64() from the applet may not include non-XML artifacts
             (thumbnails, etc.) from the original archive. Saving after API
@@ -233,11 +238,11 @@ class ggb_file:
             root, ext = os.path.splitext(filename)
             i = 1
             new_filename = f"{root}_{i}{ext}"
-            
+
             while os.path.exists(new_filename):
                 i += 1
                 new_filename = f"{root}_{i}{ext}"
-                
+
             return new_filename
 
         if file is None:
@@ -246,9 +251,9 @@ class ggb_file:
             else:
                 file = get_next_revised_filename(self.source_file)
 
-        with open(file, 'wb') as f:
+        with open(file, "wb") as f:
             if self.base64_buffer is not None:
                 f.write(base64.b64decode(self.base64_buffer))
             else:
-                f.write(self.geogebra_xml.encode('utf-8'))
+                f.write(self.geogebra_xml.encode("utf-8"))
         return self

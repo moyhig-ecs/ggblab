@@ -4,14 +4,18 @@ This module keeps a small set of convenience helpers that previously
 lived in `ggblab_extra/sympy_utils.py`. It intentionally only exposes a
 few functions and delegates heavy work to sibling modules.
 """
+
 # Lightweight facade utilities (moved into sympy subpackage).
 
+import re
 # This module keeps a small set of convenience helpers that previously
 # lived in `ggblab_extra/sympy_utils.py`. It intentionally only exposes a
 from typing import Optional
-import re
 
-def expr_from_value(s: str, transformations=None, local_dict=None, extra_transformations=None):
+
+def expr_from_value(
+    s: str, transformations=None, local_dict=None, extra_transformations=None
+):
     """Parse a GeoGebra-style expression string into a SymPy expression.
 
     - If `transformations` is provided, it will be passed to SymPy's
@@ -32,9 +36,9 @@ def expr_from_value(s: str, transformations=None, local_dict=None, extra_transfo
         ss = m.group(2).strip()
 
     # Handle brace empty-list placeholders (after stripping labels)
-    if ss.startswith('{') and ss.endswith('}'):
+    if ss.startswith("{") and ss.endswith("}"):
         inner = ss[1:-1].strip()
-        if inner == '' or inner == '?' or inner.lower() == 'nan':
+        if inner == "" or inner == "?" or inner.lower() == "nan":
             try:
                 from sympy import EmptySet as _SympyEmptySet
 
@@ -44,12 +48,9 @@ def expr_from_value(s: str, transformations=None, local_dict=None, extra_transfo
 
     try:
         from sympy.parsing.sympy_parser import (
-            parse_expr,
-            standard_transformations,
-            implicit_multiplication_application,
-            function_exponentiation,
-            convert_xor,
-        )
+            convert_xor, function_exponentiation,
+            implicit_multiplication_application, parse_expr,
+            standard_transformations)
     except Exception:
         raise ImportError("SymPy is required for expr_from_value")
 
@@ -71,36 +72,37 @@ def expr_from_value(s: str, transformations=None, local_dict=None, extra_transfo
     eq_index = None
     depth = 0
     for idx, ch in enumerate(ss):
-        if ch in '([{':
+        if ch in "([{":
             depth += 1
-        elif ch in ')]}':
+        elif ch in ")]}":
             depth -= 1
-        elif ch == '=' and depth == 0:
+        elif ch == "=" and depth == 0:
             eq_index = idx
             break
 
     # Prepare local dict and nan mapping
     ld = dict(local_dict or {})
-    if '?' in ss:
-        ss = ss.replace('?', 'nan')
+    if "?" in ss:
+        ss = ss.replace("?", "nan")
         try:
             from sympy import nan as _sympy_nan
 
-            ld.setdefault('nan', _sympy_nan)
+            ld.setdefault("nan", _sympy_nan)
         except Exception:
-            ld.setdefault('nan', float('nan'))
+            ld.setdefault("nan", float("nan"))
 
     if eq_index is not None:
         lhs_s = ss[:eq_index].strip()
         rhs_s = ss[eq_index + 1 :].strip()
         left = parse_expr(lhs_s, transformations=trans, local_dict=ld)
         right = parse_expr(rhs_s, transformations=trans, local_dict=ld)
+
         # Auto-convert tuple-like results to SymPy Point/Tuple when possible
         def _maybe_convert_tuple(obj):
             try:
                 # sympy Tuple -> .args, Python tuple/list -> iterate
                 elems = None
-                if getattr(obj, 'is_Tuple', False):
+                if getattr(obj, "is_Tuple", False):
                     elems = list(obj.args)
                 elif isinstance(obj, (list, tuple)):
                     elems = list(obj)
@@ -145,9 +147,10 @@ def expr_from_value(s: str, transformations=None, local_dict=None, extra_transfo
 
     # Auto-convert tuple-like parse results into Points/Tuples when appropriate
     try:
+
         def _maybe_convert(obj):
             try:
-                if getattr(obj, 'is_Tuple', False):
+                if getattr(obj, "is_Tuple", False):
                     elems = list(obj.args)
                 elif isinstance(obj, (list, tuple)):
                     elems = list(obj)
@@ -174,12 +177,15 @@ def expr_from_value(s: str, transformations=None, local_dict=None, extra_transfo
     except Exception:
         return res
 
+
 # Module-level applet dimensionality flag. Use `set_applet_3d` / `get_applet_3d`
 _is_applet_3d: Optional[bool] = None
 
 try:
-    from polars.exceptions import ColumnNotFoundError as _PolarsColumnNotFoundError
+    from polars.exceptions import \
+        ColumnNotFoundError as _PolarsColumnNotFoundError
 except Exception:
+
     class _PolarsColumnNotFoundError(Exception):
         pass
 
@@ -248,6 +254,8 @@ def get_applet_3d(force: bool = False) -> Optional[bool]:
         return val
     except (ImportError, RuntimeError, AttributeError, TypeError):
         return None
+
+
 # Note: `set_applet_3d` / `get_applet_3d` live in `ggblab_extra.sympy.point`.
 # Callers should import them from `ggblab_extra.sympy.point` directly.
 
@@ -265,7 +273,7 @@ async def is_applet_3d_from_ggblab(ggb=None) -> Optional[bool]:
         try:
             from ggblab.ipymagic import GeoGebra
 
-            inst = getattr(GeoGebra, '_instance', None)
+            inst = getattr(GeoGebra, "_instance", None)
             if inst is not None:
                 ggb = inst
             else:
@@ -274,11 +282,11 @@ async def is_applet_3d_from_ggblab(ggb=None) -> Optional[bool]:
                     from IPython import get_ipython
 
                     ip = get_ipython()
-                    user_ns = getattr(ip, 'user_ns', None) if ip is not None else None
+                    user_ns = getattr(ip, "user_ns", None) if ip is not None else None
                 except (ImportError, AttributeError, RuntimeError):
                     user_ns = None
-                if isinstance(user_ns, dict) and 'ggb' in user_ns:
-                    ggb = user_ns.get('ggb')
+                if isinstance(user_ns, dict) and "ggb" in user_ns:
+                    ggb = user_ns.get("ggb")
         except (ImportError, AttributeError):
             # If ipymagic or IPython aren't available, continue with ggb=None
             ggb = None
@@ -322,6 +330,7 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
     Returns the resolved point-like object or None.
     """
     import importlib
+
     try:
         point_mod = importlib.import_module("ggblab_extra.sympy.point")
         sympy_point_from_coords = getattr(point_mod, "sympy_point_from_coords")
@@ -330,9 +339,9 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
         sympy_point_from_coords = None
         point_from_value = None
     try:
-        from sympy.parsing.sympy_parser import parse_expr
-        from sympy.parsing.sympy_parser import standard_transformations
-        from sympy.parsing.sympy_parser import implicit_multiplication_application
+        from sympy.parsing.sympy_parser import (
+            implicit_multiplication_application, parse_expr,
+            standard_transformations)
     except Exception:
         parse_expr = None
         standard_transformations = ()
@@ -359,7 +368,13 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             resolved = getattr(obj, "obj", obj) if obj is not None else None
             if is_pointlike(resolved):
                 return resolved
-        except (KeyError, IndexError, TypeError, AttributeError, _PolarsColumnNotFoundError):
+        except (
+            KeyError,
+            IndexError,
+            TypeError,
+            AttributeError,
+            _PolarsColumnNotFoundError,
+        ):
             # If the object column is not present, fall through to value parsing
             pass
         try:
@@ -370,10 +385,14 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
             s = s.lstrip("=").strip().strip("()")
             comps = [v.strip() for v in s.split(",")]
             # Parse with sympy if available, otherwise return a tuple of parsed exprs
-            if 'expr_from_value' in globals():
-                parsed = [expr_from_value(v, transformations=_transformations) for v in comps]
+            if "expr_from_value" in globals():
+                parsed = [
+                    expr_from_value(v, transformations=_transformations) for v in comps
+                ]
             elif parse_expr is not None:
-                parsed = [parse_expr(v, transformations=_transformations) for v in comps]
+                parsed = [
+                    parse_expr(v, transformations=_transformations) for v in comps
+                ]
             else:
                 # SymPy not available: try numeric conversion, else leave as string
                 parsed = []
@@ -418,4 +437,3 @@ __all__ = [
     "resolve_label_to_point",
     "expr_from_value",
 ]
- 

@@ -3,6 +3,7 @@
 Relocated from `ggblab_core.bridge_client`.
 Provides synchronous `send`/`get_reply` helpers and `retry_send`.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,7 +21,9 @@ def _parse_reply(text: str) -> Any:
         return text
 
 
-def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: float = 10.0) -> Any:
+def request(
+    payload: Any, host: str = "127.0.0.1", port: int = 8765, timeout: float = 10.0
+) -> Any:
     data = payload
     if not isinstance(payload, (str, bytes)):
         try:
@@ -33,9 +36,10 @@ def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: fl
         # If the server is present in the same process, try to use local_send
         try:
             import importlib
-            pb = importlib.import_module('comm_bridge.server')
-            state = getattr(pb, 'get_state', lambda: {})()
-            if state.get('running') and hasattr(pb, 'local_send'):
+
+            pb = importlib.import_module("comm_bridge.server")
+            state = getattr(pb, "get_state", lambda: {})()
+            if state.get("running") and hasattr(pb, "local_send"):
                 try:
                     return pb.local_send(payload, timeout=timeout)
                 except Exception:
@@ -44,14 +48,14 @@ def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: fl
             pass
 
         s = socket.create_connection((host, port), timeout=timeout)
-        s_file = s.makefile('rwb')
-        line = (data.rstrip('\n') + '\n').encode('utf-8')
+        s_file = s.makefile("rwb")
+        line = (data.rstrip("\n") + "\n").encode("utf-8")
         s_file.write(line)
         s_file.flush()
         resp_bytes = s_file.readline()
         if not resp_bytes:
-            raise RuntimeError('no response from bridge')
-        text = resp_bytes.decode('utf-8', errors='replace').strip()
+            raise RuntimeError("no response from bridge")
+        text = resp_bytes.decode("utf-8", errors="replace").strip()
         return _parse_reply(text)
     finally:
         try:
@@ -61,7 +65,13 @@ def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: fl
             pass
 
 
-def request_async(payload: Any, callback: Callable[[Any, Optional[Exception]], None], host: str = '127.0.0.1', port: int = 8765, timeout: float = 10.0) -> threading.Thread:
+def request_async(
+    payload: Any,
+    callback: Callable[[Any, Optional[Exception]], None],
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    timeout: float = 10.0,
+) -> threading.Thread:
     def _worker():
         try:
             reply = request(payload, host=host, port=port, timeout=timeout)
@@ -80,14 +90,16 @@ def request_async(payload: Any, callback: Callable[[Any, Optional[Exception]], N
     return t
 
 
-def poll_reply(reply_id: str, host: str = '127.0.0.1', port: int = 8765, timeout: float = 5.0) -> Any:
-    payload = {'op': 'get_reply', 'id': reply_id}
+def poll_reply(
+    reply_id: str, host: str = "127.0.0.1", port: int = 8765, timeout: float = 5.0
+) -> Any:
+    payload = {"op": "get_reply", "id": reply_id}
     return request(payload, host=host, port=port, timeout=timeout)
 
 
 def request_with_retry(
     payload: Any,
-    host: str = '127.0.0.1',
+    host: str = "127.0.0.1",
     port: int = 8765,
     timeout: float = 10.0,
     retries: int = 3,
@@ -99,12 +111,12 @@ def request_with_retry(
     last_exc = None
     msg_id = None
     if isinstance(payload, dict):
-        msg_id = payload.get('id')
+        msg_id = payload.get("id")
         if not msg_id:
             try:
                 msg_id = str(uuid.uuid4())
                 payload = dict(payload)
-                payload['id'] = msg_id
+                payload["id"] = msg_id
             except Exception:
                 msg_id = None
 
@@ -114,7 +126,7 @@ def request_with_retry(
         except Exception as e:
             last_exc = e
             if attempt < (retries - 1):
-                sleep_for = backoff * (2 ** attempt)
+                sleep_for = backoff * (2**attempt)
                 try:
                     time.sleep(sleep_for)
                 except Exception:
@@ -126,7 +138,7 @@ def request_with_retry(
         while time.time() < end:
             try:
                 r = poll_reply(msg_id, host=host, port=port, timeout=poll_interval)
-                if isinstance(r, dict) and r.get('error'):
+                if isinstance(r, dict) and r.get("error"):
                     pass
                 else:
                     return r
@@ -138,7 +150,7 @@ def request_with_retry(
                 pass
         if last_exc is not None:
             raise last_exc
-    return {'error': 'retry_send failed without exception'}
+    return {"error": "retry_send failed without exception"}
 
 
-__all__ = ['request', 'request_async', 'poll_reply', 'request_with_retry']
+__all__ = ["request", "request_async", "poll_reply", "request_with_retry"]

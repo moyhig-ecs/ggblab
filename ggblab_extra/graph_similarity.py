@@ -1,22 +1,23 @@
+import logging
+
 import networkx as nx
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 import sympy as sp
-import logging
+from scipy.optimize import linear_sum_assignment
 
 logger = logging.getLogger(__name__)
 
 
 def normalize_label(name: str) -> str:
     if name is None:
-        return ''
-    return ''.join(ch for ch in name if ch.isalnum()).upper()
+        return ""
+    return "".join(ch for ch in name if ch.isalnum()).upper()
 
 
 def node_feature(n, attrs=None):
     attrs = attrs or {}
-    t = attrs.get('Type', '')
-    label = attrs.get('Name', n) if attrs.get('Name', None) else n
+    t = attrs.get("Type", "")
+    label = attrs.get("Name", n) if attrs.get("Name", None) else n
     return (t, normalize_label(label))
 
 
@@ -29,7 +30,7 @@ def build_graph_from_tuples(nodes, edges):
     return G
 
 
-def collapse_scc(G: nx.DiGraph, prefix='S'):
+def collapse_scc(G: nx.DiGraph, prefix="S"):
     comps = list(nx.strongly_connected_components(G))
     comp_map = {}
     members = {}
@@ -46,17 +47,17 @@ def collapse_scc(G: nx.DiGraph, prefix='S'):
         for n in comp:
             comp_map[n] = sid
             a = G.nodes.get(n, {})
-            t = a.get('Type')
+            t = a.get("Type")
             if t:
                 types.append(t)
-            nm = a.get('Name') or n
+            nm = a.get("Name") or n
             if nm:
                 names.append(str(nm))
-            v = a.get('Value')
+            v = a.get("Value")
             if v is not None:
                 vals.add(str(v))
-            x = a.get('x')
-            y = a.get('y')
+            x = a.get("x")
+            y = a.get("y")
             if x is not None and y is not None:
                 try:
                     xs.append(float(x))
@@ -64,15 +65,15 @@ def collapse_scc(G: nx.DiGraph, prefix='S'):
                 except Exception:
                     logger.exception("Failed to parse coordinates for node %s", n)
         if types:
-            attrs['Type'] = '|'.join(sorted(set(types)))
+            attrs["Type"] = "|".join(sorted(set(types)))
         if names:
-            attrs['Name'] = '|'.join(sorted(set(names)))
+            attrs["Name"] = "|".join(sorted(set(names)))
         if len(vals) == 1:
-            attrs['Value'] = next(iter(vals))
+            attrs["Value"] = next(iter(vals))
         if xs and ys:
-            attrs['x'] = sum(xs) / len(xs)
-            attrs['y'] = sum(ys) / len(ys)
-        attrs['members'] = members[sid]
+            attrs["x"] = sum(xs) / len(xs)
+            attrs["y"] = sum(ys) / len(ys)
+        attrs["members"] = members[sid]
         G2.add_node(sid, **attrs)
 
     for u, v in G.edges():
@@ -89,8 +90,8 @@ def collapse_scc(G: nx.DiGraph, prefix='S'):
 def cost_between(node_a, node_b, Ga, Gb):
     fa = node_feature(node_a, Ga.nodes.get(node_a, {}))
     fb = node_feature(node_b, Gb.nodes.get(node_b, {}))
-    va = Ga.nodes.get(node_a, {}).get('Value')
-    vb = Gb.nodes.get(node_b, {}).get('Value')
+    va = Ga.nodes.get(node_a, {}).get("Value")
+    vb = Gb.nodes.get(node_b, {}).get("Value")
     try:
         if va and vb:
             ea = sp.sympify(va)
@@ -105,8 +106,8 @@ def cost_between(node_a, node_b, Ga, Gb):
                 sb = sp.sympify(vb)
                 vars = list(sa.free_symbols.union(sb.free_symbols))
                 if vars:
-                    f1 = sp.lambdify(vars, sa, 'numpy')
-                    f2 = sp.lambdify(vars, sb, 'numpy')
+                    f1 = sp.lambdify(vars, sa, "numpy")
+                    f2 = sp.lambdify(vars, sb, "numpy")
                     pts = [0, 1, 2, 3]
                     for p in pts:
                         vals = [p for _ in vars]
@@ -114,17 +115,25 @@ def cost_between(node_a, node_b, Ga, Gb):
                             if float(f1(*vals)) != float(f2(*vals)):
                                 break
                         except Exception:
-                            logger.exception("Numeric sampling failed for symbolic comparison between %s and %s", va, vb)
+                            logger.exception(
+                                "Numeric sampling failed for symbolic comparison between %s and %s",
+                                va,
+                                vb,
+                            )
                             break
                     else:
                         return 0.0
         except Exception:
-            logger.exception("Fallback numeric sampling failed for symbolic comparison between %s and %s", va, vb)
+            logger.exception(
+                "Fallback numeric sampling failed for symbolic comparison between %s and %s",
+                va,
+                vb,
+            )
 
-    ax = Ga.nodes.get(node_a, {}).get('x')
-    ay = Ga.nodes.get(node_a, {}).get('y')
-    bx = Gb.nodes.get(node_b, {}).get('x')
-    by = Gb.nodes.get(node_b, {}).get('y')
+    ax = Ga.nodes.get(node_a, {}).get("x")
+    ay = Ga.nodes.get(node_a, {}).get("y")
+    bx = Gb.nodes.get(node_b, {}).get("x")
+    by = Gb.nodes.get(node_b, {}).get("y")
     if None not in (ax, ay, bx, by):
         try:
             d = ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
@@ -143,12 +152,19 @@ def cost_between(node_a, node_b, Ga, Gb):
     return 1.0
 
 
-def hungarian_similarity(G_ref: nx.DiGraph, G_sub: nx.DiGraph, insertion_cost=1.0, collapse_cycles=True):
+def hungarian_similarity(
+    G_ref: nx.DiGraph, G_sub: nx.DiGraph, insertion_cost=1.0, collapse_cycles=True
+):
     comp_report = None
     if collapse_cycles:
-        G_ref_c, ref_map, ref_members = collapse_scc(G_ref, prefix='R')
-        G_sub_c, sub_map, sub_members = collapse_scc(G_sub, prefix='S')
-        comp_report = {'ref_map': ref_map, 'sub_map': sub_map, 'ref_members': ref_members, 'sub_members': sub_members}
+        G_ref_c, ref_map, ref_members = collapse_scc(G_ref, prefix="R")
+        G_sub_c, sub_map, sub_members = collapse_scc(G_sub, prefix="S")
+        comp_report = {
+            "ref_map": ref_map,
+            "sub_map": sub_map,
+            "ref_members": ref_members,
+            "sub_members": sub_members,
+        }
         G_ref_use = G_ref_c
         G_sub_use = G_sub_c
     else:
@@ -195,21 +211,32 @@ def hungarian_similarity(G_ref: nx.DiGraph, G_sub: nx.DiGraph, insertion_cost=1.
             if not G_ref_use.has_edge(u1, v1):
                 edge_penalty += 1
     total_cost = total_node_cost + edge_penalty
-    worst = insertion_cost * (len(ref_nodes) + len(sub_nodes)) + max(G_ref_use.number_of_edges(), G_sub_use.number_of_edges())
+    worst = insertion_cost * (len(ref_nodes) + len(sub_nodes)) + max(
+        G_ref_use.number_of_edges(), G_sub_use.number_of_edges()
+    )
     similarity = 1.0 - min(1.0, total_cost / (worst if worst > 0 else 1))
     report = {
-        'ref_nodes': ref_nodes,
-        'sub_nodes': sub_nodes,
-        'collapse_report': comp_report,
-        'matched_pairs': list(zip([ref_nodes[i] for i in row_ind], [sub_nodes[j] for j in col_ind])),
-        'unmatched_ref': list(unmatched_ref),
-        'unmatched_sub': list(unmatched_sub),
-        'node_cost': float(total_node_cost),
-        'edge_penalty': int(edge_penalty),
-        'total_cost': float(total_cost),
-        'similarity': float(similarity),
+        "ref_nodes": ref_nodes,
+        "sub_nodes": sub_nodes,
+        "collapse_report": comp_report,
+        "matched_pairs": list(
+            zip([ref_nodes[i] for i in row_ind], [sub_nodes[j] for j in col_ind])
+        ),
+        "unmatched_ref": list(unmatched_ref),
+        "unmatched_sub": list(unmatched_sub),
+        "node_cost": float(total_node_cost),
+        "edge_penalty": int(edge_penalty),
+        "total_cost": float(total_cost),
+        "similarity": float(similarity),
     }
     return similarity, report
 
 
-__all__ = ['normalize_label', 'node_feature', 'build_graph_from_tuples', 'collapse_scc', 'cost_between', 'hungarian_similarity']
+__all__ = [
+    "normalize_label",
+    "node_feature",
+    "build_graph_from_tuples",
+    "collapse_scc",
+    "cost_between",
+    "hungarian_similarity",
+]

@@ -29,7 +29,7 @@ function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
       <div id="ggb-container">
         <div id="ggb-mount" class="ggb-mount"></div>
       </div>
-    
+
     ${serverSettingsJson ? `<script>window.__GGBlab_ServerSettings = ${serverSettingsJson}; window.__GGBlab_AutoInit = ${autoInit ? 'true' : 'false'};</script>` : ''}
     <script src="${bundleScriptUrl}"></script>
   </body>
@@ -42,7 +42,7 @@ function getWebviewContent(bundleScriptUrl, serverSettingsJson, autoInit) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GGBlab Applet - Bundle Missing</title>
-    
+
     <style>
       body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:24px}
       pre{background:#f6f8fa;padding:12px;border-radius:6px}
@@ -754,4 +754,3 @@ function activate(context) {
 function deactivate() {}
 
 module.exports = { activate, deactivate };
-

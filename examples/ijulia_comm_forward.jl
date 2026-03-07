@@ -201,7 +201,7 @@ function on_open(comm, msg)
     (pymod, pymgr) = _ensure_py_forward_module()
     try
         # Attempt to determine a stable comm id from various places.
-        # 1) common comm objects may expose `id`; 2) open message may include comm_id; 
+        # 1) common comm objects may expose `id`; 2) open message may include comm_id;
         # 3) fallback to string(comm).
         cid = nothing
         # try common properties

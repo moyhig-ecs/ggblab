@@ -14,7 +14,7 @@ at the top-level package import.
 from importlib import import_module
 from typing import Any
 
-from .utils import set_applet_3d, get_applet_3d
+from .utils import get_applet_3d, set_applet_3d
 
 # Build `__all__` dynamically so the module can expose names without
 # importing heavy SymPy-dependent modules at import time. Static analyzers
@@ -80,4 +80,6 @@ def __dir__():
 # importing heavy SymPy-dependent modules at import time. Static analyzers
 # may not be able to prove the lazy imports; silence that specific check
 # for this expression.
-__all__ = ["set_applet_3d", "get_applet_3d"] + list(_LAZY_MAP.keys())  # pylint: disable=undefined-all-variable
+__all__ = ["set_applet_3d", "get_applet_3d"] + list(
+    _LAZY_MAP.keys()
+)  # pylint: disable=undefined-all-variable

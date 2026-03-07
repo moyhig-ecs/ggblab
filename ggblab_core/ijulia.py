@@ -21,14 +21,16 @@ Quick snippet (Python)
 >>> stop_bridge()
 
 """
-from typing import Any, Optional
+
 import json
+from typing import Any
 
 
 def _import_server_client():
     try:
-        import comm_bridge.server as _server  # type: ignore
         import comm_bridge.client as _client  # type: ignore
+        import comm_bridge.server as _server  # type: ignore
+
         return _server, _client
     except Exception:
         return None, None
@@ -37,6 +39,7 @@ def _import_server_client():
 def _get_server_module():
     try:
         import comm_bridge.server as _server  # type: ignore
+
         return _server
     except Exception:
         return None
@@ -60,7 +63,7 @@ def start_bridge(port: int = 0, timeout: float = 10.0) -> dict:
     """
     server, _ = _import_server_client()
     if server is None:
-        raise RuntimeError('comm_bridge.server not available')
+        raise RuntimeError("comm_bridge.server not available")
     return server.start_server(port=port, timeout=timeout)
 
 
@@ -75,11 +78,13 @@ def stop_bridge() -> None:
     """
     server, _ = _import_server_client()
     if server is None:
-        raise RuntimeError('comm_bridge.server not available')
+        raise RuntimeError("comm_bridge.server not available")
     return server.stop_server()
 
 
-def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: float = 10.0) -> Any:
+def request(
+    payload: Any, host: str = "127.0.0.1", port: int = 8765, timeout: float = 10.0
+) -> Any:
     """Send a request payload to the bridge and return the parsed reply.
 
     Parameters
@@ -103,8 +108,8 @@ def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: fl
     server = _get_server_module()
     if server is not None:
         try:
-            state = getattr(server, 'get_state', lambda: {})()
-            if state.get('running') and hasattr(server, 'local_send'):
+            state = getattr(server, "get_state", lambda: {})()
+            if state.get("running") and hasattr(server, "local_send"):
                 try:
                     return server.local_send(payload, timeout=timeout)
                 except Exception:
@@ -115,14 +120,21 @@ def request(payload: Any, host: str = '127.0.0.1', port: int = 8765, timeout: fl
 
     _, client = _import_server_client()
     if client is None:
-        raise RuntimeError('comm_bridge.client not available')
+        raise RuntimeError("comm_bridge.client not available")
     return client.request(payload, host=host, port=port, timeout=timeout)
 
 
-def request_with_retry(payload: Any, host: str = '127.0.0.1', port: int = 8765,
-                       timeout: float = 10.0, retries: int = 3, backoff: float = 0.5,
-                       allow_get_reply: bool = True, poll_interval: float = 0.5,
-                       poll_timeout: float = 5.0) -> Any:
+def request_with_retry(
+    payload: Any,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    timeout: float = 10.0,
+    retries: int = 3,
+    backoff: float = 0.5,
+    allow_get_reply: bool = True,
+    poll_interval: float = 0.5,
+    poll_timeout: float = 5.0,
+) -> Any:
     """Send a request with retry/backoff and optional stored-reply polling.
 
     This helper attempts to send the payload to the bridge and will retry
@@ -150,8 +162,8 @@ def request_with_retry(payload: Any, host: str = '127.0.0.1', port: int = 8765,
     server = _get_server_module()
     if server is not None:
         try:
-            state = getattr(server, 'get_state', lambda: {})()
-            if state.get('running') and hasattr(server, 'local_send'):
+            state = getattr(server, "get_state", lambda: {})()
+            if state.get("running") and hasattr(server, "local_send"):
                 try:
                     return server.local_send(payload, timeout=timeout)
                 except Exception:
@@ -161,7 +173,7 @@ def request_with_retry(payload: Any, host: str = '127.0.0.1', port: int = 8765,
 
     _, client = _import_server_client()
     if client is None:
-        raise RuntimeError('comm_bridge.client not available')
+        raise RuntimeError("comm_bridge.client not available")
     return client.request_with_retry(
         payload,
         host=host,
@@ -175,7 +187,9 @@ def request_with_retry(payload: Any, host: str = '127.0.0.1', port: int = 8765,
     )
 
 
-def poll_reply(reply_id: str, host: str = '127.0.0.1', port: int = 8765, timeout: float = 5.0) -> Any:
+def poll_reply(
+    reply_id: str, host: str = "127.0.0.1", port: int = 8765, timeout: float = 5.0
+) -> Any:
     """Poll the bridge for a previously stored reply by ``reply_id``.
 
     Parameters
@@ -188,11 +202,13 @@ def poll_reply(reply_id: str, host: str = '127.0.0.1', port: int = 8765, timeout
     """
     _, client = _import_server_client()
     if client is None:
-        raise RuntimeError('comm_bridge.client not available')
+        raise RuntimeError("comm_bridge.client not available")
     return client.poll_reply(reply_id, host=host, port=port, timeout=timeout)
 
 
-def request_json(json_text: str, host: str = '127.0.0.1', port: int = 8765, timeout: float = 10.0) -> str:
+def request_json(
+    json_text: str, host: str = "127.0.0.1", port: int = 8765, timeout: float = 10.0
+) -> str:
     """Variant that accepts a JSON string and returns a JSON string.
 
     Useful for language-bridging (e.g., calling from Julia) where passing
@@ -209,9 +225,14 @@ def request_json(json_text: str, host: str = '127.0.0.1', port: int = 8765, time
     try:
         return json.dumps(res)
     except Exception:
-        return json.dumps({'reply': str(res)})
+        return json.dumps({"reply": str(res)})
 
 
 __all__ = [
-    'start_bridge', 'stop_bridge', 'request', 'request_with_retry', 'poll_reply', 'request_json'
+    "start_bridge",
+    "stop_bridge",
+    "request",
+    "request_with_retry",
+    "poll_reply",
+    "request_json",
 ]

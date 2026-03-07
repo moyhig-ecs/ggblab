@@ -6,20 +6,30 @@ across Python sessions. It's intended as a lightweight helper; for
 high-throughput use cases prefer an external key-value store.
 """
 
+import importlib.util
 import shelve
+from typing import Any
+
+# Prefer explicit availability check instead of broad try/except
+if importlib.util.find_spec("ggblab.utils_julia") is not None:
+    from .utils_julia import called_from_julia  # type: ignore
+else:
+
+    def called_from_julia(*args: Any, **kwargs: Any) -> bool:  # fallback
+        return False
 
 
 class PersistentCounter:
     """Persistent counter using shelve database.
-    
+
     Manages persistent key-value storage with automatic counting across sessions.
     Provides a dict-like interface with iteration, containment checks, and indexing.
-    
+
     Attributes:
         cache_path (str): Path to shelve database
         enabled (bool): Enable/disable persistence
         _db: shelve.DbfilenameShelf instance
-    
+
     Examples:
         >>> counter = PersistentCounter('my_cache.db')
         >>> counter.increment(['item1', 'item2'])
@@ -30,15 +40,20 @@ class PersistentCounter:
         >>> for key in counter:
         ...     print(f"{key}: {counter[key]}")
     """
-    
-    def __init__(self, cache_path='persistent_counter.db', enabled=True):
+
+    def __init__(self, cache_path="persistent_counter.db", enabled=True):
         """Initialize the persistent counter.
-        
+
         Args:
             cache_path (str): Path to shelve database. Default: 'persistent_counter.db'
             enabled (bool): Enable persistence. Default: True
         """
         self.cache_path = cache_path
+        # If running under Julia/PythonCall, disable shelve-backed persistence
+        if enabled and called_from_julia():
+            # Avoid cross-process shelve locks when invoked from Julia embedding
+            print("Info: PersistentCounter disabled when called from Julia/PythonCall")
+            enabled = False
         self.enabled = enabled
         self._db = None
         if self.enabled:
@@ -46,7 +61,7 @@ class PersistentCounter:
             # Note: For large-scale or cross-process counters consider using an
             # external key-value store in your deployment. This utility is a
             # lightweight shelve-backed convenience included in the core package.
-    
+
     def _open(self):
         """Open the shelve database."""
         try:
@@ -56,16 +71,16 @@ class PersistentCounter:
             self._db = None
             # Note: If the shelve backend is incompatible on your platform you may
             # see warnings; consider removing or recreating the cache file.
-    
+
     def increment(self, keys):
         """Increment counts for given keys.
-        
+
         Args:
             keys (set or iterable): Keys to increment
         """
         if not self.enabled or self._db is None:
             return
-        
+
         for key in keys:
             if key:
                 try:
@@ -77,35 +92,35 @@ class PersistentCounter:
                 # Note: This operation writes to a local shelve DB and may be
                 # comparatively slow; for high-throughput scenarios use a dedicated
                 # external service.
-    
+
     def get_all(self):
         """Retrieve all stored key-value pairs.
-        
+
         Returns:
             dict: Keys mapped to their counts
         """
         if not self.enabled or self._db is None:
             return {}
-        
+
         try:
             return dict(self._db)
         except Exception as e:
             print(f"Warning: Could not retrieve stored data: {e}")
             return {}
             # Note: Return value is a snapshot of the shelve contents.
-    
+
     def clear(self):
         """Clear all stored data."""
         if not self.enabled or self._db is None:
             return
-        
+
         try:
             self._db.clear()
             self._db.sync()
         except Exception as e:
             print(f"Warning: Could not clear data: {e}")
             # Note: Clearing is irreversible for the current cache file.
-    
+
     def close(self):
         """Close the database."""
         if self._db is not None:
@@ -115,13 +130,13 @@ class PersistentCounter:
             except Exception as e:
                 print(f"Warning: Could not close database: {e}")
             # Note: Always call `close()` before process exit to ensure data is flushed.
-    
+
     def __contains__(self, key):
         """Check if a key exists in the counter.
-        
+
         Args:
             key: Key to check
-            
+
         Returns:
             bool: True if key exists, False otherwise
         """
@@ -131,10 +146,10 @@ class PersistentCounter:
             return key in self._db
         except Exception:
             return False
-    
+
     def __iter__(self):
         """Iterate over keys in the counter.
-        
+
         Yields:
             Keys in the database
         """
@@ -144,10 +159,10 @@ class PersistentCounter:
             return iter(self._db)
         except Exception:
             return iter([])
-    
+
     def __len__(self):
         """Return the number of keys in the counter.
-        
+
         Returns:
             int: Number of stored keys
         """
@@ -157,16 +172,16 @@ class PersistentCounter:
             return len(self._db)
         except Exception:
             return 0
-    
+
     def __getitem__(self, key):
         """Get the count for a key.
-        
+
         Args:
             key: Key to retrieve
-            
+
         Returns:
             int: Count for the key
-            
+
         Raises:
             KeyError: If key does not exist
         """
@@ -178,10 +193,10 @@ class PersistentCounter:
             raise
         except Exception as e:
             raise KeyError(f"Error retrieving key '{key}': {e}")
-    
+
     def __setitem__(self, key, value):
         """Set the count for a key.
-        
+
         Args:
             key: Key to set
             value: Count value to set

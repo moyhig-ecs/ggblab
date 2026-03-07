@@ -5,21 +5,18 @@ objects when SymPy is available, otherwise they return simple tuples or
 lightweight wrappers.
 """
 
+import math
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
-import re
-import math
 
-from sympy.parsing.sympy_parser import (
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
-from sympy import symbols, sin, cos, Matrix, sqrt
+from sympy import Matrix, cos, sin, sqrt, symbols
 from sympy.core.sympify import SympifyError
 from sympy.geometry import Point3D as SympyPoint3D
+from sympy.parsing.sympy_parser import (implicit_multiplication_application,
+                                        parse_expr, standard_transformations)
 
-from .point import sympy_point_from_coords, point_from_value
+from .point import point_from_value, sympy_point_from_coords
 
 try:
     from sympy.geometry.circle import Circle as SympyCircle
@@ -178,6 +175,7 @@ def circle_from_value(value_str: str):
         s_low = s
         eq_pos = s_low.find("=")
         if eq_pos != -1:
+
             def find_matching_paren(text, start_idx):
                 depth = 0
                 for i in range(start_idx, len(text)):
@@ -202,22 +200,38 @@ def circle_from_value(value_str: str):
                             vec_end = find_matching_paren(s_low, second_paren)
                             if vec_end != -1:
                                 vec_str = s_low[second_paren + 1 : vec_end]
-                                center_parts = [c.strip() for c in center_str.split(",")]
+                                center_parts = [
+                                    c.strip() for c in center_str.split(",")
+                                ]
                                 if len(center_parts) not in (2, 3):
-                                    raise ValueError("expected 2 or 3 components in center")
+                                    raise ValueError(
+                                        "expected 2 or 3 components in center"
+                                    )
                                 center_exprs = [
-                                    _parse_expr(p, local={"sin": sin, "cos": cos, "t": _t})
+                                    _parse_expr(
+                                        p, local={"sin": sin, "cos": cos, "t": _t}
+                                    )
                                     for p in center_parts
                                 ]
                                 vec_parts = [v.strip() for v in vec_str.split(",")]
                                 if len(vec_parts) != 3:
-                                    raise ValueError("expected three components in parametric part")
+                                    raise ValueError(
+                                        "expected three components in parametric part"
+                                    )
                                 vec_exprs = [
-                                    _parse_expr(v, local={"sin": sin, "cos": cos, "t": _t})
+                                    _parse_expr(
+                                        v, local={"sin": sin, "cos": cos, "t": _t}
+                                    )
                                     for v in vec_parts
                                 ]
-                                cos_coeffs = [expr.expand().coeff(cos(_t), 1) for expr in vec_exprs]
-                                sin_coeffs = [expr.expand().coeff(sin(_t), 1) for expr in vec_exprs]
+                                cos_coeffs = [
+                                    expr.expand().coeff(cos(_t), 1)
+                                    for expr in vec_exprs
+                                ]
+                                sin_coeffs = [
+                                    expr.expand().coeff(sin(_t), 1)
+                                    for expr in vec_exprs
+                                ]
                                 A = Matrix(cos_coeffs)
                                 B = Matrix(sin_coeffs)
                                 normal = A.cross(B)
@@ -225,7 +239,9 @@ def circle_from_value(value_str: str):
                                 rA = sqrt(sum(ci**2 for ci in A))
                                 rB = sqrt(sum(ci**2 for ci in B))
                                 radius = (rA + rB) / 2
-                                center = sympy_point_from_coords(*center_exprs, is_3d=True)
+                                center = sympy_point_from_coords(
+                                    *center_exprs, is_3d=True
+                                )
                                 return Circle3D(
                                     center=center,
                                     normal=normal_simpl,

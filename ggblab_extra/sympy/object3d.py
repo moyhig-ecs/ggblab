@@ -4,8 +4,8 @@ Provides `Object3D`, `Segment` and `attach_object3d` which attaches an
 `object3d` column to a Polars DataFrame by resolving `Type`, `Command`,
 and `Value` using the 3D parsers.
 """
+
 from dataclasses import dataclass
-from typing import Optional
 
 try:
     from sympy.geometry import Point3D as SympyPoint3D
@@ -18,8 +18,9 @@ except ImportError:
         from sympy.geometry import Line3D as SympyLine3D
     except ImportError:
         SympyLine3D = None
-from .line import SimpleLine3D, to_sympy_line, segment_from_command as _segment_from_command, SegmentCommand
-
+from .line import SegmentCommand, SimpleLine3D
+from .line import segment_from_command as _segment_from_command
+from .line import to_sympy_line
 
 # Note: segment commands are represented by `SegmentCommand` from `line.py`.
 
@@ -27,6 +28,7 @@ from .line import SimpleLine3D, to_sympy_line, segment_from_command as _segment_
 @dataclass
 class Object3D:
     """Container describing a parsed 3D object and its origin metadata."""
+
     kind: str | None = None
     obj: object | None = None
     value: str | None = None
@@ -39,7 +41,12 @@ class Object3D:
         )
 
     @classmethod
-    def from_value_command(cls, value: str | None = None, command: str | None = None, type_: str | None = None):
+    def from_value_command(
+        cls,
+        value: str | None = None,
+        command: str | None = None,
+        type_: str | None = None,
+    ):
         """Construct an `Object3D` by heuristically parsing `value`/`command`.
 
         This method uses small module-level helpers to keep complexity low.
@@ -81,7 +88,12 @@ class Object3D:
                 return cls(kind="surface", obj=inner, value=value, command=command)
 
         # Heuristics: prefer circle for explicit curve commands or parametric values
-        if cmd_lower.startswith("cylinder") or cmd_lower.startswith("circle") or cmd_lower.startswith("intersectpath") or looks_parametric:
+        if (
+            cmd_lower.startswith("cylinder")
+            or cmd_lower.startswith("circle")
+            or cmd_lower.startswith("intersectpath")
+            or looks_parametric
+        ):
             inner = _try_circle_from_value(value)
             if inner is not None:
                 return cls(kind="circle", obj=inner, value=value, command=command)
@@ -90,7 +102,11 @@ class Object3D:
         if isinstance(value, str):
             vl = value.lower()
             # crude heuristic: contains both 'u' and 'v' and at least three comma-separated expressions
-            if ("u" in vl and "v" in vl and ("cos(" in vl or "sin(" in vl or "tan(" in vl)):
+            if (
+                "u" in vl
+                and "v" in vl
+                and ("cos(" in vl or "sin(" in vl or "tan(" in vl)
+            ):
                 inner = _try_surface_from_value(value)
                 if inner is not None:
                     return cls(kind="surface", obj=inner, value=value, command=command)
@@ -132,6 +148,7 @@ def _is_degenerate_circle(cand) -> bool:
     except (AttributeError, TypeError, ValueError):
         return False
 
+
 def _try_segment_from_command(cmd: str):
     if not cmd:
         return None
@@ -142,6 +159,7 @@ def _try_segment_from_command(cmd: str):
     except (AttributeError, TypeError, ValueError):
         return None
     return None
+
 
 def _try_line_from_value(val: str):
     if not val:
@@ -156,6 +174,7 @@ def _try_line_from_value(val: str):
     except (ImportError, AttributeError, TypeError, ValueError):
         return None
 
+
 def _try_circle_from_value(val: str):
     if not val:
         return None
@@ -169,6 +188,7 @@ def _try_circle_from_value(val: str):
         return None
     return None
 
+
 def _try_surface_from_value(val: str):
     if not val:
         return None
@@ -181,6 +201,7 @@ def _try_surface_from_value(val: str):
         return None
     return None
 
+
 def _try_point_from_value(val: str):
     if not val:
         return None
@@ -191,13 +212,21 @@ def _try_point_from_value(val: str):
         return p.obj if hasattr(p, "obj") else p
     except (ImportError, AttributeError, TypeError, ValueError):
         return None
+
+
 def segment_from_command(command_str: str) -> SegmentCommand:
     """Return the underlying `SegmentCommand` parsed from `command_str`."""
     sc = _segment_from_command(command_str)
     return sc
 
 
-def attach_object3d(df, type_col: str = "Type", command_col: str = "Command", value_col: str = "Value", out_col: str = "object3d"):
+def attach_object3d(
+    df,
+    type_col: str = "Type",
+    command_col: str = "Command",
+    value_col: str = "Value",
+    out_col: str = "object3d",
+):
     """Attach an `Object3D` for each row using `Type`, `Command`, and `Value`.
 
     Expects a Polars DataFrame and returns a new DataFrame with the
@@ -234,7 +263,11 @@ def attach_object3d(df, type_col: str = "Type", command_col: str = "Command", va
             continue
 
         try:
-            o = Object3D.from_value_command(value=v if v is not None else None, command=c if c is not None else None, type_=type_norm)
+            o = Object3D.from_value_command(
+                value=v if v is not None else None,
+                command=c if c is not None else None,
+                type_=type_norm,
+            )
         except (AttributeError, TypeError, ValueError):
             o = Object3D(kind=None, obj=None, value=v, command=c)
         objs.append(o)

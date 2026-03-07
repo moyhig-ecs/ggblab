@@ -15,7 +15,7 @@ Example:
     >>> ggb = await GeoGebra().init()
     >>> await ggb.command("A=(0,0)")
     >>> value = await ggb.function("getValue", ["A"])
-    
+
     Note:
         Heavy I/O and parsing implementations have been moved to the optional
         package `ggblab_extra`. If you need DataFrame-based construction I/O
@@ -37,12 +37,15 @@ except ImportError:
     # in editable mode with pip. It is highly recommended to install
     # the package from a stable release or in editable mode: https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs
     import warnings
+
     warnings.warn("Importing 'ggblab' outside a proper installation.")
     __version__ = "dev"
 
-from .comm import ggb_comm, ggb_comm_instance
+import asyncio
+
+from .comm import ggb_comm_instance
 from .file import ggb_file
-from .ggbapplet import GeoGebra, GeoGebraSemanticsError, GeoGebraSyntaxError
+from .ggbapplet import GeoGebra
 
 # Construction I/O was moved from `ggblab_extra` into the core package.
 # Expose `DataFrameIO` / `ConstructionIO` at package level so installs
@@ -64,34 +67,38 @@ try:
     import warnings
 
     from ggblab_extra.construction_parser import ggb_parser
-    
+
     def _deprecated_import(name):
         warnings.warn(
             f"Importing '{name}' from 'ggblab' is deprecated. "
             f"Use 'from ggblab_extra import {name}' instead. "
             f"This compatibility layer will be removed in ggblab 1.0.0.",
             DeprecationWarning,
-            stacklevel=3
+            stacklevel=3,
         )
-    
+
     class _DeprecatedModule:
         def __init__(self, name, module):
             self._name = name
             self._module = module
-        
+
         def __getattr__(self, attr):
             _deprecated_import(self._name)
             return getattr(self._module, attr)
-    
+
     # Wrap deprecated imports
     _parser_module = ggb_parser
-    ggb_parser = type('ggb_parser', (), {
-        '__call__': lambda self, *args, **kwargs: (
-            _deprecated_import('ggb_parser'),
-            _parser_module(*args, **kwargs)
-        )[1]
-    })()
-    
+    ggb_parser = type(
+        "ggb_parser",
+        (),
+        {
+            "__call__": lambda self, *args, **kwargs: (
+                _deprecated_import("ggb_parser"),
+                _parser_module(*args, **kwargs),
+            )[1]
+        },
+    )()
+
 except ImportError:
     # ggblab_extra not installed - no backward compatibility
     pass
@@ -100,7 +107,8 @@ except ImportError:
 try:
     import warnings
 
-    from ggblab_extra.persistent_counter import PersistentCounter as _PersistentCounter
+    from ggblab_extra.persistent_counter import \
+        PersistentCounter as _PersistentCounter
 
     class PersistentCounter(_PersistentCounter):
         """Deprecated shim; use ggblab_extra.PersistentCounter instead."""
@@ -112,7 +120,7 @@ try:
                 "Use 'from ggblab_extra import PersistentCounter' instead. "
                 "This compatibility layer will be removed in ggblab 1.0.0.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             super().__init__(*args, **kwargs)
 
@@ -120,16 +128,14 @@ except ImportError:
     # ggblab_extra not installed - no backward compatibility
     pass
 
+
 def _jupyter_labextension_paths():
     """Return the JupyterLab extension paths.
-    
+
     Returns:
         list: Extension metadata for JupyterLab.
     """
-    return [{
-        "src": "labextension",
-        "dest": "ggblab"
-    }]
+    return [{"src": "labextension", "dest": "ggblab"}]
 
 
 def load_ipython_extension(ipython):
@@ -151,13 +157,20 @@ def load_ipython_extension(ipython):
                 ggb_comm_instance.register_target()
                 globals()["_jupyter_ggblab_registered"] = True
                 import logging as _logging
-                _logging.getLogger(__name__).debug("ggblab: comm target registered (jupyter.ggblab)")
-            except Exception as e:
+
+                _logging.getLogger(__name__).debug(
+                    "ggblab: comm target registered (jupyter.ggblab)"
+                )
+            except Exception:
                 import logging as _logging
-                _logging.getLogger(__name__).exception("ggblab: comm registration failed")
+
+                _logging.getLogger(__name__).exception(
+                    "ggblab: comm registration failed"
+                )
         # Attempt to register IPython magics (non-critical)
         try:
             from .ipymagic import register_ggb_magic
+
             try:
                 register_ggb_magic(ipython)
             except Exception:
@@ -175,6 +188,7 @@ def load_ipython_extension(ipython):
 # and must not fail import if IPython is unavailable.
 try:
     from IPython import get_ipython as _get_ipython
+
     _ip = _get_ipython()
     if _ip is not None:
         try:
@@ -197,6 +211,7 @@ import warnings as _warnings
 _default_geo = None
 _module_api_warned = False
 
+
 def _create_default_instance(suppress_warning: bool = False):
     global _default_geo, _module_api_warned
     if _default_geo is None:
@@ -216,6 +231,100 @@ def _create_default_instance(suppress_warning: bool = False):
             _default_geo = None
     return _default_geo
 
+
+def connect_to_bridge(host: str = "127.0.0.1", port: int = 0):
+    """Configure the module to forward calls to a bridge started by
+    `ggblab_core.AppletInjector.start_proxy_mode`.
+
+    After calling this, module-level `function`/`command` will be
+    available and will forward to the bridge at `host:port`.
+    """
+    try:
+        import ggblab_core2 as _g2
+    except Exception as e:
+        raise RuntimeError("ggblab_core2 is required for connect_to_bridge") from e
+
+    try:
+        _g2.connect_to_bridge(host=host, port=port)
+    except Exception:
+        raise
+
+    # Also expose simple module-level forwarding helpers that call
+    # ggblab_core.applet.AppletInjector.*_sync via the bridge.
+    try:
+
+        async def _mod_function(name, args=None, timeout=None):
+            payload = {"type": "function", "payload": {"name": name, "args": args}}
+            import importlib
+
+            client = None
+            for modname in (
+                "comm_bridge.client",
+                "ggblab.comm_bridge.client",
+                "ggblab_core.comm_bridge.client",
+            ):
+                try:
+                    client = importlib.import_module(modname)
+                    break
+                except Exception:
+                    continue
+            if client is None:
+                raise RuntimeError("comm_bridge.client not available")
+            resp = await asyncio.to_thread(
+                client.request, payload, host, port, timeout or 10.0
+            )
+            if isinstance(resp, dict):
+                if "reply" in resp:
+                    resp = resp["reply"]
+                if isinstance(resp, dict) and "payload" in resp:
+                    p = resp["payload"]
+                    if isinstance(p, dict) and "value" in p:
+                        return p["value"]
+                if "value" in resp:
+                    return resp["value"]
+            return resp
+
+        async def _mod_command(command, timeout=None):
+            payload = {"type": "command", "payload": command}
+            import importlib
+
+            client = None
+            for modname in (
+                "comm_bridge.client",
+                "ggblab.comm_bridge.client",
+                "ggblab_core.comm_bridge.client",
+            ):
+                try:
+                    client = importlib.import_module(modname)
+                    break
+                except Exception:
+                    continue
+            if client is None:
+                raise RuntimeError("comm_bridge.client not available")
+            resp = await asyncio.to_thread(
+                client.request, payload, host, port, timeout or 10.0
+            )
+            if isinstance(resp, dict):
+                return resp.get("reply", resp) or resp
+            return resp
+
+        globals()["function"] = _mod_function
+        globals()["command"] = _mod_command
+
+        # Patch the default instance if already created
+        if _default_geo is not None:
+            try:
+                setattr(_default_geo, "function", _mod_function)
+                setattr(_default_geo, "command", _mod_command)
+            except Exception:
+                pass
+    except Exception:
+        # best-effort only
+        pass
+
+    return True
+
+
 def __getattr__(name):
     """Forward unknown module attributes to a default GeoGebra instance.
 
@@ -224,8 +333,11 @@ def __getattr__(name):
     """
     inst = _create_default_instance()
     if inst is None:
-        raise AttributeError(f"ggblab module attribute '{name}' not found and default GeoGebra instance could not be created")
+        raise AttributeError(
+            f"ggblab module attribute '{name}' not found and default GeoGebra instance could not be created"
+        )
     return getattr(inst, name)
+
 
 def __dir__():
     names = list(globals().keys())
@@ -247,6 +359,7 @@ def __dir__():
 # ---------------------------------------------------------------------------
 try:
     import sys as _sys
+
     inst = _default_geo or _create_default_instance(suppress_warning=True)
     if inst is not None:
         try:
@@ -254,7 +367,19 @@ try:
             # existing import patterns like `ggb.GeoGebra` still work when
             # the module object is replaced.
             try:
-                setattr(inst, 'GeoGebra', GeoGebra)
+                setattr(inst, "GeoGebra", GeoGebra)
+                # Convenience forwarders
+                try:
+                    if "connect_to_bridge" in globals():
+                        setattr(
+                            inst, "connect_to_bridge", globals()["connect_to_bridge"]
+                        )
+                    if "function" in globals():
+                        setattr(inst, "function", globals()["function"])
+                    if "command" in globals():
+                        setattr(inst, "command", globals()["command"])
+                except Exception:
+                    pass
                 # setattr(inst, 'ggb_comm', ggb_comm)
                 # setattr(inst, 'ggb_file', ggb_file)
             except Exception:
@@ -264,7 +389,14 @@ try:
             try:
                 mod = _sys.modules.get(__name__)
                 if mod is not None:
-                    for attr in ('__name__', '__package__', '__spec__', '__file__', '__path__', '__loader__'):
+                    for attr in (
+                        "__name__",
+                        "__package__",
+                        "__spec__",
+                        "__file__",
+                        "__path__",
+                        "__loader__",
+                    ):
                         if hasattr(mod, attr):
                             try:
                                 setattr(inst, attr, getattr(mod, attr))

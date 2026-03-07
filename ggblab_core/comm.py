@@ -16,10 +16,10 @@ Notes
   the opened comm id.
 """
 
-from typing import Any, Optional
+import logging
 import time
 import uuid
-import logging
+from typing import Any, Optional
 
 try:
     from jupyter_client import BlockingKernelClient
@@ -39,7 +39,12 @@ class CommSync:
     - timeout: seconds to wait for replies.
     """
 
-    def __init__(self, kernel_client: BlockingKernelClient, target_name: str, timeout: float = 5.0):
+    def __init__(
+        self,
+        kernel_client: BlockingKernelClient,
+        target_name: str,
+        timeout: float = 5.0,
+    ):
         if BlockingKernelClient is None:
             raise RuntimeError("jupyter_client.BlockingKernelClient is required")
         self.kc = kernel_client
@@ -67,7 +72,9 @@ class CommSync:
         # Send comm_open with an assigned comm_id so kernel knows the id
         try:
             # BlockingKernelClient exposes helper methods for comms
-            self.kc.comm_open(target_name=self.target_name, data=data or {}, comm_id=self.comm_id)
+            self.kc.comm_open(
+                target_name=self.target_name, data=data or {}, comm_id=self.comm_id
+            )
         except Exception:
             raise
         return self.comm_id
@@ -103,10 +110,14 @@ class CommSync:
                 continue
             content = msg.get("content", {})
             # content may include 'comm_id' or nested 'comm' key depending on version
-            received_comm_id = content.get("comm_id") or content.get("comm", {}).get("comm_id")
+            received_comm_id = content.get("comm_id") or content.get("comm", {}).get(
+                "comm_id"
+            )
             if received_comm_id == self.comm_id:
                 return content.get("data")
-        raise TimeoutError(f"No comm reply for comm_id={self.comm_id} within {self.timeout}s")
+        raise TimeoutError(
+            f"No comm reply for comm_id={self.comm_id} within {self.timeout}s"
+        )
 
     def close(self) -> None:
         """Close the comm on the kernel side (attempt, ignore failures)."""

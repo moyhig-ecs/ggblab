@@ -23,7 +23,9 @@ except Exception:
     KernelSpecManager = None  # type: ignore
 
 
-def make_kernel_json(adapter_path: str, display_name: str = "Julia (ggblab adapter)") -> dict:
+def make_kernel_json(
+    adapter_path: str, display_name: str = "Julia (ggblab adapter)"
+) -> dict:
     return {
         "argv": [sys.executable, adapter_path, "-f", "{connection_file}"],
         "display_name": display_name,
@@ -31,9 +33,14 @@ def make_kernel_json(adapter_path: str, display_name: str = "Julia (ggblab adapt
     }
 
 
-def install_kernel(name: str, adapter_path: str, user: bool = True, display_name: str | None = None) -> int:
+def install_kernel(
+    name: str, adapter_path: str, user: bool = True, display_name: str | None = None
+) -> int:
     if KernelSpecManager is None:
-        print("jupyter_client not available in this environment; cannot install kernelspec", file=sys.stderr)
+        print(
+            "jupyter_client not available in this environment; cannot install kernelspec",
+            file=sys.stderr,
+        )
         return 2
 
     ksm = KernelSpecManager()
@@ -56,7 +63,10 @@ def install_kernel(name: str, adapter_path: str, user: bool = True, display_name
 
 def uninstall_kernel(name: str) -> int:
     if KernelSpecManager is None:
-        print("jupyter_client not available in this environment; cannot uninstall kernelspec", file=sys.stderr)
+        print(
+            "jupyter_client not available in this environment; cannot uninstall kernelspec",
+            file=sys.stderr,
+        )
         return 2
     ksm = KernelSpecManager()
     try:
@@ -70,22 +80,37 @@ def uninstall_kernel(name: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    p = argparse.ArgumentParser(description="Install/uninstall julia adapter kernelspec")
+    p = argparse.ArgumentParser(
+        description="Install/uninstall julia adapter kernelspec"
+    )
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--install", action="store_true", help="Install the kernelspec")
-    group.add_argument("--uninstall", action="store_true", help="Uninstall the kernelspec")
-    p.add_argument("--name", default="ggblab-julia-adapter", help="Kernelspec name (id)")
-    p.add_argument("--user", action="store_true", help="Install for current user (default)")
+    group.add_argument(
+        "--uninstall", action="store_true", help="Uninstall the kernelspec"
+    )
+    p.add_argument(
+        "--name", default="ggblab-julia-adapter", help="Kernelspec name (id)"
+    )
+    p.add_argument(
+        "--user", action="store_true", help="Install for current user (default)"
+    )
     p.add_argument("--display-name", default=None, help="Display name shown in UIs")
     args = p.parse_args(argv)
 
-    adapter_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "julia_adapter_kernel.py"))
+    adapter_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "julia_adapter_kernel.py")
+    )
     if not os.path.exists(adapter_path):
         print(f"Adapter script not found at {adapter_path}", file=sys.stderr)
         return 2
 
     if args.install:
-        return install_kernel(args.name, adapter_path, user=args.user or True, display_name=args.display_name)
+        return install_kernel(
+            args.name,
+            adapter_path,
+            user=args.user or True,
+            display_name=args.display_name,
+        )
     else:
         return uninstall_kernel(args.name)
 

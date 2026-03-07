@@ -11,23 +11,27 @@ core package avoids importing these extras at import time to keep
 startup lightweight.
 """
 
-from .construction_io import ConstructionIO, DataFrameIO  # re-export for convenience
-from .construction_parser import ConstructionTreeParser, ggb_parser  # re-export parser
+from .construction_io import (ConstructionIO,  # re-export for convenience
+                              DataFrameIO)
+from .construction_parser import (ConstructionTreeParser,  # re-export parser
+                                  ggb_parser)
+
 try:
-	from .graph_similarity import hungarian_similarity, collapse_scc, cost_between
+    from .graph_similarity import (collapse_scc, cost_between,
+                                   hungarian_similarity)
 except Exception:  # pragma: no cover - allow optional deps to be missing
-	hungarian_similarity = None
-	collapse_scc = None
-	cost_between = None
+    hungarian_similarity = None
+    collapse_scc = None
+    cost_between = None
 
 __all__ = [
-	"ConstructionIO",
-	"DataFrameIO",
-	"ConstructionTreeParser",
-	"ggb_parser",
-	"hungarian_similarity",
-	"collapse_scc",
-	"cost_between",
+    "ConstructionIO",
+    "DataFrameIO",
+    "ConstructionTreeParser",
+    "ggb_parser",
+    "hungarian_similarity",
+    "collapse_scc",
+    "cost_between",
 ]
 
 # Optional SymPy helpers are provided as a dedicated subpackage. Import

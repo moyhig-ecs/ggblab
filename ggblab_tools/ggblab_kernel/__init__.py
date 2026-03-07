@@ -3,16 +3,16 @@
 Lightweight in-process Python Jupyter kernel that executes code via
 IPython InteractiveShell and exposes ggblab helpers when enabled.
 """
-import sys
-import os
-import logging
-import io
+
 import contextlib
-import threading
-import time
-import json
+import io
+import logging
+import os
+import sys
+
 from ipykernel.kernelbase import Kernel
 from IPython.core.interactiveshell import InteractiveShell
+
 try:
     from ipykernel.comm import CommManager
 except Exception:
@@ -26,7 +26,11 @@ class LocalKernel(Kernel):
     implementation_version = "0.1"
     language = "python"
     language_version = sys.version.split()[0]
-    language_info = {"name": "python", "mimetype": "text/x-python", "file_extension": ".py"}
+    language_info = {
+        "name": "python",
+        "mimetype": "text/x-python",
+        "file_extension": ".py",
+    }
     protocol_version = "5.3"
     banner = "ggblab local kernel (executes in-process)"
 
@@ -111,6 +115,7 @@ class LocalKernel(Kernel):
 
         # Provide a simple display_pub bridge for InteractiveShell
         try:
+
             class _DirectDisplayPub:
                 def __init__(self, kernel):
                     self.kernel = kernel
@@ -119,7 +124,9 @@ class LocalKernel(Kernel):
                 def publish(self, data, metadata=None, source=None):
                     try:
                         content = {"data": data, "metadata": metadata or {}}
-                        self.kernel.send_response(self.kernel.iopub_socket, "display_data", content)
+                        self.kernel.send_response(
+                            self.kernel.iopub_socket, "display_data", content
+                        )
                     except Exception:
                         LOG.exception("Failed to publish display data")
 
@@ -129,23 +136,32 @@ class LocalKernel(Kernel):
         except Exception:
             LOG.exception("Failed to attach display_pub")
 
-    def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=False):
+    def do_execute(
+        self, code, silent, store_history=True, user_expressions=None, allow_stdin=False
+    ):
         if not code.strip():
             return {"status": "ok", "execution_count": self.execution_count}
 
         stdout_buf = io.StringIO()
         stderr_buf = io.StringIO()
         try:
-            with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+            with (
+                contextlib.redirect_stdout(stdout_buf),
+                contextlib.redirect_stderr(stderr_buf),
+            ):
                 res = self._local_shell.run_cell(code)
 
             out_text = stdout_buf.getvalue()
             err_text = stderr_buf.getvalue()
 
             if out_text:
-                self.send_response(self.iopub_socket, "stream", {"name": "stdout", "text": out_text})
+                self.send_response(
+                    self.iopub_socket, "stream", {"name": "stdout", "text": out_text}
+                )
             if err_text:
-                self.send_response(self.iopub_socket, "stream", {"name": "stderr", "text": err_text})
+                self.send_response(
+                    self.iopub_socket, "stream", {"name": "stderr", "text": err_text}
+                )
 
             if res.error_in_exec:
                 tb = []
@@ -153,16 +169,31 @@ class LocalKernel(Kernel):
                     tb = [str(res.error_before_exec)]
                 elif getattr(res, "error_in_exec", None):
                     tb = [str(res.error_in_exec)]
-                err = {"ename": type(res.error_in_exec).__name__ if res.error_in_exec else "", "evalue": str(res.error_in_exec) if res.error_in_exec else "", "traceback": tb}
+                err = {
+                    "ename": (
+                        type(res.error_in_exec).__name__ if res.error_in_exec else ""
+                    ),
+                    "evalue": str(res.error_in_exec) if res.error_in_exec else "",
+                    "traceback": tb,
+                }
                 self.send_response(self.iopub_socket, "error", err)
                 return {"status": "error", "execution_count": self.execution_count}
 
             # send execute_result if there is a result
             if hasattr(res, "result") and res.result is not None:
-                data = {"execution_count": self.execution_count, "data": {"text/plain": repr(res.result)}, "metadata": {}}
+                data = {
+                    "execution_count": self.execution_count,
+                    "data": {"text/plain": repr(res.result)},
+                    "metadata": {},
+                }
                 self.send_response(self.iopub_socket, "execute_result", data)
 
-            return {"status": "ok", "execution_count": self.execution_count, "payload": [], "user_expressions": {}}
+            return {
+                "status": "ok",
+                "execution_count": self.execution_count,
+                "payload": [],
+                "user_expressions": {},
+            }
         except Exception as e:
             tb = [str(e)]
             err = {"ename": type(e).__name__, "evalue": str(e), "traceback": tb}

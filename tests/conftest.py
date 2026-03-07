@@ -6,7 +6,6 @@ This file is automatically loaded by pytest and provides:
 - Test utilities
 """
 
-import pytest
 import sys
 from pathlib import Path
 

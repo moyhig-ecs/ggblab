@@ -19,21 +19,23 @@ Behavior highlights:
     `displayhook` so they appear in the notebook output and are stored
     in the `Out` mapping; a best-effort fallback also assigns ``_``.
 """
-from typing import Optional, Tuple, List
+
+import ast
 import asyncio
-import sys
 import os
 import re
-import ast
+from typing import List, Optional, Tuple
 
 from IPython import get_ipython
 
-from .ggbapplet import GeoGebra
 from .errors import GeoGebraAppletError
+from .ggbapplet import GeoGebra
 
 # Build a mapping of ascii names -> unicode Greek symbol names from sympy.abc._clash2
 _GREEK_MAP = None
 _GREEK_RE = None
+
+
 def _build_greek_map():
     global _GREEK_MAP, _GREEK_RE
     # print("Building Greek symbol mapping from sympy...")
@@ -43,25 +45,27 @@ def _build_greek_map():
     try:
         # Import lazily to avoid hard dependency if sympy is not installed
         import sympy
-        core = getattr(sympy, 'core', None)
-        alphabets = getattr(core, 'alphabets', None)
-        greeks = getattr(alphabets, 'greeks', None)
+
+        core = getattr(sympy, "core", None)
+        alphabets = getattr(core, "alphabets", None)
+        greeks = getattr(alphabets, "greeks", None)
         # print(f"Found {len(greeks) if greeks else 0} sympy greek symbols for mapping")
         if greeks:
             import unicodedata as _ud
+
             for name in greeks:
                 # print("sympy greek symbol:", s)
                 # name = str(s)
                 # small letter: map 'alpha' -> 'α'
                 try:
-                    small = _ud.lookup(f'GREEK SMALL LETTER {name.upper()}')
+                    small = _ud.lookup(f"GREEK SMALL LETTER {name.upper()}")
                     # print(f"Mapping {name} -> {small}")
                     _GREEK_MAP[name] = small
                 except Exception:
                     pass
                 # capital forms: map 'Alpha' and 'ALPHA' -> 'Α'
                 try:
-                    cap = _ud.lookup(f'GREEK CAPITAL LETTER {name.upper()}')
+                    cap = _ud.lookup(f"GREEK CAPITAL LETTER {name.upper()}")
                     # print(f"Mapping {name.capitalize()} and {name.upper()} -> {cap}")
                     _GREEK_MAP[name.capitalize()] = cap
                     _GREEK_MAP[name.upper()] = cap
@@ -74,7 +78,10 @@ def _build_greek_map():
     try:
         if _GREEK_MAP:
             import re as _re
-            pattern = r"\b(?:" + "|".join(_re.escape(k) for k in _GREEK_MAP.keys()) + r")\b"
+
+            pattern = (
+                r"\b(?:" + "|".join(_re.escape(k) for k in _GREEK_MAP.keys()) + r")\b"
+            )
             _GREEK_RE = _re.compile(pattern)
     except Exception:
         _GREEK_RE = None
@@ -82,7 +89,7 @@ def _build_greek_map():
 
 # Runtime debug toggle: enable with env `GGBLAB_IPYMAGIC_DEBUG=1`
 # or by setting `_ggb_debug=True` in IPython's `user_ns`.
-_DEBUG = os.environ.get('GGBLAB_IPYMAGIC_DEBUG', '') not in ('', '0', 'False', 'false')
+_DEBUG = os.environ.get("GGBLAB_IPYMAGIC_DEBUG", "") not in ("", "0", "False", "false")
 
 
 def _dbg(*a, **kw):
@@ -97,9 +104,9 @@ def _dbg(*a, **kw):
                 try:
                     msg = a[0].format(*a[1:])
                 except Exception:
-                    msg = ' '.join(str(x) for x in a)
+                    msg = " ".join(str(x) for x in a)
         else:
-            msg = ' '.join(str(x) for x in a)
+            msg = " ".join(str(x) for x in a)
 
         if _DEBUG:
             print(msg, **kw)
@@ -107,8 +114,8 @@ def _dbg(*a, **kw):
         ip_ = get_ipython()
         if ip_ is None:
             return
-        ns_ = getattr(ip_, 'user_ns', None)
-        if isinstance(ns_, dict) and ns_.get('_ggb_debug'):
+        ns_ = getattr(ip_, "user_ns", None)
+        if isinstance(ns_, dict) and ns_.get("_ggb_debug"):
             print(msg, **kw)
     except Exception:
         pass
@@ -117,7 +124,9 @@ def _dbg(*a, **kw):
 def _strip_outer_quotes(s: str) -> str:
     try:
         s2 = s.strip()
-        if (s2.startswith("'") and s2.endswith("'")) or (s2.startswith('"') and s2.endswith('"')):
+        if (s2.startswith("'") and s2.endswith("'")) or (
+            s2.startswith('"') and s2.endswith('"')
+        ):
             return s2[1:-1].strip()
         return s2
     except Exception:
@@ -138,9 +147,9 @@ def _clean_cmd_line(ln: str) -> str:
     """
     try:
         ln2 = ln.strip()
-        if not ln2 or ln2.startswith('#'):
-            return ''
-        ln3 = ln2.split('#', 1)[0].strip()
+        if not ln2 or ln2.startswith("#"):
+            return ""
+        ln3 = ln2.split("#", 1)[0].strip()
         # Preserve lines wrapped in braces `{...}` verbatim.
         # ConstructionIO.commands_for_magic may emit brace-wrapped lines
         # that are intended to be passed directly to GeoGebra rather than
@@ -148,7 +157,7 @@ def _clean_cmd_line(ln: str) -> str:
         ln3 = _strip_outer_quotes(ln3)
         return ln3.strip()
     except Exception:
-        return ''
+        return ""
 
 
 def _serialize_for_ggb(obj):
@@ -160,11 +169,15 @@ def _serialize_for_ggb(obj):
         # If object has a `.shape` like (n, 1) treat it as a column vector
         # and serialize as GeoGebra Vector((...)) before any tolist() conversion.
         try:
-            shape = getattr(obj, 'shape', None)
+            shape = getattr(obj, "shape", None)
             if isinstance(shape, (tuple, list)) and len(shape) >= 2 and shape[1] == 1:
                 # Attempt to obtain Python list representation
                 lst = None
-                if not isinstance(obj, str) and hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):
+                if (
+                    not isinstance(obj, str)
+                    and hasattr(obj, "tolist")
+                    and callable(getattr(obj, "tolist"))
+                ):
                     try:
                         lst = obj.tolist()
                     except Exception:
@@ -178,17 +191,28 @@ def _serialize_for_ggb(obj):
                 if lst is not None:
                     try:
                         # Flatten column vector rows like [x], (x,) -> x
-                        vals = [row[0] if (isinstance(row, (list, tuple)) and len(row) > 0) else row for row in lst]
+                        vals = [
+                            (
+                                row[0]
+                                if (isinstance(row, (list, tuple)) and len(row) > 0)
+                                else row
+                            )
+                            for row in lst
+                        ]
                     except Exception:
                         vals = lst
                     parts = [_serialize_for_ggb(x) for x in vals]
-                    return 'Vector((' + ','.join(parts) + '))'
+                    return "Vector((" + ",".join(parts) + "))"
         except Exception:
             pass
 
         # If the object exposes `tolist()`, prefer converting it to
         # Python lists first so nested matrices/arrays serialize correctly.
-        if not isinstance(obj, str) and hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):
+        if (
+            not isinstance(obj, str)
+            and hasattr(obj, "tolist")
+            and callable(getattr(obj, "tolist"))
+        ):
             try:
                 obj = obj.tolist()
             except Exception:
@@ -223,7 +247,7 @@ def _serialize_for_ggb(obj):
                 except Exception:
                     pass
                 try:
-                    if isinstance(v, str) and v.lower() == 'nan':
+                    if isinstance(v, str) and v.lower() == "nan":
                         return True
                 except Exception:
                     pass
@@ -232,29 +256,35 @@ def _serialize_for_ggb(obj):
             # If the python-level list contains only NaN-like values, render as '{}'
             try:
                 if len(obj) == 1 and _is_nan_val(obj[0]):
-                    return '{}'
+                    return "{}"
                 if obj and all(_is_nan_val(x) for x in obj):
-                    return '{}'
+                    return "{}"
             except Exception:
                 pass
 
             parts = [_serialize_for_ggb(x) for x in obj]
-            return '{' + ','.join(parts) + '}'
+            return "{" + ",".join(parts) + "}"
         if isinstance(obj, str):
             # Treat GeoGebra brace placeholders like '{?}' or '{nan}' as empty
             # sets so we don't emit '{nan}' back to the applet. Match either
             # '?' or 'nan' (case-insensitive) possibly repeated like '{?,?}'.
             try:
-                if re.match(r"^\{\s*(?:\?|nan)(?:\s*,\s*(?:\?|nan))*\s*\}$", obj, flags=re.IGNORECASE):
-                    return '{}'
+                if re.match(
+                    r"^\{\s*(?:\?|nan)(?:\s*,\s*(?:\?|nan))*\s*\}$",
+                    obj,
+                    flags=re.IGNORECASE,
+                ):
+                    return "{}"
             except Exception:
                 pass
             # encode ascii greek names to unicode greek if mapping available
             try:
                 _build_greek_map()
                 if _GREEK_RE and _GREEK_MAP:
+
                     def _enc(m):
                         return _GREEK_MAP.get(m.group(0), m.group(0))
+
                     return _GREEK_RE.sub(_enc, obj)
             except Exception:
                 pass
@@ -264,8 +294,10 @@ def _serialize_for_ggb(obj):
         try:
             _build_greek_map()
             if _GREEK_RE and _GREEK_MAP:
+
                 def _enc2(m):
                     return _GREEK_MAP.get(m.group(0), m.group(0))
+
                 return _GREEK_RE.sub(_enc2, s)
         except Exception:
             pass
@@ -274,7 +306,7 @@ def _serialize_for_ggb(obj):
         try:
             return str(obj)
         except Exception:
-            return ''
+            return ""
 
 
 def _safe_eval(expr: str, user_ns: dict):
@@ -283,7 +315,7 @@ def _safe_eval(expr: str, user_ns: dict):
     prevent execution of calls or complex constructs.
     Returns the evaluated value or raises an exception on failure.
     """
-    node = ast.parse(expr, mode='eval')
+    node = ast.parse(expr, mode="eval")
 
     def _is_safe(n):
         # Expression wrapper
@@ -295,9 +327,9 @@ def _safe_eval(expr: str, user_ns: dict):
         if isinstance(n, ast.Constant):
             return True
         # older py versions
-        if hasattr(ast, 'Num') and isinstance(n, ast.Num):
+        if hasattr(ast, "Num") and isinstance(n, ast.Num):
             return True
-        if hasattr(ast, 'Str') and isinstance(n, ast.Str):
+        if hasattr(ast, "Str") and isinstance(n, ast.Str):
             return True
         # Attribute access and subscripts
         if isinstance(n, ast.Attribute):
@@ -318,14 +350,16 @@ def _safe_eval(expr: str, user_ns: dict):
         # Allow simple unary/binary numeric ops
         if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.UAdd, ast.USub)):
             return _is_safe(n.operand)
-        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow)):
+        if isinstance(n, ast.BinOp) and isinstance(
+            n.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow)
+        ):
             return _is_safe(n.left) and _is_safe(n.right)
         return False
 
     if not _is_safe(node):
-        raise ValueError('unsafe expression')
+        raise ValueError("unsafe expression")
     # Evaluate with user_ns as locals to resolve names
-    return eval(compile(node, '<ipymagic>', 'eval'), {}, user_ns)
+    return eval(compile(node, "<ipymagic>", "eval"), {}, user_ns)
 
 
 async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] = None):
@@ -336,10 +370,10 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
     if ggb_instance is not None:
         ggb = ggb_instance
     else:
-        prev_inst = getattr(GeoGebra, '_instance', None)
+        prev_inst = getattr(GeoGebra, "_instance", None)
         try:
             ip = get_ipython()
-            user_ns = getattr(ip, 'user_ns', None) if ip is not None else None
+            user_ns = getattr(ip, "user_ns", None) if ip is not None else None
         except Exception:
             user_ns = None
         try:
@@ -348,14 +382,14 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
             # a `ggb` binding, store the created singleton there and print
             # a notification (best-effort).
             try:
-                if isinstance(user_ns, dict) and 'ggb' not in user_ns:
-                    user_ns['ggb'] = ggb
+                if isinstance(user_ns, dict) and "ggb" not in user_ns:
+                    user_ns["ggb"] = ggb
                     # After creating and storing the singleton, eagerly
                     # initialize it so callers (including `ggb.function`) can
                     # use the applet immediately without waiting for later
                     # initialization steps.
                     try:
-                        if not getattr(ggb, 'initialized', False):
+                        if not getattr(ggb, "initialized", False):
                             try:
                                 await ggb.init()
                             except Exception:
@@ -365,7 +399,9 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
                         pass
                     if prev_inst is None:
                         try:
-                            print("[ggblab] created GeoGebra singleton and stored as 'ggb' in user namespace")
+                            print(
+                                "[ggblab] created GeoGebra singleton and stored as 'ggb' in user namespace"
+                            )
                         except Exception:
                             pass
             except Exception:
@@ -373,29 +409,30 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
         except Exception:
             # Fallback: attempt a plain construction; GeoGebra.__new__ enforces singleton
             ggb = GeoGebra()
-    if not getattr(ggb, 'initialized', False):
+    if not getattr(ggb, "initialized", False):
         try:
             await ggb.init()
         except Exception:
             # If init fails, continue and let command raise later
             pass
     results: List[str] = []
+
     def _stringify(v) -> str:
         if isinstance(v, str):
             # If GeoGebra returns a comma-separated multi-value string
             # (e.g. Polygon returns like "t1,e,a,d") and it's not a
             # function-like expression, prefer the first token.
-            if ',' in v and '(' not in v and ')' not in v:
-                return v.split(',', 1)[0].strip()
+            if "," in v and "(" not in v and ")" not in v:
+                return v.split(",", 1)[0].strip()
             return v
         if isinstance(v, dict):
-            if 'label' in v:
-                return str(v['label'])
-            if 'result' in v:
-                return str(v['result'])
+            if "label" in v:
+                return str(v["label"])
+            if "result" in v:
+                return str(v["result"])
             return str(v)
         if isinstance(v, (list, tuple)):
-            return _stringify(v[0]) if v else ''
+            return _stringify(v[0]) if v else ""
         return str(v)
 
     # Pattern matches either a numeric form like '_2' (group 1) or a run
@@ -421,7 +458,7 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
                     return m.group(0)
                 # n is 1-based index into results
                 if 1 <= n <= len(results):
-                    return _stringify(results[n-1])
+                    return _stringify(results[n - 1])
                 return m.group(0)
             elif underscores:
                 k = len(underscores)
@@ -450,8 +487,8 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
             # the results "register" so tokens like _1, _2 can access
             # subsequent values. Otherwise append the single result.
             try:
-                if isinstance(r, str) and ',' in r and '(' not in r and ')' not in r:
-                    parts = [p.strip() for p in r.split(',')]
+                if isinstance(r, str) and "," in r and "(" not in r and ")" not in r:
+                    parts = [p.strip() for p in r.split(",")]
                     for p in parts:
                         results.append(p)
                 elif isinstance(r, (list, tuple)):
@@ -468,21 +505,24 @@ async def _run_commands_async(cmds: List[str], ggb_instance: Optional[GeoGebra] 
             # If the applet raised a GeoGebraAppletError, stop executing any
             # further commands and report only this first error back to the
             # caller (suppress subsequent errors).
-            is_applet_error = isinstance(e, GeoGebraAppletError) or type(e).__name__ == 'GeoGebraAppletError'
+            is_applet_error = (
+                isinstance(e, GeoGebraAppletError)
+                or type(e).__name__ == "GeoGebraAppletError"
+            )
             print(f"ggb.command failed for: {c_to_send!r} -> {type(e).__name__}: {e}")
             if is_applet_error:
                 # Replace results with a single error entry and stop processing
-                results = [{'error': str(e)}]
+                results = [{"error": str(e)}]
                 break
             else:
                 # Non-applet errors: record and continue
-                results.append({'error': str(e)})
+                results.append({"error": str(e)})
 
     # Convert results to strings as the user expects a list of strings
     try:
-        str_results = [ _stringify(x) for x in results ]
+        str_results = [_stringify(x) for x in results]
     except Exception:
-        str_results = [ str(x) for x in results ]
+        str_results = [str(x) for x in results]
     return str_results
 
 
@@ -505,7 +545,7 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
     # magic does not attempt to re-run content-matching logic.
 
     def _strip_comment(s: str) -> str:
-        s2 = s.split('#', 1)[0]
+        s2 = s.split("#", 1)[0]
         return s2.rstrip()
 
     instance = None
@@ -524,16 +564,20 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
                     quote = s[i]
                     j = i + 1
                     while j < len(s):
-                        if s[j] == quote and s[j-1] != '\\':
+                        if s[j] == quote and s[j - 1] != "\\":
                             # candidate quoted segment
-                            inner = s[i+1:j]
+                            inner = s[i + 1 : j]
                             # Detect either real newlines or escaped '\\n' sequences
-                            if '\\n' in inner or '\n' in inner:
+                            if "\\n" in inner or "\n" in inner:
                                 # Normalize escaped sequences into real newlines
-                                inner2 = inner.replace('\\r\\n', '\r\n').replace('\\n', '\n').replace('\\r', '\r')
+                                inner2 = (
+                                    inner.replace("\\r\\n", "\r\n")
+                                    .replace("\\n", "\n")
+                                    .replace("\\r", "\r")
+                                )
                                 cell = inner2
                                 # remove the quoted portion from the line
-                                line = (s[:i] + s[j+1:]).strip()
+                                line = (s[:i] + s[j + 1 :]).strip()
                                 found = True
                             break
                         j += 1
@@ -547,7 +591,7 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
             pass
 
     _dbg("[ggb-magic-debug] parsing line=%r cell=%r", line, cell)
-    
+
     if cell is not None:
         # cell magic: first token on the line may be an instance name
         parts = line.split(None, 1)
@@ -556,14 +600,14 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
         cmds = []
         try:
             ip = get_ipython()
-            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+            user_ns = getattr(ip, "user_ns", {}) if ip is not None else {}
         except Exception:
             user_ns = {}
         for ln in cell.splitlines():
             ln2 = ln.strip()
             if not ln2:
                 continue
-            if ln2.startswith('#'):
+            if ln2.startswith("#"):
                 # ignore full-line comments
                 continue
             # strip inline comments
@@ -586,10 +630,18 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
                 expr = m.group(1).strip()
                 try:
                     # Try to evaluate complex expressions (indexing/attr access)
-                    val = _safe_eval(expr, user_ns) if isinstance(user_ns, dict) else _safe_eval(expr, {})
+                    val = (
+                        _safe_eval(expr, user_ns)
+                        if isinstance(user_ns, dict)
+                        else _safe_eval(expr, {})
+                    )
                 except Exception:
                     # Fallback: if it's a simple identifier, look it up
-                    if re.match(r'^[A-Za-z_]\w*$', expr) and isinstance(user_ns, dict) and expr in user_ns:
+                    if (
+                        re.match(r"^[A-Za-z_]\w*$", expr)
+                        and isinstance(user_ns, dict)
+                        and expr in user_ns
+                    ):
                         val = user_ns[expr]
                     else:
                         return m.group(0)
@@ -600,13 +652,14 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
                         return str(val)
                     except Exception:
                         return m.group(0)
+
             try:
                 # Match any expression inside braces (non-greedy) and expand
                 # using the safe evaluator which supports indexing/attribute access.
                 # Do not expand brace groups that are immediately preceded by an
                 # underscore (subscript syntax like `O_{4}`), to preserve those
                 # grouping braces for GeoGebra identifiers.
-                cmd = re.sub(r'(?<!_)\{\s*([^}]+?)\s*\}', _expand_var, cmd)
+                cmd = re.sub(r"(?<!_)\{\s*([^}]+?)\s*\}", _expand_var, cmd)
             except Exception:
                 pass
             if cmd:
@@ -615,7 +668,7 @@ def _parse_commands(line: str, cell: Optional[str]) -> Tuple[Optional[str], List
         return instance, cmds
 
     # line magic: allow "instance command..." or just "command"
-    raw = line or ''
+    raw = line or ""
     raw = raw.strip()
     if not raw:
         return None, []
@@ -644,6 +697,7 @@ def register_ggb_magic(ipython=None):
         ipython = get_ipython()
     if ipython is None:
         return
+
     def _get_or_create_ggb(user_ns, ip, *, for_api: bool = False):
         """Return an existing GeoGebra instance or create a singleton.
 
@@ -652,7 +706,7 @@ def register_ggb_magic(ipython=None):
         flag adjusts the notification message for the api-call path.
         """
         try:
-            inst = getattr(GeoGebra, '_instance', None)
+            inst = getattr(GeoGebra, "_instance", None)
         except Exception:
             inst = None
         created = False
@@ -662,15 +716,15 @@ def register_ggb_magic(ipython=None):
                 created = True
             except Exception:
                 try:
-                    inst = getattr(GeoGebra, '_instance', None)
+                    inst = getattr(GeoGebra, "_instance", None)
                 except Exception:
                     inst = None
                 if inst is None:
                     inst = GeoGebra()
                     created = True
         try:
-            if isinstance(user_ns, dict) and 'ggb' not in user_ns:
-                user_ns['ggb'] = inst
+            if isinstance(user_ns, dict) and "ggb" not in user_ns:
+                user_ns["ggb"] = inst
         except Exception:
             pass
         if created:
@@ -678,7 +732,9 @@ def register_ggb_magic(ipython=None):
                 if for_api:
                     print("[ggblab] created GeoGebra singleton for api call")
                 else:
-                    print("[ggblab] created GeoGebra singleton and stored as 'ggb' in user namespace")
+                    print(
+                        "[ggblab] created GeoGebra singleton and stored as 'ggb' in user namespace"
+                    )
             except Exception:
                 pass
         return inst
@@ -690,18 +746,20 @@ def register_ggb_magic(ipython=None):
         # (string with newlines) or a list of command strings.
         try:
             ip = get_ipython()
-            user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+            user_ns = getattr(ip, "user_ns", {}) if ip is not None else {}
         except Exception:
             user_ns = {}
 
         if cell is None and isinstance(cmds, list) and len(cmds) == 1:
-            raw_tok = cmds[0].strip() if cmds[0] is not None else ''
+            raw_tok = cmds[0].strip() if cmds[0] is not None else ""
             # normalize token by removing outer quotes if present
             raw_tok_str = _strip_outer_quotes(raw_tok)
             # allow both `{name}` and `name`
             var_match = None
             try:
-                var_match = __import__('re').match(r'^\{\s*([A-Za-z_]\w*)\s*\}$', raw_tok)
+                var_match = __import__("re").match(
+                    r"^\{\s*([A-Za-z_]\w*)\s*\}$", raw_tok
+                )
             except Exception:
                 var_match = None
             # Only expand the brace form `{name}`. Do NOT expand a bare
@@ -714,12 +772,27 @@ def register_ggb_magic(ipython=None):
             # Debug: show token parsing result (compact preview + metrics)
             try:
                 ns_info = f"{len(user_ns)} names" if isinstance(user_ns, dict) else None
-                tok_preview = (raw_tok.replace('\n', '\\n')[:120]) if isinstance(raw_tok, str) else repr(raw_tok)[:120]
-                raw_preview = (raw_tok_str.replace('\n', '\\n')[:120]) if isinstance(raw_tok_str, str) else repr(raw_tok_str)[:120]
-                tok_len = len(raw_tok) if hasattr(raw_tok, '__len__') else 0
-                tok_lines = raw_tok.count('\n') + 1 if isinstance(raw_tok, str) else 0
-                _dbg("[ggb-magic-debug] token_preview=%r len=%d lines=%d raw_preview=%r varname=%r user_ns=%r",
-                     tok_preview, tok_len, tok_lines, raw_preview, varname, ns_info)
+                tok_preview = (
+                    (raw_tok.replace("\n", "\\n")[:120])
+                    if isinstance(raw_tok, str)
+                    else repr(raw_tok)[:120]
+                )
+                raw_preview = (
+                    (raw_tok_str.replace("\n", "\\n")[:120])
+                    if isinstance(raw_tok_str, str)
+                    else repr(raw_tok_str)[:120]
+                )
+                tok_len = len(raw_tok) if hasattr(raw_tok, "__len__") else 0
+                tok_lines = raw_tok.count("\n") + 1 if isinstance(raw_tok, str) else 0
+                _dbg(
+                    "[ggb-magic-debug] token_preview=%r len=%d lines=%d raw_preview=%r varname=%r user_ns=%r",
+                    tok_preview,
+                    tok_len,
+                    tok_lines,
+                    raw_preview,
+                    varname,
+                    ns_info,
+                )
             except Exception:
                 pass
 
@@ -733,7 +806,7 @@ def register_ggb_magic(ipython=None):
                     v2 = _strip_outer_quotes(val.strip())
                     # Prepare debug raw preview (convert literal \n to escaped form)
                     try:
-                        raw_preview = v2.replace('\\n', '\n')
+                        raw_preview = v2.replace("\\n", "\n")
                     except Exception:
                         raw_preview = v2
                     new_cmds = []
@@ -744,13 +817,23 @@ def register_ggb_magic(ipython=None):
                     # Compact debug: show line/command counts and short preview
                     try:
                         lines = raw_preview.splitlines()
-                        preview = raw_preview.replace('\n', '\\n')[:120]
+                        preview = raw_preview.replace("\n", "\\n")[:120]
                         sample = new_cmds[:5]
-                        _dbg("[ggb-magic-debug] expanded %r: %d lines, %d cmds, preview=%r, sample=%r",
-                             varname, len(lines), len(new_cmds), preview, sample)
+                        _dbg(
+                            "[ggb-magic-debug] expanded %r: %d lines, %d cmds, preview=%r, sample=%r",
+                            varname,
+                            len(lines),
+                            len(new_cmds),
+                            preview,
+                            sample,
+                        )
                         if len(new_cmds) > 5:
-                            _dbg("[ggb-magic-debug] expanded %r: showing first %d of %d cmds",
-                                 varname, 5, len(new_cmds))
+                            _dbg(
+                                "[ggb-magic-debug] expanded %r: showing first %d of %d cmds",
+                                varname,
+                                5,
+                                len(new_cmds),
+                            )
                     except Exception:
                         pass
                     if new_cmds:
@@ -765,7 +848,7 @@ def register_ggb_magic(ipython=None):
                         pass
         ggb_instance = None
         ip = get_ipython()
-        user_ns = getattr(ip, 'user_ns', {}) if ip is not None else {}
+        user_ns = getattr(ip, "user_ns", {}) if ip is not None else {}
         if inst_name:
             if inst_name in user_ns:
                 maybe = user_ns[inst_name]
@@ -779,7 +862,7 @@ def register_ggb_magic(ipython=None):
                 # "%ggb ggb '(...)'" where `ggb` is the well-known
                 # singleton rather than an explicit variable in `user_ns`.
                 try:
-                    inst = getattr(GeoGebra, '_instance', None)
+                    inst = getattr(GeoGebra, "_instance", None)
                     if isinstance(inst, GeoGebra):
                         ggb_instance = inst
                 except Exception:
@@ -796,7 +879,7 @@ def register_ggb_magic(ipython=None):
             # If still not found, prefer class-level singleton if available
             if ggb_instance is None:
                 try:
-                    inst = getattr(GeoGebra, '_instance', None)
+                    inst = getattr(GeoGebra, "_instance", None)
                     if isinstance(inst, GeoGebra):
                         ggb_instance = inst
                 except Exception:
@@ -809,8 +892,11 @@ def register_ggb_magic(ipython=None):
             pass
         # Debug: show resolved instance
         try:
-            _dbg("[ggb-magic-debug] resolved ggb_instance_source=%r ggb_instance=%r",
-                 getattr(ggb_instance, '__class__', None), ggb_instance)
+            _dbg(
+                "[ggb-magic-debug] resolved ggb_instance_source=%r ggb_instance=%r",
+                getattr(ggb_instance, "__class__", None),
+                ggb_instance,
+            )
         except Exception:
             pass
         try:
@@ -819,17 +905,19 @@ def register_ggb_magic(ipython=None):
             loop = None
         # Special-case API invocation using syntax: `%ggb api getValue(A)`
         # or `%ggb api getValue [A,B]` where 'api' is the first token (inst_name).
-        if inst_name == 'api' and cmds:
+        if inst_name == "api" and cmds:
             expr = cmds[0].strip()
             # parse function name and args
-            m = __import__('re').match(r"^\s*([A-Za-z_]\w*)(?:\s*(?:\((.*)\)|\[(.*)\]))?\s*$", expr)
+            m = __import__("re").match(
+                r"^\s*([A-Za-z_]\w*)(?:\s*(?:\((.*)\)|\[(.*)\]))?\s*$", expr
+            )
             if m:
                 fname = m.group(1)
                 args_text = m.group(2) if m.group(2) is not None else (m.group(3) or "")
                 if args_text.strip() == "":
                     args_list = []
                 else:
-                    args_list = [a.strip() for a in args_text.split(',') if a.strip()]
+                    args_list = [a.strip() for a in args_text.split(",") if a.strip()]
 
                 # Ensure we have a GeoGebra instance
                 if ggb_instance is None:
@@ -845,7 +933,7 @@ def register_ggb_magic(ipython=None):
                 if loop is None:
                     # synchronous call: ensure instance is initialized first
                     try:
-                        if not getattr(ggb_instance, 'initialized', False):
+                        if not getattr(ggb_instance, "initialized", False):
                             try:
                                 asyncio.run(ggb_instance.init())
                             except Exception:
@@ -853,13 +941,13 @@ def register_ggb_magic(ipython=None):
                                 pass
                         return asyncio.run(ggb_instance.function(fname, args_list))
                     except Exception as e:
-                        print('ggb api call failed:', e)
+                        print("ggb api call failed:", e)
                         return None
                 else:
                     # schedule and store task; ensure init runs before function
                     async def _init_then_call():
                         try:
-                            if not getattr(ggb_instance, 'initialized', False):
+                            if not getattr(ggb_instance, "initialized", False):
                                 try:
                                     await ggb_instance.init()
                                 except Exception:
@@ -873,9 +961,9 @@ def register_ggb_magic(ipython=None):
                     try:
                         ip = get_ipython()
                         if ip is not None:
-                            ns = getattr(ip, 'user_ns', None)
+                            ns = getattr(ip, "user_ns", None)
                             if isinstance(ns, dict):
-                                ns['_ggb_last_task'] = task
+                                ns["_ggb_last_task"] = task
 
                                 def _done_cb(t):
                                     try:
@@ -893,16 +981,18 @@ def register_ggb_magic(ipython=None):
                                     except Exception:
                                         pass
                                     try:
-                                        ns['_'] = res
+                                        ns["_"] = res
                                     except Exception:
                                         pass
                                     try:
                                         if ip2 is not None:
-                                            ns2 = getattr(ip2, 'user_ns', None)
+                                            ns2 = getattr(ip2, "user_ns", None)
                                             if isinstance(ns2, dict):
-                                                out = ns2.get('Out')
+                                                out = ns2.get("Out")
                                                 if isinstance(out, dict):
-                                                    count = getattr(ip2, 'execution_count', None)
+                                                    count = getattr(
+                                                        ip2, "execution_count", None
+                                                    )
                                                     if isinstance(count, int):
                                                         out[count] = res
                                     except Exception:
@@ -923,7 +1013,7 @@ def register_ggb_magic(ipython=None):
             try:
                 return asyncio.run(coro)
             except Exception as e:
-                print('ggb magic execution failed:', e)
+                print("ggb magic execution failed:", e)
                 return None
         else:
             # Running loop available: schedule task and do not echo it in the cell.
@@ -932,9 +1022,9 @@ def register_ggb_magic(ipython=None):
             try:
                 ip = get_ipython()
                 if ip is not None:
-                    ns = getattr(ip, 'user_ns', None)
+                    ns = getattr(ip, "user_ns", None)
                     if isinstance(ns, dict):
-                        ns['_ggb_last_task'] = task
+                        ns["_ggb_last_task"] = task
 
                     # When the task finishes, capture its result into IPython's
                     # underscore (`_`) variable so users can reference it.
@@ -954,16 +1044,16 @@ def register_ggb_magic(ipython=None):
                         except Exception:
                             pass
                         try:
-                            ns['_'] = res
+                            ns["_"] = res
                         except Exception:
                             pass
                         try:
                             if ip2 is not None:
-                                ns2 = getattr(ip2, 'user_ns', None)
+                                ns2 = getattr(ip2, "user_ns", None)
                                 if isinstance(ns2, dict):
-                                    out = ns2.get('Out')
+                                    out = ns2.get("Out")
                                     if isinstance(out, dict):
-                                        count = getattr(ip2, 'execution_count', None)
+                                        count = getattr(ip2, "execution_count", None)
                                         if isinstance(count, int):
                                             out[count] = res
                         except Exception:
@@ -980,11 +1070,11 @@ def register_ggb_magic(ipython=None):
             return None
 
     # Register both line and cell variants and an alias `ggblab`
-    ipython.register_magic_function(_ggb_magic, 'line', 'ggb')
-    ipython.register_magic_function(_ggb_magic, 'cell', 'ggb')
+    ipython.register_magic_function(_ggb_magic, "line", "ggb")
+    ipython.register_magic_function(_ggb_magic, "cell", "ggb")
     try:
-        ipython.register_magic_function(_ggb_magic, 'line', 'ggblab')
-        ipython.register_magic_function(_ggb_magic, 'cell', 'ggblab')
+        ipython.register_magic_function(_ggb_magic, "line", "ggblab")
+        ipython.register_magic_function(_ggb_magic, "cell", "ggblab")
     except Exception:
         # ignore if registration of alias fails
         pass
@@ -996,9 +1086,9 @@ def unregister_ggb_magic(ipython=None):
     if ipython is None:
         return
     try:
-        ipython.magics_manager.registry.pop('ggb', None)
+        ipython.magics_manager.registry.pop("ggb", None)
     except Exception:
         pass
 
 
-__all__ = ['register_ggb_magic', 'unregister_ggb_magic']
+__all__ = ["register_ggb_magic", "unregister_ggb_magic"]

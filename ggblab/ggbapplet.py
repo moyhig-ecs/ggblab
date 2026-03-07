@@ -6,58 +6,46 @@ commands and calling GeoGebra API functions. Heavy I/O helpers and
 analysis tools live in the optional `ggblab_extra` package.
 """
 
-import asyncio
 import hashlib
+import json
 import logging
-import re
+import subprocess
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-import threading
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import ipykernel.connect
-import os
-import json
-from pathlib import Path
-from urllib.parse import urlsplit, parse_qs, urlunsplit
-from IPython.display import display, JSON
-import subprocess
-# Note: import `ipylab` lazily inside `init()` to avoid hard dependency
-# and accidental panel injection when running in non-JupyterLab hosts.
-from IPython.core.getipython import get_ipython
+from IPython.display import JSON, display
 
 from ggblab.utils import flatten
 
-from .comm import ggb_comm
-from .errors import (
-    GeoGebraAppletError,
-    GeoGebraCommandError,
-    GeoGebraError,
-    GeoGebraSemanticsError,
-    GeoGebraSyntaxError,
-)
+from .errors import GeoGebraSemanticsError, GeoGebraSyntaxError
 from .file import ggb_file
 from .parser import ggb_parser
+
+# Note: import `ipylab` lazily inside `init()` to avoid hard dependency
+# and accidental panel injection when running in non-JupyterLab hosts.
 
 
 # Exception hierarchy is defined in errors.py and imported above
 class GeoGebra:
     """Main interface for controlling GeoGebra applets from Python.
-    
+
     This class implements a singleton pattern to ensure only one GeoGebra
     instance per kernel session. It provides async methods for sending
     commands and calling GeoGebra API functions.
-    
+
     The communication uses a dual-channel architecture:
     - IPython Comm: Primary control channel
     - Unix socket/TCP WebSocket: Out-of-band response delivery during cell execution
-    
+
     Semantic Validation:
     - check_syntax: Validates command strings can be tokenized
     - check_semantics: Validates referenced objects exist in applet
     - Future: Type checking, scope/visibility validation
-    
+
     Attributes:
         file (ggb_file): GeoGebra file (.ggb) loader and saver
         construction: Backward compatibility alias for file attribute
@@ -68,7 +56,7 @@ class GeoGebra:
         check_syntax (bool): Enable syntax validation (default: False)
         check_semantics (bool): Enable semantic validation (default: False)
         _applet_objects (set): Cached object names from applet (updated by command/function)
-    
+
     Note:
         The parser attribute lives in this package and provides tokenization
         and command-cache features used for syntax/semantics checks.
@@ -80,13 +68,13 @@ class GeoGebra:
             optional ``ggblab_extra`` package. Install ``ggblab_extra`` to
             access those features; the core package keeps lightweight shims
             and will emit DeprecationWarning when using deprecated helpers.
-    
+
     Example:
         >>> ggb = GeoGebra()
         >>> await ggb.init()
         >>> await ggb.command("A=(0,0)")
         >>> result = await ggb.function("getValue", ["A"])
-        
+
         >>> # With validation
         >>> ggb.check_syntax = True
         >>> ggb.check_semantics = True
@@ -125,36 +113,42 @@ class GeoGebra:
         Uses `pbcopy` on macOS; falls back to printing the JSON if clipboard is unavailable.
         """
         try:
-            payload = {'kernelId': getattr(self, 'kernel_id', None) or '', 'socketPath': getattr(self.comm, 'socketPath', None) or ''}
+            payload = {
+                "kernelId": getattr(self, "kernel_id", None) or "",
+                "socketPath": getattr(self.comm, "socketPath", None) or "",
+            }
             # connection file
             try:
                 cf = ipykernel.connect.get_connection_file()
                 if cf:
-                    payload['connection_file'] = cf
+                    payload["connection_file"] = cf
             except Exception:
                 pass
 
             # try to discover running server info (best-effort)
             try:
                 from jupyter_server.serverapp import list_running_servers
+
                 servers = list(list_running_servers())
                 if servers:
                     srv = servers[0]
-                    base_url = srv.get('base_url') or srv.get('baseUrl') or None
-                    raw_url = srv.get('url') or srv.get('server_url') or None
-                    token = srv.get('token') or srv.get('password') or None
+                    base_url = srv.get("base_url") or srv.get("baseUrl") or None
+                    raw_url = srv.get("url") or srv.get("server_url") or None
+                    token = srv.get("token") or srv.get("password") or None
                     if raw_url:
                         parts = urlsplit(raw_url)
                         qs = parse_qs(parts.query)
-                        for k in ('token', 'access_token'):
+                        for k in ("token", "access_token"):
                             if k in qs and qs[k]:
                                 token = token or qs[k][0]
-                        base_no_q = urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
-                        if (not base_url) or (str(base_url).strip() == '/'):
+                        base_no_q = urlunsplit(
+                            (parts.scheme, parts.netloc, parts.path or "/", "", "")
+                        )
+                        if (not base_url) or (str(base_url).strip() == "/"):
                             base_url = base_no_q
                     if base_url:
-                        payload['baseUrl'] = base_url
-                    payload['token'] = token or ''
+                        payload["baseUrl"] = base_url
+                    payload["token"] = token or ""
             except Exception:
                 # ignore if jupyter_server not present
                 pass
@@ -164,6 +158,7 @@ class GeoGebra:
             wrote = False
             try:
                 import pyperclip
+
                 try:
                     pyperclip.copy(txt)
                     display(JSON(payload))
@@ -175,8 +170,8 @@ class GeoGebra:
 
             if not wrote:
                 try:
-                    p = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
-                    p.communicate(txt.encode('utf8'))
+                    p = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+                    p.communicate(txt.encode("utf8"))
                     display(JSON(payload))
                     wrote = True
                 except Exception:
@@ -186,31 +181,33 @@ class GeoGebra:
                 # Fallback: print the JSON so user can copy manually
                 try:
                     display(JSON(payload))
-                    print('ggblab: clipboard write failed; connection JSON printed above')
+                    print(
+                        "ggblab: clipboard write failed; connection JSON printed above"
+                    )
                 except Exception:
                     print(txt)
         except Exception as e:
             try:
-                print('ggblab: failed to copy connection to clipboard:', e)
+                print("ggblab: failed to copy connection to clipboard:", e)
             except Exception:
                 pass
-  
-    async def init(self, appName: str = 'suite', use_vscode: Optional[bool] = None):
+
+    async def init(self, appName: str = "suite", use_vscode: Optional[bool] = None):
         """Initialize the GeoGebra widget and communication channels.
-        
+
         This method:
         1. Starts the out-of-band socket server (Unix socket on POSIX, TCP WebSocket on Windows)
         2. Registers the IPython Comm target ('ggblab-comm')
         3. Opens the GeoGebra widget panel via ipylab with communication settings
         4. Initializes the object cache
-        
+
         The widget is launched programmatically to pass kernel-specific settings
         (Comm target, socket path) before initialization, avoiding the limitations
         of fixed arguments from Launcher/Command Palette.
-        
+
         Returns:
             GeoGebra: Self reference for method chaining.
-            
+
         Example:
             >>> ggb = await GeoGebra().init()
             >>> # GeoGebra panel opens in split-right position
@@ -224,9 +221,11 @@ class GeoGebra:
         if not self.initialized:
             try:
                 if use_vscode:
-                    from ggblab_core2.applet import setup_comm_and_kernel, publish_connection_for_vscode
+                    from ggblab_core2.applet import (
+                        publish_connection_for_vscode, setup_comm_and_kernel)
+
                     info = await setup_comm_and_kernel(self)
-                    self.kernel_id = info.get('kernel_id')
+                    self.kernel_id = info.get("kernel_id")
                     try:
                         await publish_connection_for_vscode(self)
                     except Exception:
@@ -241,25 +240,27 @@ class GeoGebra:
                     # NOTE: This behavior is deprecated; emit a warning so callers
                     # migrate to explicit `ggblab_core2.applet.AppletInjector2` usage.
                     try:
-                        import warnings
                         import logging as _logging
+                        import warnings
+
                         try:
                             warnings.warn(
-                                'Calling AppletInjector2 via GeoGebra.init() is deprecated; '
-                                'create and use ggblab_core2.applet.AppletInjector2() explicitly instead.',
+                                "Calling AppletInjector2 via GeoGebra.init() is deprecated; "
+                                "create and use ggblab_core2.applet.AppletInjector2() explicitly instead.",
                                 DeprecationWarning,
                                 stacklevel=2,
                             )
                         except Exception:
                             # best-effort: some environments may restrict warnings
                             _logging.getLogger(__name__).warning(
-                                'Deprecated: AppletInjector2 invocation via GeoGebra.init()'
+                                "Deprecated: AppletInjector2 invocation via GeoGebra.init()"
                             )
 
                         # Prevent recursive injection when AppletInjector2.open() calls
                         # back into GeoGebra.init() on the same singleton instance.
-                        if not getattr(self, '_applet_injected', False):
+                        if not getattr(self, "_applet_injected", False):
                             from ggblab_core2.applet import AppletInjector2
+
                             # mark as attempted before calling open() to avoid recursion
                             self._applet_injected = True
                             try:
@@ -288,56 +289,76 @@ class GeoGebra:
             self._applet_objects = set()
             self.initialized = True
         return self
-    
+
     def _is_literal(self, token):
         """Check if token is a literal value (number, string, boolean, math function).
-        
+
         Literals should not be validated as object references. This includes:
         - Numeric literals: 2, 3.14, -5, 1e-3
         - String literals: "text", 'string'
         - Boolean constants: true, false
         - Math functions: sin, cos, sqrt, etc.
-        
+
         Args:
             token: Token to check
-            
+
         Returns:
             bool: True if token is a literal, False if it could be an object reference
         """
         if not isinstance(token, str) or not token:
             return True
-        
+
         # Numeric literals (integers, decimals, scientific notation)
         try:
             float(token)
             return True
         except ValueError:
             pass
-        
+
         # String literals (quoted)
         if token[0] in ('"', "'"):
             return True
-        
+
         # Boolean constants
-        if token in ('true', 'false'):
+        if token in ("true", "false"):
             return True
-        
+
         # Common GeoGebra/math functions
         math_functions = {
-            'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
-            'sinh', 'cosh', 'tanh',
-            'sqrt', 'abs', 'log', 'ln', 'log10', 'exp',
-            'floor', 'ceil', 'round', 'sgn',
-            'random', 'min', 'max', 'sum', 'mean',
+            "sin",
+            "cos",
+            "tan",
+            "asin",
+            "acos",
+            "atan",
+            "atan2",
+            "sinh",
+            "cosh",
+            "tanh",
+            "sqrt",
+            "abs",
+            "log",
+            "ln",
+            "log10",
+            "exp",
+            "floor",
+            "ceil",
+            "round",
+            "sgn",
+            "random",
+            "min",
+            "max",
+            "sum",
+            "mean",
         }
         if token in math_functions:
             return True
-        
+
         return False
-    
+
     async def refresh_object_cache(self):
         """Refresh the cached set of known objects from the applet.
-        
+
         Called automatically during init() and can be called manually to
         synchronize the object cache with current applet state.
         """
@@ -346,25 +367,31 @@ class GeoGebra:
             self._applet_objects = set(objects) if objects else set()
         except Exception as e:
             print(f"Warning: Could not refresh object cache: {type(e).__name__} {e}")
-    
+
     async def function(self, f, args=None):
         """Call a GeoGebra API function via the communication layer.
 
         Sends a 'function' request to the frontend and returns the inner
         value from the response payload.
         """
-        r = await self.comm.send_recv({
-            "type": "function",
-            "payload": {"name": f, "args": args},
-        })
+        r = await self.comm.send_recv(
+            {
+                "type": "function",
+                "payload": {"name": f, "args": args},
+            }
+        )
         # Normalize common response shapes
         if isinstance(r, dict):
-            if 'value' in r:
-                return r['value']
-            if 'payload' in r and isinstance(r['payload'], dict) and 'value' in r['payload']:
-                return r['payload']['value']
-            if 'reply' in r:
-                return r['reply']
+            if "value" in r:
+                return r["value"]
+            if (
+                "payload" in r
+                and isinstance(r["payload"], dict)
+                and "value" in r["payload"]
+            ):
+                return r["payload"]["value"]
+            if "reply" in r:
+                return r["reply"]
         return r
 
     @asynccontextmanager
@@ -398,6 +425,7 @@ class GeoGebra:
             - If acquiring the XML fails, `xml` will be `None` and no automatic
               restoration will be attempted on exit.
         """
+
         @dataclass
         class Snap:
             base64_zip: Optional[str]
@@ -426,21 +454,36 @@ class GeoGebra:
             b64 = await self.function("getBase64")
         except Exception:
             logging.getLogger(__name__).exception(
-                "Failed to read GeoGebra base64 snapshot (getBase64). Proceeding without backup.")
+                "Failed to read GeoGebra base64 snapshot (getBase64). Proceeding without backup."
+            )
             b64 = None
 
         if b64 is not None:
             # Compute SHA1 and size on the decoded bytes
             try:
-                decoded = __import__('base64').b64decode(b64)
+                decoded = __import__("base64").b64decode(b64)
                 sha1 = hashlib.sha1(decoded).hexdigest()
                 size = len(decoded)
             except Exception:
-                sha1 = hashlib.sha1(b64.encode('utf8')).hexdigest()
-                size = len(b64.encode('utf8'))
-            snap = Snap(base64_zip=b64, xml=None, timestamp=datetime.utcnow(), size_bytes=size, sha1=sha1, _ggb=self)
+                sha1 = hashlib.sha1(b64.encode("utf8")).hexdigest()
+                size = len(b64.encode("utf8"))
+            snap = Snap(
+                base64_zip=b64,
+                xml=None,
+                timestamp=datetime.utcnow(),
+                size_bytes=size,
+                sha1=sha1,
+                _ggb=self,
+            )
         else:
-            snap = Snap(base64_zip=None, xml=None, timestamp=datetime.utcnow(), size_bytes=0, sha1="", _ggb=self)
+            snap = Snap(
+                base64_zip=None,
+                xml=None,
+                timestamp=datetime.utcnow(),
+                size_bytes=0,
+                sha1="",
+                _ggb=self,
+            )
 
         try:
             yield snap
@@ -451,38 +494,40 @@ class GeoGebra:
                     await self.function("setBase64", [snap.base64_zip])
                 except Exception:
                     logging.getLogger(__name__).exception(
-                        "Failed to restore GeoGebra snapshot via setBase64.")
+                        "Failed to restore GeoGebra snapshot via setBase64."
+                    )
             elif snap.xml is not None:
                 try:
                     await self.function("setXML", [snap.xml])
                 except Exception:
                     logging.getLogger(__name__).exception(
-                        "Failed to restore GeoGebra XML (setXML).")
+                        "Failed to restore GeoGebra XML (setXML)."
+                    )
 
     async def command(self, c):
         """Execute a GeoGebra command with optional validation.
-        
+
         Args:
             c (str): GeoGebra command string (e.g., "A=(0,0)", "Circle(A, 2)").
-        
+
         Returns:
             dict: Response from GeoGebra (typically includes object label).
-            
+
         Raises:
             GeoGebraSyntaxError: If syntax check is enabled and command has syntax errors.
             GeoGebraSemanticsError: If semantics check is enabled and validation fails.
             GeoGebraAppletError: If GeoGebra applet produces error events during execution.
-            
+
         Example:
             >>> await ggb.command("A=(0,0)")
             >>> await ggb.command("B=(3,4)")
             >>> await ggb.command("Circle(A, Distance(A, B))")
-            
+
             >>> # With validation
             >>> ggb.check_syntax = True
             >>> ggb.check_semantics = True
             >>> await ggb.command("Circle(A, B)")  # Validates syntax and references
-            
+
             >>> # Error handling
             >>> try:
             ...     await ggb.command("Unbalanced(")
@@ -495,62 +540,63 @@ class GeoGebra:
                 self.parser.tokenize_with_commas(c)
             except Exception as e:
                 raise GeoGebraSyntaxError(c, str(e))
-        
+
         # Semantics check: validate referenced objects exist in applet
         if self.check_semantics:
             try:
                 # Refresh object cache before checking
                 await self.refresh_object_cache()
-                
+
                 # Extract object tokens: tokens in the flattened structure that are
                 # not commands (not in command_cache), not commas, and not literals
                 t = self.parser.tokenize_with_commas(c)
-                object_tokens = [o for o in flatten(t) 
-                                if o not in self.parser.command_cache 
-                                and o != ","
-                                and not self._is_literal(o)]
-                
+                object_tokens = [
+                    o
+                    for o in flatten(t)
+                    if o not in self.parser.command_cache
+                    and o != ","
+                    and not self._is_literal(o)
+                ]
+
                 # Check if referenced objects exist
-                missing_objects = [obj for obj in object_tokens 
-                                    if obj not in self._applet_objects]
-                
+                missing_objects = [
+                    obj for obj in object_tokens if obj not in self._applet_objects
+                ]
+
                 if missing_objects:
                     raise GeoGebraSemanticsError(
-                        c, 
+                        c,
                         f"Referenced object(s) do not exist in applet: {missing_objects}",
-                        missing_objects
+                        missing_objects,
                     )
             except GeoGebraSemanticsError:
                 raise
             except Exception as e:
                 raise GeoGebraSemanticsError(c, f"Validation error: {e}")
-        
-        result = await self.comm.send_recv({
-            "type": "command",
-            "payload": c
-        })
-        
+
+        result = await self.comm.send_recv({"type": "command", "payload": c})
+
         # FUTURE: Error event queue processing for enhanced scope learning
         # After command execution, GeoGebra appends error events to self.comm.recv_events.queue:
         #   {'type': 'Error', 'payload': 'Unbalanced brackets'}
         #   {'type': 'Error', 'payload': 'Circle(A, 1 '}
-        # 
+        #
         # This enables:
         # 1. Real-time error capture: Complement pre-flight validation with actual GeoGebra errors
         # 2. Dynamic scope updates: Track which objects were created despite errors
         # 3. Cross-domain learning: Correlate error patterns with domain-specific semantics
         # 4. Validation refinement: Use GeoGebra's error feedback to improve check_semantics logic
-        # 
+        #
         # Implementation strategy:
         #   - Drain error queue: while self.comm.recv_events.queue: event = popleft()
         #   - Classify errors: syntax vs semantic vs type errors
         #   - Update validation rules based on error patterns
         #   - Store error context for cross-session learning via parser.command_cache
-        
+
         # Update object cache on successful command
-        if result and 'label' in result:
-            self._applet_objects.add(result['label'])
-        
+        if result and "label" in result:
+            self._applet_objects.add(result["label"])
+
         return result
 
     def command_sync(self, c):

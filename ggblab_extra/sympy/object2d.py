@@ -3,6 +3,7 @@
 Provides `Object2D` and `attach_object2d` which attaches an `object2d`
 column to a Polars DataFrame by resolving `Type`, `Command`, and `Value`.
 """
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -10,6 +11,7 @@ from typing import Optional
 @dataclass
 class Object2D:
     """Container describing a parsed 2D object and its metadata."""
+
     kind: Optional[str] = None
     obj: object | None = None
     value: str | None = None
@@ -43,14 +45,23 @@ class Object2D:
                 if cmd.lower().startswith("segment"):
                     from .line import segment_from_command
 
-                    seg = segment_from_command(command, df, name_col, value_col, obj_col)
+                    seg = segment_from_command(
+                        command, df, name_col, value_col, obj_col
+                    )
                     return cls(kind="segment", obj=seg, value=value, command=command)
                 if cmd.lower().startswith("ray"):
                     from .line import ray_from_command
 
                     r = ray_from_command(command, df, name_col, value_col, obj_col)
                     return cls(kind="ray", obj=r, value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 # Best-effort: if parsing fails, continue to other heuristics.
                 pass
 
@@ -60,8 +71,20 @@ class Object2D:
                 from .point import point_from_value
 
                 pwrap = point_from_value(value)
-                return cls(kind="point", obj=getattr(pwrap, "obj", pwrap), value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                return cls(
+                    kind="point",
+                    obj=getattr(pwrap, "obj", pwrap),
+                    value=value,
+                    command=command,
+                )
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 return cls(kind="point", obj=None, value=value, command=command)
 
         if t == "circle":
@@ -70,7 +93,14 @@ class Object2D:
 
                 c = circle_from_value(value)
                 return cls(kind="circle", obj=c, value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 return cls(kind="circle", obj=None, value=value, command=command)
 
         if t in ("curvecartesian", "curve"):
@@ -79,17 +109,37 @@ class Object2D:
 
                 cv = curve_from_value(command or value)
                 obj_val = cv.sympy if getattr(cv, "sympy", None) is not None else cv
-                return cls(kind="curvecartesian", obj=obj_val, value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
-                return cls(kind="curvecartesian", obj=None, value=value, command=command)
+                return cls(
+                    kind="curvecartesian", obj=obj_val, value=value, command=command
+                )
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
+                return cls(
+                    kind="curvecartesian", obj=None, value=value, command=command
+                )
 
         if t == "line":
             try:
                 from .line import line_from_value
 
                 l = line_from_value(value)
-                return cls(kind="line", obj=getattr(l, "obj", l), value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                return cls(
+                    kind="line", obj=getattr(l, "obj", l), value=value, command=command
+                )
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 return cls(kind="line", obj=None, value=value, command=command)
 
         if t == "segment":
@@ -98,7 +148,14 @@ class Object2D:
 
                 seg = segment_from_command(command or value)
                 return cls(kind="segment", obj=seg, value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 return cls(kind="segment", obj=None, value=value, command=command)
 
         if t == "list":
@@ -109,41 +166,87 @@ class Object2D:
             v = value.strip()
             # Prefer treating explicit Curve(...) commands or parametric values as curves
             try:
-                if isinstance(v, str) and (v.lower().startswith("curve(") or (":" in v and ("cos(" in v or "sin(" in v))):
+                if isinstance(v, str) and (
+                    v.lower().startswith("curve(")
+                    or (":" in v and ("cos(" in v or "sin(" in v))
+                ):
                     from .curve import curve_from_value
 
                     cv = curve_from_value(command or value)
                     obj_val = cv.sympy if getattr(cv, "sympy", None) is not None else cv
-                    return cls(kind="curvecartesian", obj=obj_val, value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                    return cls(
+                        kind="curvecartesian", obj=obj_val, value=value, command=command
+                    )
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 pass
             try:
                 from .point import point_from_value
 
                 pwrap = point_from_value(value)
-                return cls(kind="point", obj=getattr(pwrap, "obj", pwrap), value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                return cls(
+                    kind="point",
+                    obj=getattr(pwrap, "obj", pwrap),
+                    value=value,
+                    command=command,
+                )
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 pass
             try:
                 from .circle import circle_from_value
 
                 c = circle_from_value(value)
                 return cls(kind="circle", obj=c, value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 pass
             try:
                 from .line import line_from_value
 
                 l = line_from_value(value)
-                return cls(kind="line", obj=getattr(l, "obj", l), value=value, command=command)
-            except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError):
+                return cls(
+                    kind="line", obj=getattr(l, "obj", l), value=value, command=command
+                )
+            except (
+                ImportError,
+                AttributeError,
+                TypeError,
+                ValueError,
+                IndexError,
+                KeyError,
+            ):
                 pass
 
         # Unknown/unsupported
         return cls(kind=None, obj=None, value=value, command=command)
 
 
-def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", value_col: str = "Value", out_col: str = "object2d"):
+def attach_object2d(
+    df,
+    type_col: str = "Type",
+    command_col: str = "Command",
+    value_col: str = "Value",
+    out_col: str = "object2d",
+):
     """Attach an `Object2D` for each row using `Type`, `Command`, and `Value`.
 
     - Expects a Polars DataFrame and returns a new DataFrame with the
@@ -192,7 +295,15 @@ def attach_object2d(df, type_col: str = "Type", command_col: str = "Command", va
                 value_col=value_col,
                 obj_col=out_col,
             )
-        except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError, RuntimeError):
+        except (
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            IndexError,
+            KeyError,
+            RuntimeError,
+        ):
             o = Object2D(kind=None, obj=None, value=v, command=c)
         objs.append(o)
     try:

@@ -1,20 +1,20 @@
 """Plane-related helpers (moved into sympy subpackage).
 """
+
 import math
 from typing import Any
 
 from sympy import Matrix, sqrt, symbols
-from sympy.parsing.sympy_parser import (
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
+from sympy.parsing.sympy_parser import (implicit_multiplication_application,
+                                        parse_expr, standard_transformations)
 
-from .point import sympy_point_from_coords, point_from_value
+from .point import sympy_point_from_coords
+
 try:
-    from .utils import is_pointlike, resolve_label_to_point, expr_from_value
+    from .utils import expr_from_value, is_pointlike, resolve_label_to_point
 except Exception:
     from .utils import is_pointlike, resolve_label_to_point
+
     expr_from_value = None
 
 try:
@@ -79,7 +79,9 @@ def plane_from_value(value_str: str) -> Any:
 
 
 def attach_planes(df, value_col="Value", out_col="sym_plane"):
-    raise RuntimeError("attach_planes was removed; use parsing helpers directly if needed")
+    raise RuntimeError(
+        "attach_planes was removed; use parsing helpers directly if needed"
+    )
 
 
 def _to_numeric_vector(v):
@@ -270,12 +272,24 @@ def _check_point_on_plane(oj, plane, tol=1e-2) -> bool:
     enumerator to keep the loop body small.
     """
     try:
-        return oj.kind == "point" and is_pointlike(getattr(oj, "obj", None)) and point_on_plane(getattr(oj, "obj", None), plane, tol=tol)
+        return (
+            oj.kind == "point"
+            and is_pointlike(getattr(oj, "obj", None))
+            and point_on_plane(getattr(oj, "obj", None), plane, tol=tol)
+        )
     except (AttributeError, TypeError, ValueError):
         return False
 
 
-def _check_segment_on_plane(oj, plane, df=None, name_col: str = "Name", value_col: str = "Value", obj_col: str = "object3d", tol: float = 1e-2) -> bool:
+def _check_segment_on_plane(
+    oj,
+    plane,
+    df=None,
+    name_col: str = "Name",
+    value_col: str = "Value",
+    obj_col: str = "object3d",
+    tol: float = 1e-2,
+) -> bool:
     """Return True if object `oj` (Object3D-like) is a segment lying on `plane`.
 
     Uses the existing `segment_on_plane` helper but keeps the enumerator
@@ -283,7 +297,15 @@ def _check_segment_on_plane(oj, plane, df=None, name_col: str = "Name", value_co
     """
     try:
         if oj.kind == "segment":
-            return segment_on_plane(oj.obj, plane, df=df, name_col=name_col, value_col=value_col, obj_col=obj_col, tol=tol)
+            return segment_on_plane(
+                oj.obj,
+                plane,
+                df=df,
+                name_col=name_col,
+                value_col=value_col,
+                obj_col=obj_col,
+                tol=tol,
+            )
         return False
     except (AttributeError, TypeError, ValueError):
         return False
@@ -300,12 +322,22 @@ def _check_circle_on_plane(oj, plane) -> bool:
 def _check_line_on_plane(oj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
     """Return True if object `oj` (Object3D-like) is a line on `plane`."""
     try:
-        return oj.kind == "line" and line_on_plane(oj.obj, plane, tol=tol, angle_tol=angle_tol)
+        return oj.kind == "line" and line_on_plane(
+            oj.obj, plane, tol=tol, angle_tol=angle_tol
+        )
     except (AttributeError, TypeError, ValueError):
         return False
 
 
-def segment_on_plane(seg, plane, df=None, name_col: str = "Name", value_col: str = "Value", obj_col: str = "object3d", tol: float = 1e-2) -> bool:
+def segment_on_plane(
+    seg,
+    plane,
+    df=None,
+    name_col: str = "Name",
+    value_col: str = "Value",
+    obj_col: str = "object3d",
+    tol: float = 1e-2,
+) -> bool:
     # print(f"Checking if segment {seg} is on plane {plane}")
     if seg is None or plane is None:
         return False
@@ -318,7 +350,9 @@ def segment_on_plane(seg, plane, df=None, name_col: str = "Name", value_col: str
 
     # Resolve labels using shared helper
     def _resolve_label(label):
-        return resolve_label_to_point(label, df=df, name_col=name_col, value_col=value_col, obj_col=obj_col)
+        return resolve_label_to_point(
+            label, df=df, name_col=name_col, value_col=value_col, obj_col=obj_col
+        )
 
     # print(f"Segment endpoints before resolution: {p1}, {p2}")
     rp1 = p1 if is_pointlike(p1) else _resolve_label(p1)
@@ -346,11 +380,22 @@ def line_on_plane(line_obj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
                 try:
                     D_raw = Matrix([p2[i] - P[i] for i in range(3)])
                 except (TypeError, IndexError, AttributeError):
-                    D_raw = Matrix([getattr(p2, ("x", "y", "z")[i]) - getattr(P, ("x", "y", "z")[i]) for i in range(3)])
+                    D_raw = Matrix(
+                        [
+                            getattr(p2, ("x", "y", "z")[i])
+                            - getattr(P, ("x", "y", "z")[i])
+                            for i in range(3)
+                        ]
+                    )
             except (AttributeError, TypeError, IndexError, ValueError):
                 return False
             # If constructed from two explicit points, treat like a segment.
-            if hasattr(P, "x") and hasattr(P, "y") and hasattr(p2, "x") and hasattr(p2, "y"):
+            if (
+                hasattr(P, "x")
+                and hasattr(P, "y")
+                and hasattr(p2, "x")
+                and hasattr(p2, "y")
+            ):
                 return _both_points_on_plane(P, p2, plane, tol=tol)
         elif hasattr(line_obj, "points"):
             try:
@@ -361,13 +406,24 @@ def line_on_plane(line_obj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
                     try:
                         D_raw = Matrix([p2[i] - P[i] for i in range(3)])
                     except (TypeError, IndexError, AttributeError):
-                        D_raw = Matrix([getattr(p2, ("x", "y", "z")[i]) - getattr(P, ("x", "y", "z")[i]) for i in range(3)])
+                        D_raw = Matrix(
+                            [
+                                getattr(p2, ("x", "y", "z")[i])
+                                - getattr(P, ("x", "y", "z")[i])
+                                for i in range(3)
+                            ]
+                        )
                 else:
                     return False
             except (AttributeError, TypeError, IndexError, ValueError):
                 return False
             # If points are explicit, treat like segment as well
-            if hasattr(P, "x") and hasattr(P, "y") and hasattr(p2, "x") and hasattr(p2, "y"):
+            if (
+                hasattr(P, "x")
+                and hasattr(P, "y")
+                and hasattr(p2, "x")
+                and hasattr(p2, "y")
+            ):
                 return _both_points_on_plane(P, p2, plane, tol=tol)
         else:
             return False
@@ -391,7 +447,6 @@ def line_on_plane(line_obj, plane, tol=1e-2, angle_tol=1e-1) -> bool:
         return False
 
 
-
 def enumerate_plane_members(
     df,
     type_col: str = "Type",
@@ -405,7 +460,7 @@ def enumerate_plane_members(
     if not isinstance(df, pl.DataFrame):
         raise TypeError("enumerate_plane_members requires a polars DataFrame")
 
-    from .object3d import Object3D, SegmentCommand as SegmentType
+    from .object3d import Object3D
 
     members_list = []
 
@@ -417,8 +472,19 @@ def enumerate_plane_members(
     objs = []
     for t, c, v in zip(types, cmds, vals):
         try:
-            o = Object3D.from_value_command(value=(v if v is not None else None), command=(c if c is not None else None))
-        except (ImportError, AttributeError, TypeError, ValueError, IndexError, KeyError, RuntimeError):
+            o = Object3D.from_value_command(
+                value=(v if v is not None else None),
+                command=(c if c is not None else None),
+            )
+        except (
+            ImportError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            IndexError,
+            KeyError,
+            RuntimeError,
+        ):
             o = Object3D(kind=None, obj=None, value=v, command=c)
         objs.append((t, o))
 
@@ -441,7 +507,14 @@ def enumerate_plane_members(
                     members.append(name_j)
                     continue
                 # print(f"Checking object {name_j} of type {oj.kind} {oj.obj}for plane membership")
-                if _check_segment_on_plane(oj, plane, df=df, name_col=name_col, value_col=value_col, obj_col="object3d"):
+                if _check_segment_on_plane(
+                    oj,
+                    plane,
+                    df=df,
+                    name_col=name_col,
+                    value_col=value_col,
+                    obj_col="object3d",
+                ):
                     members.append(name_j)
                     continue
                 if _check_circle_on_plane(oj, plane):
@@ -463,6 +536,7 @@ def enumerate_plane_members(
         except (TypeError, ValueError):
             s = pl.Series(out_col, [[str(x) for x in m] for m in members_list])
     return df.with_columns([s])
+
 
 __all__ = [
     "plane_from_value",

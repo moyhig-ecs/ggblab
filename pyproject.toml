@@ -33,6 +33,7 @@ dependencies = [
     "sympy",
     "ipykernel",
     "pyperclip",
+    "psutil",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
@@ -74,7 +75,7 @@ build_dir = "ggblab/labextension"
 
 
 [tool.hatch.build]
-packages = ["ggblab", "ggblab_extra"]
+packages = ["ggblab", "ggblab_extra", "ggblab_core", "ggblab_core2", "comm_bridge"]
 
 [tool.jupyter-releaser.options]
 version_cmd = "hatch version"

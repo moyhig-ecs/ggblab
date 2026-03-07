@@ -14,4 +14,3 @@ project_short_description: A JupyterLab extension.
 python_name: ggblab
 repository: ''
 test: true
-

@@ -4,6 +4,7 @@ Provides helpers to create a `BlockingKernelClient` from a Jupyter
 connection file. The function intentionally performs minimal validation
 and raises clear errors for missing files or missing dependencies.
 """
+
 from pathlib import Path
 from typing import Any
 

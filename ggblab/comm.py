@@ -6,7 +6,10 @@ This module is kept for backward compatibility. Import from
 
 import warnings
 
-warnings.warn("ggblab.comm has moved to ggblab_core2.comm; import from ggblab_core2", DeprecationWarning)
+warnings.warn(
+    "ggblab.comm has moved to ggblab_core2.comm; import from ggblab_core2",
+    DeprecationWarning,
+)
 
 from ggblab_core2.comm import *  # noqa: F401,F403
 

@@ -13,13 +13,13 @@ implementation in Julia.
 """
 from __future__ import annotations
 
-import sys
 import subprocess
+import sys
 from typing import Any, Dict
 
 try:
-    from ipykernel.kernelbase import Kernel
     from ipykernel.kernelapp import IPKernelApp
+    from ipykernel.kernelbase import Kernel
 except Exception:
     # Allow syntax checks even when ipykernel isn't installed in this env
     Kernel = object  # type: ignore
@@ -38,10 +38,22 @@ class JuliaKernel(Kernel):
     }
     banner = "Julia adapter kernel (stateless; spawns julia -e per execute)"
 
-    def do_execute(self, code: str, silent: bool, store_history: bool = True, user_expressions: Dict[str, Any] | None = None, allow_stdin: bool = False) -> Dict[str, Any]:
+    def do_execute(
+        self,
+        code: str,
+        silent: bool,
+        store_history: bool = True,
+        user_expressions: Dict[str, Any] | None = None,
+        allow_stdin: bool = False,
+    ) -> Dict[str, Any]:
         code = code or ""
         if not code.strip():
-            return {"status": "ok", "execution_count": self.execution_count, "payload": [], "user_expressions": {}}
+            return {
+                "status": "ok",
+                "execution_count": self.execution_count,
+                "payload": [],
+                "user_expressions": {},
+            }
 
         # Run a fresh Julia process for each execute request. This keeps the
         # adapter extremely simple at the cost of losing session state.
@@ -56,7 +68,12 @@ class JuliaKernel(Kernel):
                     self.send_response(self.iopub_socket, "stream", stream_content)
                 except Exception:
                     pass
-            return {"status": "error", "ename": "FileNotFoundError", "evalue": err, "traceback": []}
+            return {
+                "status": "error",
+                "ename": "FileNotFoundError",
+                "evalue": err,
+                "traceback": [],
+            }
 
         out = proc.stdout or ""
         err_out = proc.stderr or ""
@@ -78,14 +95,26 @@ class JuliaKernel(Kernel):
                     pass
 
         if proc.returncode != 0:
-            return {"status": "error", "ename": "JuliaError", "evalue": (err_out.strip() or "Julia process failed"), "traceback": []}
+            return {
+                "status": "error",
+                "ename": "JuliaError",
+                "evalue": (err_out.strip() or "Julia process failed"),
+                "traceback": [],
+            }
 
-        return {"status": "ok", "execution_count": self.execution_count, "payload": [], "user_expressions": {}}
+        return {
+            "status": "ok",
+            "execution_count": self.execution_count,
+            "payload": [],
+            "user_expressions": {},
+        }
 
 
 def main() -> int:
     if IPKernelApp is None:
-        print("ipykernel not available in this environment. This script is a kernel adapter and must be run where ipykernel is installed.")
+        print(
+            "ipykernel not available in this environment. This script is a kernel adapter and must be run where ipykernel is installed."
+        )
         return 2
 
     # Configure IPKernelApp to use our JuliaKernel class and start the kernel

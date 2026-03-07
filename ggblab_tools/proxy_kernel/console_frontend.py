@@ -1,11 +1,14 @@
 """Simple CLI frontend that launches `jupyter console` connected to the proxy kernel."""
+
 import argparse
 import subprocess
 import sys
 
 
 def main():
-    p = argparse.ArgumentParser(description="Open jupyter console to ggblab-proxy kernel")
+    p = argparse.ArgumentParser(
+        description="Open jupyter console to ggblab-proxy kernel"
+    )
     p.add_argument("--kernel", default="ggblab-proxy", help="Kernel name to use")
     args, extra = p.parse_known_args()
 

@@ -223,7 +223,7 @@ export const GeoGebraWidget: React.FC<GeoGebraWidgetProps> = ({
         // Prefer ResizeObserver to detect size changes of the container.
         // Measurement target is evaluated on every apply so that layout
         // changes (panel open/close, DevTools toggles) are always reflected.
-        
+
 
         const applySize = () => {
           try {

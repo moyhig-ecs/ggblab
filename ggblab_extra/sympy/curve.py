@@ -5,17 +5,15 @@ command strings and simple `name:(x(u), y(u))` value forms. When SymPy
 is available the parser will attempt to construct a SymPy curve object;
 otherwise a simple `ParametricCurve` wrapper is returned.
 """
-from dataclasses import dataclass
-from typing import Any, Optional, Tuple
-import re
 
-from sympy.parsing.sympy_parser import (
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
-from sympy import symbols, sin, cos, pi, E, tan, sqrt
+import re
+from dataclasses import dataclass
+from typing import Any, Optional
+
+from sympy import E, cos, pi, sin, sqrt, symbols, tan
 from sympy.core.sympify import SympifyError
+from sympy.parsing.sympy_parser import (implicit_multiplication_application,
+                                        parse_expr, standard_transformations)
 
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
@@ -50,17 +48,17 @@ def _split_top_level_commas(s: str):
     depth = 0
     cur = []
     for ch in s:
-        if ch == '(':
+        if ch == "(":
             depth += 1
-        elif ch == ')':
+        elif ch == ")":
             depth -= 1
-        if ch == ',' and depth == 0:
-            parts.append(''.join(cur).strip())
+        if ch == "," and depth == 0:
+            parts.append("".join(cur).strip())
             cur = []
         else:
             cur.append(ch)
     if cur:
-        parts.append(''.join(cur).strip())
+        parts.append("".join(cur).strip())
     return parts
 
 
@@ -74,20 +72,24 @@ def curve_from_value(val: str) -> ParametricCurve:
     if val is None:
         raise ValueError("empty value")
     s = val
-    if ':' in s and not s.strip().lower().startswith('curve'):
+    if ":" in s and not s.strip().lower().startswith("curve"):
         # value form: "name:(expr, expr)"
         try:
-            _, rest = s.split(':', 1)
+            _, rest = s.split(":", 1)
             rest = rest.strip()
-            if rest.startswith('(') and rest.endswith(')'):
+            if rest.startswith("(") and rest.endswith(")"):
                 inner = rest[1:-1]
                 parts = _split_top_level_commas(inner)
                 if len(parts) >= 2:
                     x_s, y_s = parts[0], parts[1]
                     # no range provided
-                    var_sym = symbols('t')
-                    x_expr = _parse_expr(x_s, local={'sin': sin, 'cos': cos, 't': var_sym})
-                    y_expr = _parse_expr(y_s, local={'sin': sin, 'cos': cos, 't': var_sym})
+                    var_sym = symbols("t")
+                    x_expr = _parse_expr(
+                        x_s, local={"sin": sin, "cos": cos, "t": var_sym}
+                    )
+                    y_expr = _parse_expr(
+                        y_s, local={"sin": sin, "cos": cos, "t": var_sym}
+                    )
                     return ParametricCurve(x=x_expr, y=y_expr, var=var_sym)
         except (ValueError, SympifyError, IndexError):
             pass
@@ -100,7 +102,7 @@ def curve_from_value(val: str) -> ParametricCurve:
         if len(parts) >= 2:
             x_s = parts[0]
             y_s = parts[1]
-            var_name = 't'
+            var_name = "t"
             start_expr = None
             end_expr = None
             if len(parts) >= 3:
@@ -111,13 +113,19 @@ def curve_from_value(val: str) -> ParametricCurve:
                 end_expr = parts[4]
             try:
                 var_sym = symbols(str(var_name).strip())
-                local = {'sin': sin, 'cos': cos, str(var_sym): var_sym}
+                local = {"sin": sin, "cos": cos, str(var_sym): var_sym}
                 # also provide 't' alias
-                local['t'] = var_sym
+                local["t"] = var_sym
                 x_expr = _parse_expr(x_s, local=local)
                 y_expr = _parse_expr(y_s, local=local)
-                start = _parse_expr(start_expr, local=local) if start_expr is not None else None
-                end = _parse_expr(end_expr, local=local) if end_expr is not None else None
+                start = (
+                    _parse_expr(start_expr, local=local)
+                    if start_expr is not None
+                    else None
+                )
+                end = (
+                    _parse_expr(end_expr, local=local) if end_expr is not None else None
+                )
             except (SympifyError, TypeError, ValueError):
                 raise ValueError(f"could not parse curve expression: {val!r}")
 
@@ -132,7 +140,14 @@ def curve_from_value(val: str) -> ParametricCurve:
                         SympyCurve = None
                 if SympyCurve is not None:
                     # Build a rich local_dict for parsing/evaluation
-                    local = {"sin": sin, "cos": cos, "tan": tan, "sqrt": sqrt, "pi": pi, "E": E}
+                    local = {
+                        "sin": sin,
+                        "cos": cos,
+                        "tan": tan,
+                        "sqrt": sqrt,
+                        "pi": pi,
+                        "E": E,
+                    }
                     local[str(var_sym)] = var_sym
                     local["t"] = var_sym
                     # Ensure start/end are SymPy expressions when present
@@ -149,21 +164,32 @@ def curve_from_value(val: str) -> ParametricCurve:
 
                     try:
                         if s_expr is not None and e_expr is not None:
-                            sym = SympyCurve((x_expr, y_expr), (var_sym, s_expr, e_expr))
+                            sym = SympyCurve(
+                                (x_expr, y_expr), (var_sym, s_expr, e_expr)
+                            )
                         else:
                             # Some SymPy versions accept (exprs, param) signature
                             try:
                                 sym = SympyCurve((x_expr, y_expr), var_sym)
                             except Exception:
                                 sym = SympyCurve((x_expr, y_expr))
-                        return ParametricCurve(x=x_expr, y=y_expr, var=var_sym, start=start, end=end, sympy=sym)
+                        return ParametricCurve(
+                            x=x_expr,
+                            y=y_expr,
+                            var=var_sym,
+                            start=start,
+                            end=end,
+                            sympy=sym,
+                        )
                     except Exception:
                         # Fall through to wrapper if construction fails
                         pass
             except Exception:
                 pass
 
-            return ParametricCurve(x=x_expr, y=y_expr, var=var_sym, start=start, end=end)
+            return ParametricCurve(
+                x=x_expr, y=y_expr, var=var_sym, start=start, end=end
+            )
 
     raise ValueError(f"not a recognized curve value: {val!r}")
 

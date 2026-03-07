@@ -1,11 +1,14 @@
 """Simple CLI frontend that launches `jupyter console` connected to the ggblab-local kernel."""
+
 import argparse
 import subprocess
 import sys
 
 
 def main():
-    p = argparse.ArgumentParser(description="Open jupyter console to ggblab-local kernel")
+    p = argparse.ArgumentParser(
+        description="Open jupyter console to ggblab-local kernel"
+    )
     p.add_argument("--kernel", default="ggblab-local", help="Kernel name to use")
     args, extra = p.parse_known_args()
 

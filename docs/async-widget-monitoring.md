@@ -24,26 +24,26 @@ async def monitor_slider():
     """Monitor slider value and execute processing when it changes."""
     with output:
         print("✓ Monitor started")
-    
+
     last_value = slider.value
-    
+
     while True:
         current_value = slider.value
-        
+
         # Detect value change
         if current_value != last_value:
             with output:
                 output.clear_output(wait=True)
                 print(f"⏳ Processing: {current_value}")
-            
+
             # Perform expensive computation here
             # await heavy_computation(current_value)
-            
+
             with output:
                 print(f"✓ Complete: {current_value}")
-            
+
             last_value = current_value
-        
+
         # Critical: yield control to event loop
         await asyncio.sleep(0.1)
 
@@ -71,7 +71,7 @@ Suspends the current task for the specified duration.
 while True:
     # Do some work
     process_data()
-    
+
     # CRITICAL: Yield control back to the event loop
     await asyncio.sleep(0)  # Even with 0 seconds, this yields control
 ```
@@ -190,7 +190,7 @@ from typing import Optional, Callable, Any
 class WidgetMonitor:
     """
     Monitors an ipywidget slider and executes async processing.
-    
+
     Features:
     - Reliable across all Jupyter environments
     - Proper resource cleanup
@@ -198,7 +198,7 @@ class WidgetMonitor:
     - Customizable polling interval
     - Graceful error handling
     """
-    
+
     def __init__(
         self,
         slider: widgets.IntSlider,
@@ -208,7 +208,7 @@ class WidgetMonitor:
     ):
         """
         Initialize the monitor.
-        
+
         Args:
             slider: IntSlider widget to monitor
             output: Output widget for displaying status
@@ -224,25 +224,25 @@ class WidgetMonitor:
         self.processor = processor
         self.task: Optional[asyncio.Task] = None
         self._last_value = slider.value
-    
+
     async def _heavy_computation(self, value: int) -> str:
         """
         Simulate expensive computation (e.g., AI inference, data processing).
-        
+
         In real usage, replace with actual async work.
         """
         # Custom processor if provided
         if self.processor:
             return await self.processor(value)
-        
+
         # Default: simulate work
         await asyncio.sleep(1)
         return f"Processed value {value}"
-    
+
     async def monitor(self) -> None:
         """
         Main monitoring loop.
-        
+
         Continuously checks slider value at polling_interval.
         Yields control to event loop on each iteration via asyncio.sleep().
         This allows other Jupyter operations and tasks to run.
@@ -250,53 +250,53 @@ class WidgetMonitor:
         with self.output:
             print("✓ Monitor started")
             print(f"  Polling interval: {self.polling_interval}s")
-        
+
         try:
             while True:
                 # Read current value without blocking
                 current_value = self.slider.value
-                
+
                 # Detect change
                 if current_value != self._last_value:
                     with self.output:
                         self.output.clear_output(wait=True)
                         print(f"⏳ Processing slider value: {current_value}")
-                    
+
                     try:
                         # Execute computation
                         result = await self._heavy_computation(current_value)
-                        
+
                         # Display result
                         with self.output:
                             print(f"✓ Complete: {result}")
-                    
+
                     except asyncio.CancelledError:
                         raise  # Propagate cancellation
-                    
+
                     except Exception as e:
                         with self.output:
                             print(f"✗ Error: {type(e).__name__}: {e}")
                         console.error(f"Processing error: {e}")
-                    
+
                     self._last_value = current_value
-                
+
                 # CRITICAL: Yield control to event loop
                 # Without this, other tasks would starve and Jupyter would freeze
                 # Even waiting 0.1s is dominated by this yield behavior
                 await asyncio.sleep(self.polling_interval)
-        
+
         except asyncio.CancelledError:
             with self.output:
                 print("⚠ Monitor stopped")
             raise
-    
+
     def start(self) -> None:
         """Start monitoring in a background task."""
         if self.task is not None:
             raise RuntimeError("Monitor already running")
-        
+
         self.task = asyncio.create_task(self.monitor())
-    
+
     def stop(self) -> None:
         """Stop monitoring."""
         if self.task is not None:
@@ -381,7 +381,7 @@ display(ggb, angle_slider, output)
 async def sync_geometry():
     """
     Monitor slider and sync GeoGebra geometry.
-    
+
     Uses polling pattern because:
     1. Works reliably in all Jupyter environments
     2. GeoGebra updates require multiple operations
@@ -390,18 +390,18 @@ async def sync_geometry():
     """
     with output:
         print("✓ Geometry synchronization started")
-    
+
     last_angle = -1
-    
+
     try:
         while True:
             current_angle = angle_slider.value
-            
+
             if current_angle != last_angle:
                 with output:
                     output.clear_output(wait=True)
                     print(f"⏳ Updating angle to {current_angle}°")
-                
+
                 # Update GeoGebra (if API supports it)
                 try:
                     ggb.set_value('angle', current_angle)
@@ -410,13 +410,13 @@ async def sync_geometry():
                 except Exception as e:
                     with output:
                         print(f"✗ Failed to update: {e}")
-                
+
                 last_angle = current_angle
-            
+
             # Yield control - allows Jupyter responsiveness
             # 0.1s interval balances responsiveness and CPU usage
             await asyncio.sleep(0.1)
-    
+
     except asyncio.CancelledError:
         with output:
             print("⚠ Synchronization stopped")

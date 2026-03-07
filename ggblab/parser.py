@@ -8,9 +8,8 @@ the optional `ggblab_extra` package and import the full implementations from
 """
 
 import logging
-import re
 import math
-import itertools
+import re
 
 from ggblab.persistent_counter import PersistentCounter
 
@@ -24,53 +23,58 @@ class ggb_parser:
     The core implementation intentionally keeps a compact surface area so
     that importing ``ggblab`` remains lightweight.
     """
-    
+
     def __init__(self, cache_path=None, cache_enabled=True):
         """Initialize the lightweight parser and optional command cache."""
-        cache_path = cache_path or '.ggblab_command_cache'
+        cache_path = cache_path or ".ggblab_command_cache"
         try:
-            self.command_cache = PersistentCounter(cache_path=cache_path, enabled=cache_enabled)
+            self.command_cache = PersistentCounter(
+                cache_path=cache_path, enabled=cache_enabled
+            )
         except Exception:
             # Fallback: simple no-op cache when PersistentCounter fails
             class _Noop:
                 def increment(self, *args, **kwargs):
                     return
+
             self.command_cache = _Noop()
 
-    def tokenize_with_commas(self, cmd_string, extract_commands=False):  # register_expr=False
+    def tokenize_with_commas(
+        self, cmd_string, extract_commands=False
+    ):  # register_expr=False
         """Tokenize a GeoGebra command string into a structured list representation.
-        
+
         Parses a mathematical or GeoGebra-like command string and converts it into
         a nested list structure that preserves parentheses, brackets, and commas.
         This is useful for analyzing GeoGebra command syntax and extracting object
         dependencies.
-        
+
         === COMMA PRESERVATION AND GEOGEBRA'S IMPLICIT MULTIPLICATION ===
-        
+
         This tokenizer preserves commas as explicit tokens for a critical reason:
         GeoGebra outputs commands with implicit multiplication operators omitted.
-        
+
         Example:
             Internal representation: Circle(2 * a, b)
             GeoGebra output:         Circle(2a, b)  <- Information loss!
-        
+
         The '*' operator is completely omitted, destroying information. This is a
         one-way transformation: we can't reliably reconstruct "2*a" from "2a" without
         external context (is it "2 times a" or "variable named 2a"?).
-        
+
         BUT: GeoGebra ALWAYS uses comma-separation for parameter lists. We exploit
         this invariant. By preserving commas in the token stream, we can:
         1. Identify parameter boundaries (comma = separator)
         2. Use whitespace/context to infer where implicit multiplication occurred
-        
+
         This is a workaround for GeoGebra's poor design. So the question becomes:
-        
+
         - BLAME GeoGebra for being a one-way encoder (lose the *? Why?)
         - PRAISE the developer who recognized the comma-separation invariant
-        
+
         Engineering lesson: deal with imperfect systems and find creative solutions.
         GeoGebra didn't help us. We had to be smarter than it.
-        
+
         Args:
             cmd_string (str): Input command string (e.g., "Circle(A, Distance(A, B))").
             extract_commands (bool, optional): If True, also extract command name candidates
@@ -84,38 +88,38 @@ class ggb_parser:
             #                          This is useful because GeoGebra applets may rename
             #                          objects at runtime, but the generation order remains
             #                          stable within a construction. Not yet implemented.
-        
+
         Returns:
-            list or dict: 
+            list or dict:
                 - If extract_commands=False (default): Nested list structure with tokens.
                   Parentheses/brackets create nested lists; commas are preserved as ','.
                 - If extract_commands=True: Dict with keys:
                   - 'tokens': Nested list structure (as above)
                   - 'commands': Set of command name candidates (tokens preceding '(' or '[')
-        
+
         Raises:
             ValueError: If parentheses/brackets are mismatched.
-        
+
         Examples:
             >>> tokenize_with_commas("Circle(A, 2)")
             ['Circle', ['A', ',', '2']]
-            
+
             >>> tokenize_with_commas("Circle(A, 2)", extract_commands=True)
             {'tokens': ['Circle', ['A', ',', '2']], 'commands': {'Circle'}}
-            
+
             >>> tokenize_with_commas("Distance(Point(1, 2), B)")
             ['Distance', [['Point', ['1', ',', '2']], ',', 'B']]
-            
+
             >>> tokenize_with_commas("Distance(Point(1, 2), B)", extract_commands=True)
             {'tokens': ['Distance', [['Point', ['1', ',', '2']], ',', 'B']], 'commands': {'Distance', 'Point'}}
-        
+
         Note:
             Empty or non-string input returns an empty list (or empty dict if
             extract_commands=True) without raising an error.
-            
+
             Commas are INTENTIONALLY preserved as tokens to work around GeoGebra's
             implicit multiplication. This is not a quirk; it's the core design decision.
-            
+
             Future (register_expr parameter): When implemented, would enable stable object
             references by using construction order indices instead of runtime labels.
             Example output: ['Circle', ['${0}', ',', '${1}']] if register_expr=True
@@ -124,13 +128,13 @@ class ggb_parser:
         if not cmd_string or not isinstance(cmd_string, str):
             # raise ValueError("Input must be a non-empty string.")
             if extract_commands:
-                return {'tokens': [], 'commands': set()}
+                return {"tokens": [], "commands": set()}
             return []
 
         # Regex pattern to match (1) parentheses/braces, (2) commas or colons,
         # or (3) any sequence of non-separating characters. Include ':' as
         # a standalone token so labels like 'l_{10}:' tokenize consistently.
-        tokens = re.findall(r'[()\[\]\{\},:\;]|[^()\[\]\{\}\s,:\;]+', cmd_string)
+        tokens = re.findall(r"[()\[\]\{\},:\;]|[^()\[\]\{\}\s,:\;]+", cmd_string)
 
         # GeoGebra often emits implicit multiplication as juxtaposed tokens like "-1.0x".
         # Detect a leading numeric coefficient and split it into two tokens so downstream
@@ -147,20 +151,31 @@ class ggb_parser:
         while i < n:
             token = tokens[i]
 
-            if token in ['(', '[', '{']:
+            if token in ["(", "[", "{"]:
                 # If extracting commands and previous token looks like a command name, save it
-                if extract_commands and prev_token and isinstance(prev_token, str) and prev_token[0].isalpha():
+                if (
+                    extract_commands
+                    and prev_token
+                    and isinstance(prev_token, str)
+                    and prev_token[0].isalpha()
+                ):
                     commands.add(prev_token)
                 # Determine whether this brace group should suppress comma-splitting
                 suppress = False
-                if token == '{' and isinstance(prev_token, str):
+                if token == "{" and isinstance(prev_token, str):
                     # If previous token ends with '^' or '_' (e.g. A^{...} or A_{...}),
                     # treat this as a sub/superscript grouping and DO NOT split on commas.
                     # If the caret/underscore is attached to the previous token (e.g. 'C_'),
                     # split it off so the symbol is the standalone prev_token ('_').
-                    if prev_token.endswith('^') or prev_token.endswith('_') or prev_token in ('^', '_'):
+                    if (
+                        prev_token.endswith("^")
+                        or prev_token.endswith("_")
+                        or prev_token in ("^", "_")
+                    ):
                         # detach trailing '^' or '_' if attached
-                        if (prev_token.endswith('^') or prev_token.endswith('_')) and len(prev_token) > 1:
+                        if (
+                            prev_token.endswith("^") or prev_token.endswith("_")
+                        ) and len(prev_token) > 1:
                             try:
                                 cur_list, _ = stack[-1]
                                 # replace last element with the base (without trailing symbol)
@@ -174,17 +189,17 @@ class ggb_parser:
                         suppress = True
                 # Special-case: suppressed brace means we should consume the brace
                 # content and attach it to the preceding token (e.g., C_{t} -> 'C_{t}')
-                if token == '{' and suppress:
+                if token == "{" and suppress:
                     # consume inner tokens until matching '}'
                     depth = 1
                     inner_parts = []
                     i += 1
                     while i < n and depth > 0:
                         tk = tokens[i]
-                        if tk == '{':
+                        if tk == "{":
                             depth += 1
                             inner_parts.append(tk)
-                        elif tk == '}':
+                        elif tk == "}":
                             depth -= 1
                             if depth > 0:
                                 inner_parts.append(tk)
@@ -192,12 +207,12 @@ class ggb_parser:
                             inner_parts.append(tk)
                         i += 1
                     # build inner string without added spaces
-                    inner_str = ''.join(inner_parts)
+                    inner_str = "".join(inner_parts)
                     try:
                         cur_list, _ = stack[-1]
                         # previous element should be the base (we detached it earlier)
                         base = cur_list[-1]
-                        symbol = prev_token if isinstance(prev_token, str) else ''
+                        symbol = prev_token if isinstance(prev_token, str) else ""
                         combined = f"{base}{symbol}{{{inner_str}}}"
                         cur_list[-1] = combined
                         prev_token = combined
@@ -216,7 +231,7 @@ class ggb_parser:
                 prev_token = None
                 i += 1
                 continue
-            elif token in [')', ']', '}']:
+            elif token in [")", "]", "}"]:
                 # Close an active nested list
                 if len(stack) > 1:
                     stack.pop()
@@ -224,21 +239,21 @@ class ggb_parser:
                     raise ValueError("Mismatched parentheses/brackets in input string.")
                 prev_token = None
                 i += 1
-            elif token == ',':
+            elif token == ",":
                 # Treat commas as tokens, unless the current group suppresses comma-splitting
                 cur_list, suppress = stack[-1]
                 if suppress:
                     # Attach comma to previous string token if possible so it is
                     # not treated as a separator later (e.g., in A^{1,2}).
                     if cur_list and isinstance(cur_list[-1], str):
-                        cur_list[-1] = cur_list[-1] + ','
+                        cur_list[-1] = cur_list[-1] + ","
                         prev_token = cur_list[-1]
                     else:
                         # No previous token to append to; store comma as literal
-                        cur_list.append(',')
-                        prev_token = ','
+                        cur_list.append(",")
+                        prev_token = ","
                 else:
-                    stack[-1][0].append(',')
+                    stack[-1][0].append(",")
                     prev_token = None
                 i += 1
             else:
@@ -265,8 +280,10 @@ class ggb_parser:
             try:
                 self.command_cache.increment(commands)
             except Exception:
-                logging.getLogger(__name__).exception("Failed to increment command_cache with commands")
-            return {'tokens': stack[0][0], 'commands': commands}
+                logging.getLogger(__name__).exception(
+                    "Failed to increment command_cache with commands"
+                )
+            return {"tokens": stack[0][0], "commands": commands}
 
         return stack[0][0]
 
@@ -281,14 +298,14 @@ class ggb_parser:
             return parsed_tokens
 
         # If there are no comma separators at this level, recurse normally.
-        if not any(t == ',' for t in parsed_tokens):
+        if not any(t == "," for t in parsed_tokens):
             return [self.strip_comma(t) for t in parsed_tokens]
 
         # Split on literal commas into segments and recursively process each segment.
         segments = []
         cur = []
         for t in parsed_tokens:
-            if t == ',':
+            if t == ",":
                 if len(cur) == 1:
                     segments.append(self.strip_comma(cur[0]))
                 else:
@@ -315,14 +332,15 @@ class ggb_parser:
         `tokenize_with_commas` but with the 'tokens' value stripped of commas.
         """
         res = self.tokenize_with_commas(cmd_string, extract_commands=extract_commands)
+
         def convert_q_to_nan(obj):
             if isinstance(obj, list):
                 # GeoGebra uses '{?}' to represent an empty list; when we see
                 # a single-item list whose only element is '?', treat it as []
-                if len(obj) == 1 and obj[0] == '?':
+                if len(obj) == 1 and obj[0] == "?":
                     return []
                 return [convert_q_to_nan(x) for x in obj]
-            if isinstance(obj, str) and obj == '?':
+            if isinstance(obj, str) and obj == "?":
                 return math.nan
             return obj
 
@@ -359,7 +377,9 @@ class ggb_parser:
 
                 # If all children are lists, consider this a segment-list: drop
                 # empty child lists but return empty list if all were removed.
-                if pruned_children and all(isinstance(c, list) for c in pruned_children):
+                if pruned_children and all(
+                    isinstance(c, list) for c in pruned_children
+                ):
                     non_empty = [c for c in pruned_children if len(c) != 0]
                     if not non_empty:
                         return []
@@ -376,14 +396,14 @@ class ggb_parser:
 
         if extract_commands:
             if not res:
-                return {'tokens': [], 'commands': set()}
-            cleaned = self.strip_comma(res['tokens'])
+                return {"tokens": [], "commands": set()}
+            cleaned = self.strip_comma(res["tokens"])
             cleaned = _normalize_triple_nesting(cleaned)
             converted = convert_q_to_nan(cleaned)
             pruned = _prune_nans(converted)
             if simplify:
                 pruned = self.tokenize_simplify(pruned)
-            return {'tokens': pruned, 'commands': res.get('commands', set())}
+            return {"tokens": pruned, "commands": res.get("commands", set())}
         cleaned = self.strip_comma(res)
         cleaned = _normalize_triple_nesting(cleaned)
         converted = convert_q_to_nan(cleaned)
@@ -394,32 +414,32 @@ class ggb_parser:
 
     def reconstruct_from_tokens(self, parsed_tokens):
         """Reconstruct the original command string from tokenized structured list.
-        
+
         Takes a nested list structure produced by tokenize_with_commas() and
         reconstructs the original command string with proper parentheses, commas,
         and spacing.
-        
+
         Args:
             parsed_tokens (list or str): Tokenized structured list, or a single
                                           token as a string.
-        
+
         Returns:
             str: Reconstructed command string matching the original input structure.
-        
+
         Raises:
             ValueError: If parsed_tokens contains unexpected types.
-        
+
         Examples:
             >>> parser.reconstruct_from_tokens(['Circle', ['A', ',', '2']])
             'Circle(A, 2)'
-            
+
             >>> parser.reconstruct_from_tokens(['Distance', [['Point', ['1', ',', '2']], ',', 'B']])
             'Distance(Point(1, 2), B)'
-        
+
         Note:
             This function is the inverse of tokenize_with_commas(). It handles
             proper spacing around operators and parentheses.
-            
+
             The 'register_expr' parameter (commented out) was intended for register expressions,
             where applet-assigned labels could be replaced with construction-order-based
             abstract expressions like '${n}', since GeoGebra may reassign object labels
@@ -435,17 +455,19 @@ class ggb_parser:
                 if isinstance(token, list):
                     # For nested lists, recursively reconstruct and wrap in parentheses
                     result.append(f"({self.reconstruct_from_tokens(token)})")
-                elif token == ',':
+                elif token == ",":
                     # Append a comma directly
-                    result.append(',')
+                    result.append(",")
                 else:
                     # For normal tokens, add them to the result list
                     result.append(token)
 
             # Reconstruct the final string with proper spacing and joining rules
-            return re.sub(r'^\- ', '-',
-                          re.sub(r'([^+\-*/]) \(', r'\1(',
-                                 ' '.join(result).replace(' , ', ', ')))
+            return re.sub(
+                r"^\- ",
+                "-",
+                re.sub(r"([^+\-*/]) \(", r"\1(", " ".join(result).replace(" , ", ", ")),
+            )
         else:
             raise ValueError("Unexpected token type in parsed_tokens.")
 
@@ -470,6 +492,7 @@ class ggb_parser:
         Returns:
             Simplified token structure.
         """
+
         def _is_float_like(x):
             if isinstance(x, float):
                 return True

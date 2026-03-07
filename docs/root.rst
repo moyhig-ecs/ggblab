@@ -42,4 +42,3 @@ A JupyterLab extension for interactive geometric scene construction with Python 
 
    ai_assessment.md
    testing.md
-

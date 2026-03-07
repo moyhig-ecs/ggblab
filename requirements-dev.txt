@@ -1,0 +1,6 @@
+pre-commit
+black==24.1.0
+ruff
+mypy==1.10.0
+isort
+pytest

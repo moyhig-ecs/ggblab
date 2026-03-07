@@ -3,16 +3,20 @@
 This module centralizes the logic for constructing SymPy points and
 provides a `Point` wrapper exposing a uniform API across 2D/3D points.
 """
-from dataclasses import dataclass
-from typing import Optional, Any, TypeVar, Protocol, Generic
 
 import re
+from dataclasses import dataclass
+from typing import Any, Generic, Optional, Protocol, TypeVar
 
 _HAS_SYMPY = True
 try:
-    from sympy.geometry import Point as SympyPoint, Point3D as SympyPoint3D, Point2D as SympyPoint2D
-    from sympy.parsing.sympy_parser import implicit_multiplication_application, parse_expr, standard_transformations
-    from sympy import sin, cos, symbols
+    from sympy import cos, sin, symbols
+    from sympy.geometry import Point as SympyPoint
+    from sympy.geometry import Point2D as SympyPoint2D
+    from sympy.geometry import Point3D as SympyPoint3D
+    from sympy.parsing.sympy_parser import (
+        implicit_multiplication_application, parse_expr,
+        standard_transformations)
 except Exception:
     SympyPoint = SympyPoint3D = SympyPoint2D = None
     implicit_multiplication_application = None
@@ -74,6 +78,7 @@ def sympy_point_from_coords(*coords, is_3d: Optional[bool] = None):
 @dataclass
 class Point(Generic[AnyPoint]):
     """Wrapper around a SymPy `Point` exposing uniform `x`,`y`,`z` access."""
+
     obj: AnyPoint
 
     def __repr__(self) -> str:  # pragma: no cover - simple formatting
@@ -102,7 +107,11 @@ class Point(Generic[AnyPoint]):
         try:
             zx = float(self.x.evalf()) if hasattr(self.x, "evalf") else float(self.x)
             zy = float(self.y.evalf()) if hasattr(self.y, "evalf") else float(self.y)
-            zz = float(getattr(self.obj, "z", 0)) if getattr(self.obj, "z", None) is not None else 0.0
+            zz = (
+                float(getattr(self.obj, "z", 0))
+                if getattr(self.obj, "z", None) is not None
+                else 0.0
+            )
             return zx == 0.0 and zy == 0.0 and zz == 0.0
         except (TypeError, ValueError, AttributeError):
             return False
@@ -151,7 +160,11 @@ def point_from_value(value_str: str) -> "Point":
         from .utils import expr_from_value
 
         exprs = [
-            expr_from_value(c, transformations=_transformations, local_dict={"sin": sin, "cos": cos, "t": _t})
+            expr_from_value(
+                c,
+                transformations=_transformations,
+                local_dict={"sin": sin, "cos": cos, "t": _t},
+            )
             for c in comps
         ]
     except Exception:

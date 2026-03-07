@@ -692,7 +692,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 	</xs:simpleType>
 	<xs:simpleType name="pointStyles">
 		<xs:annotation>
-			<xs:documentation>Meanings of values: -1=use global default, 0=full dot, 1=cross, 2=empty dot, 3=plus sign, 4=full diamond, 5=empty diamond, 
+			<xs:documentation>Meanings of values: -1=use global default, 0=full dot, 1=cross, 2=empty dot, 3=plus sign, 4=full diamond, 5=empty diamond,
 	6=triangle north, 7=triangle south, 8=triangle east, 9=triangle west, 10=dot without outline.
 	</xs:documentation>
 		</xs:annotation>

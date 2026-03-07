@@ -17,7 +17,8 @@ class FakeComm:
     def simulate_frontend_reply(self, data):
         # Frontend sends a JSON string in content.data
         import json as _json
-        msg = {'content': {'data': _json.dumps(data)}}
+
+        msg = {"content": {"data": _json.dumps(data)}}
         if self._on_msg:
             self._on_msg(msg)
 
@@ -25,7 +26,7 @@ class FakeComm:
 def test_kernel_comm_send_recv_simulated():
     from ggblab_core.kernel_comm import KernelComm
 
-    kc = KernelComm(target_name='jupyter.ggblab', timeout=2.0)
+    kc = KernelComm(target_name="jupyter.ggblab", timeout=2.0)
     fake = FakeComm()
 
     # Simulate an open from frontend
@@ -37,10 +38,12 @@ def test_kernel_comm_send_recv_simulated():
 
     def call_send_recv():
         try:
-            res = kc.send_recv({'type': 'function', 'payload': {'name': 'ping'}}, timeout=1.0)
-            result_holder['res'] = res
+            res = kc.send_recv(
+                {"type": "function", "payload": {"name": "ping"}}, timeout=1.0
+            )
+            result_holder["res"] = res
         except Exception as e:
-            result_holder['err'] = e
+            result_holder["err"] = e
 
     t = threading.Thread(target=call_send_recv)
     t.start()
@@ -55,13 +58,14 @@ def test_kernel_comm_send_recv_simulated():
 
     # last_sent may be JSON string or dict
     import json as _json
+
     sent = fake.last_sent
     if isinstance(sent, str):
         sent = _json.loads(sent)
-    sent_id = sent.get('id')
+    sent_id = sent.get("id")
     # Simulate frontend reply referencing the same id
-    fake.simulate_frontend_reply({'id': sent_id, 'value': 'pong'})
+    fake.simulate_frontend_reply({"id": sent_id, "value": "pong"})
 
     t.join(timeout=2.0)
-    assert 'res' in result_holder and isinstance(result_holder['res'], dict)
-    assert result_holder['res'].get('value') == 'pong'
+    assert "res" in result_holder and isinstance(result_holder["res"], dict)
+    assert result_holder["res"].get("value") == "pong"

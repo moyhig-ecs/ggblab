@@ -7,17 +7,15 @@ synchronously for the reply.
 This is minimal and suitable for testing with `ipylab`-injected
 frontend panels that open a comm to the kernel.
 """
-from typing import Any, Dict, Optional
+
+import json
+import logging
 import queue
 import threading
 import uuid
-import logging
-import json
+from typing import Any, Dict, Optional
 
 from IPython.core.getipython import get_ipython
-import pprint
-import inspect
-from typing import List
 
 _log = logging.getLogger(__name__)
 
@@ -25,7 +23,7 @@ _log = logging.getLogger(__name__)
 class KernelComm:
     """Register a kernel Comm target and allow synchronous request/response."""
 
-    def __init__(self, target_name: str = 'jupyter.ggblab', timeout: float = 30.0):
+    def __init__(self, target_name: str = "jupyter.ggblab", timeout: float = 30.0):
         self.target_name = target_name
         self.timeout = float(timeout)
         self.comm = None
@@ -36,9 +34,9 @@ class KernelComm:
     def register_target(self) -> None:
         """Register the comm target on the current IPython kernel."""
         ip = get_ipython()
-        kernel = getattr(ip, 'kernel', None)
+        kernel = getattr(ip, "kernel", None)
         if kernel is None:
-            raise RuntimeError('No kernel available to register comm target')
+            raise RuntimeError("No kernel available to register comm target")
 
         def _on_open(comm, open_msg):
             try:
@@ -50,7 +48,7 @@ class KernelComm:
                 except Exception:
                     pass
             except Exception:
-                _log.exception('Error in _on_open')
+                _log.exception("Error in _on_open")
 
         kernel.comm_manager.register_target(self.target_name, _on_open)
         # In some cases the frontend may have opened a comm before the
@@ -58,19 +56,21 @@ class KernelComm:
         # objects in the kernel's comm manager and attach to the first one
         # that matches our target name.
         try:
-            cm = getattr(kernel, 'comm_manager', None)
+            cm = getattr(kernel, "comm_manager", None)
             if cm is not None:
                 # Try common attribute names for open comm dicts
                 comms_dict = None
-                if hasattr(cm, 'comms'):
+                if hasattr(cm, "comms"):
                     comms_dict = cm.comms
-                elif hasattr(cm, '_comms'):
+                elif hasattr(cm, "_comms"):
                     comms_dict = cm._comms
 
                 if comms_dict:
                     for cid, comm in list(comms_dict.items()):
                         try:
-                            tname = getattr(comm, 'target_name', None) or getattr(comm, 'target', None)
+                            tname = getattr(comm, "target_name", None) or getattr(
+                                comm, "target", None
+                            )
                             if tname == self.target_name:
                                 # attach to this comm
                                 self.comm = comm
@@ -84,9 +84,9 @@ class KernelComm:
                                     pass
                                 break
                         except Exception:
-                            _log.exception('Error while inspecting existing comm')
+                            _log.exception("Error while inspecting existing comm")
         except Exception:
-            _log.exception('Failed to scan existing comms on register_target')
+            _log.exception("Failed to scan existing comms on register_target")
 
     # Removed compatibility helpers: callers should use `register_target()` and
     # check `is_open` for existing comm attachment.
@@ -103,18 +103,20 @@ class KernelComm:
         responses.
         """
         try:
-            content = msg.get('content', {})
-            data = content.get('data')
+            content = msg.get("content", {})
+            data = content.get("data")
             # frontend sends a JSON string (see ggblab frontend), so parse if needed
             if isinstance(data, str):
                 try:
                     data = json.loads(data)
                 except Exception:
-                    _log.debug('Received non-JSON data on comm: %r', content.get('data'))
+                    _log.debug(
+                        "Received non-JSON data on comm: %r", content.get("data")
+                    )
                     return
             if not isinstance(data, dict):
                 return
-            _id = data.get('id')
+            _id = data.get("id")
             if not _id:
                 return
             with self.lock:
@@ -123,9 +125,9 @@ class KernelComm:
                 try:
                     q.put_nowait(data)
                 except Exception:
-                    _log.exception('Failed to enqueue reply for id %s', _id)
+                    _log.exception("Failed to enqueue reply for id %s", _id)
         except Exception:
-            _log.exception('Error handling incoming comm message')
+            _log.exception("Error handling incoming comm message")
 
     def send_recv(self, msg: Dict[str, Any], timeout: Optional[float] = None) -> Any:
         """Send `msg` to the frontend comm and wait synchronously for reply.
@@ -135,14 +137,16 @@ class KernelComm:
         (in `content.data.id`).
         """
         if self.comm is None:
-            raise RuntimeError('No comm open; ensure the frontend opened a comm or call register_target() before injection')
+            raise RuntimeError(
+                "No comm open; ensure the frontend opened a comm or call register_target() before injection"
+            )
 
         if timeout is None:
             timeout = self.timeout
 
         _id = str(uuid.uuid4())
         payload = dict(msg)
-        payload['id'] = _id
+        payload["id"] = _id
 
         q = queue.Queue(maxsize=1)
         with self.lock:
@@ -156,14 +160,14 @@ class KernelComm:
                 # to be a JSON string, not a native JS object.
                 self.comm.send(json.dumps(payload))
             except Exception:
-                _log.exception('Comm.send failed')
+                _log.exception("Comm.send failed")
                 raise
 
             try:
                 data = q.get(timeout=timeout)
                 return data
             except queue.Empty:
-                raise TimeoutError(f'No reply for id {_id} after {timeout}s')
+                raise TimeoutError(f"No reply for id {_id} after {timeout}s")
         finally:
             with self.lock:
                 self.pending.pop(_id, None)
@@ -191,23 +195,30 @@ def describe_comm_manager() -> Dict[str, Any]:
     """
     out: Dict[str, Any] = {}
     ip = get_ipython()
-    kernel = getattr(ip, 'kernel', None)
+    kernel = getattr(ip, "kernel", None)
     if kernel is None:
-        out['error'] = 'no-kernel'
+        out["error"] = "no-kernel"
         return out
-    cm = getattr(kernel, 'comm_manager', None)
+    cm = getattr(kernel, "comm_manager", None)
     if cm is None:
-        out['error'] = 'no-comm-manager'
+        out["error"] = "no-comm-manager"
         return out
 
     candidates = {}
-    for name in ("comms", "_comms", "_comms_by_msgid", "_targets_by_id", "_targets", "_target_to_comm"):
+    for name in (
+        "comms",
+        "_comms",
+        "_comms_by_msgid",
+        "_targets_by_id",
+        "_targets",
+        "_target_to_comm",
+    ):
         val = None
         try:
             if hasattr(cm, name):
                 val = getattr(cm, name)
         except Exception:
-            val = '<error>'
+            val = "<error>"
         if val is None:
             continue
         if isinstance(val, dict):
@@ -216,19 +227,26 @@ def describe_comm_manager() -> Dict[str, Any]:
                 samples = []
                 for k in sample_keys:
                     try:
-                        samples.append({'key': k, 'repr': repr(val[k])[:400]})
+                        samples.append({"key": k, "repr": repr(val[k])[:400]})
                     except Exception:
-                        samples.append({'key': k, 'repr': '<repr-error>'})
-                candidates[name] = {'type': 'dict', 'count': len(val), 'sample': samples}
+                        samples.append({"key": k, "repr": "<repr-error>"})
+                candidates[name] = {
+                    "type": "dict",
+                    "count": len(val),
+                    "sample": samples,
+                }
             except Exception:
-                candidates[name] = {'type': type(val).__name__, 'info': '<error-inspecting>'}
+                candidates[name] = {
+                    "type": type(val).__name__,
+                    "info": "<error-inspecting>",
+                }
         else:
             try:
-                candidates[name] = {'type': type(val).__name__, 'repr': repr(val)[:400]}
+                candidates[name] = {"type": type(val).__name__, "repr": repr(val)[:400]}
             except Exception:
-                candidates[name] = {'type': type(val).__name__, 'repr': '<repr-error>'}
+                candidates[name] = {"type": type(val).__name__, "repr": "<repr-error>"}
 
-    out['candidates'] = candidates
+    out["candidates"] = candidates
     return out
 
 
