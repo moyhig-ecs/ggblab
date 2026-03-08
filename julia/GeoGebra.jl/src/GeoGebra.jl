@@ -27,6 +27,8 @@ using PythonCall
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 
+
+
 """Internal helper: send a JSON line to the bridge and return the parsed reply.
 
 Arguments:
@@ -134,14 +136,138 @@ function send_function(name, args...; host::String=DEFAULT_HOST, port::Int=DEFAU
     return resp
 end
 
-"""Helper called by the macro: evaluate an argument tuple and call `send_command`."""
+"""Helper called by the macro: evaluate an argument tuple and call `send_command`.
+When arguments include a `GGBObject`, replace it with its `label` before sending."""
 function send_command_eval(name, args_tuple)
-    return send_command(name, args_tuple...; host=DEFAULT_HOST, port=DEFAULT_PORT)
+    # evaluate and normalize args: replace GGBObject with its label
+    args = Tuple((isa(a, GGBObject) ? a.label : a) for a in args_tuple)
+    return send_command(name, args...; host=DEFAULT_HOST, port=DEFAULT_PORT)
 end
 
-"""Helper called by the macro: evaluate an argument tuple and call `send_function`."""
+"""Helper called by the macro: evaluate an argument tuple and call `send_function`.
+When arguments include a `GGBObject`, replace it with its `label` before sending."""
 function send_function_eval(name, args_tuple)
-    return send_function(name, args_tuple...; host=DEFAULT_HOST, port=DEFAULT_PORT)
+    args = Tuple((isa(a, GGBObject) ? a.label : a) for a in args_tuple)
+    return send_function(name, args...; host=DEFAULT_HOST, port=DEFAULT_PORT)
+end
+
+
+"""A lightweight Julia wrapper for objects created in the GeoGebra applet.
+Holds the assigned `label` and the decoded `data` (a Python dict as PyObject).
+"""
+mutable struct GGBObject
+    label::String
+    data::Any
+end
+
+# Display only the label for brevity in REPL and printing
+Base.show(io::IO, ::MIME"text/plain", g::GGBObject) = print(io, g.label)
+Base.show(io::IO, g::GGBObject) = print(io, g.label)
+
+"""Refresh `g.data` by re-fetching the object's XML and decoding it.
+Returns the updated `GGBObject` (modified in-place).
+"""
+function refresh(g::GGBObject)
+    new = fetch_object(g.label)
+    g.data = new.data
+    return g
+end
+
+"""Mutating alias following Julia convention: `refresh!(g)` updates `g.data` in-place."""
+function refresh!(g::GGBObject)
+    return refresh(g)
+end
+
+"""Fetch an object's XML from the applet and decode it using the Python
+`ggblab.schema.decode` function. Returns a `GGBObject`.
+"""
+function fetch_object(label::AbstractString)
+    xml_str = ""
+    try
+        xml_str = send_function("getXML", string(label); host=DEFAULT_HOST, port=DEFAULT_PORT)
+    catch e
+        throw(ErrorException("Failed to get XML for label $(label): $(e)"))
+    end
+    try
+        py = PythonCall.pyimport("ggblab")
+        schema = getproperty(py, :schema)
+        s = strip(xml_str)
+        if startswith(s, "<construction")
+            xml_to_decode = s
+        else
+            # wrap in a single root to handle multi-root responses
+            xml_to_decode = "<construction>" * s * "</construction>"
+        end
+        pydict = schema.decode(xml_to_decode)
+        return GGBObject(string(label), pydict)
+    catch e
+        throw(ErrorException("Failed to decode XML for label $(label): $(e)"))
+    end
+end
+
+"""Process a comma-separated labels response like "A,b,c" and fetch each
+object via `fetch_object`. Returns a single `GGBObject` when one label,
+otherwise a Vector{GGBObject}.
+"""
+function process_labels_response(resp)
+    if !(resp isa AbstractString)
+        return resp
+    end
+    labels = [strip(s) for s in split(resp, ',') if strip(s) != ""]
+    objs = [fetch_object(lbl) for lbl in labels]
+    return length(objs) == 1 ? objs[1] : objs
+end
+
+"""Return a Vector of `GGBObject` for all objects currently in the applet.
+This calls the applet function `getAllObjectNames` and then fetches each
+object's XML and decodes it.
+"""
+function list_objects(; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
+    resp = send_function("getAllObjectNames"; host=host, port=port)
+    labels = String[]
+    if resp isa AbstractString
+        labels = [strip(s) for s in split(resp, ',') if strip(s) != ""]
+    elseif resp isa AbstractVector
+        labels = [string(x) for x in resp]
+    elseif resp === nothing
+        return GGBObject[]
+    else
+        try
+            labels = [string(x) for x in resp]
+        catch
+            return GGBObject[]
+        end
+    end
+    return [fetch_object(lbl) for lbl in labels]
+end
+
+"""Refresh all `GGBObject`s in `objs` in-place. Returns `objs`."""
+function refresh!(objs::AbstractVector{GGBObject})
+    for g in objs
+        try
+            refresh!(g)
+        catch
+            # ignore individual failures
+        end
+    end
+    return objs
+end
+
+"""Fetch current applet objects and refresh them in-place, returning the Vector of refreshed `GGBObject`s."""
+function refresh_all_objects!(; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
+    objs = list_objects(; host=host, port=port)
+    return refresh!(objs)
+end
+
+"""Wrapper used by the macro to send commands and convert comma-separated
+label responses into `GGBObject`(s)."""
+function send_command_wrap(name, args_tuple)
+    resp = send_command_eval(name, args_tuple)
+    try
+        return process_labels_response(resp)
+    catch
+        return resp
+    end
 end
 
 """Poll the bridge for a previously stored reply by `reply_id`.
@@ -238,8 +364,13 @@ evaluated in the caller's scope.
 """
 macro ggblab(args...)
     toks = args
+    # If the macro was expanded with a leading LineNumberNode, the layout is
+    # typically: (LineNumberNode, Module, expr...). Drop the first two in that case.
     if length(toks) >= 2 && toks[1] isa LineNumberNode
         toks = toks[3:end]
+    elseif length(toks) >= 1 && toks[1] isa Module
+        # Some callsites include just the Module as the first token; drop it.
+        toks = toks[2:end]
     end
     if length(toks) == 0
         error("@ggblab requires an expression")
@@ -274,19 +405,26 @@ macro ggblab(args...)
         name = ex.args[1]
         arg_nodes = ex.args[2:end]
         args_tuple = Expr(:tuple, arg_nodes...)
-        return esc(Expr(:call, Expr(:call, :getfield, :(GeoGebra), QuoteNode(:send_command_eval)), QuoteNode(name), args_tuple))
+        return esc(Expr(:call, Expr(:call, :getfield, :(GeoGebra), QuoteNode(:send_command_wrap)), QuoteNode(name), args_tuple))
     else
         return esc(:(begin
             using GeoGebra
             payload = Dict("type"=>"command", "payload"=>string($(QuoteNode(ex))))
-            GeoGebra.request(payload; host=GeoGebra.DEFAULT_HOST, port=GeoGebra.DEFAULT_PORT)
+            resp = GeoGebra.request(payload; host=GeoGebra.DEFAULT_HOST, port=GeoGebra.DEFAULT_PORT)
+            GeoGebra.process_labels_response(resp)
         end))
     end
 end
 
-macro ggb(args...)
-    return Expr(:macrocall, Symbol("@ggblab"), args...)
-end
+
+# Alias `@pggb` to `@ggblab` for convenience
+# const var"@ggb" = var"@ggblab"
+
+@eval const $(Symbol("@ggb")) = $(Symbol("@ggblab"))
+
+# macro ggb(args...)
+#     return esc(Expr(:macrocall, Symbol("@ggblab"), args...))
+# end
 
 """Run a Python coroutine (PythonCall.PyObject) with asyncio.run.
 
@@ -304,6 +442,6 @@ macro await(expr)
              end)
 end
 
-export request, poll_reply, request_with_retry, set_default_host, set_default_port, send_command, send_function, send_command_eval, send_function_eval, @ggblab, @ggb, @await
+export request, poll_reply, request_with_retry, set_default_host, set_default_port, send_command, send_function, send_command_eval, send_function_eval, send_command_wrap, fetch_object, list_objects, refresh, refresh!, GGBObject, @ggblab, @ggb, @await
 
 end # module
