@@ -91,20 +91,13 @@ function request(payload; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT, tim
     return _unwrap_reply(_send_and_recv(data; host=host, port=port, timeout=timeout))
 end
 
-"""Send a named command using runtime-evaluated arguments.
+"""Send a textual GeoGebra command string directly to the bridge.
 
-`name` may be a Symbol or String. Arguments are converted to strings and
-sent as a textual command like `Name(arg1, arg2, ...)`.
-
-Example:
-```julia
-GeoGebra.send_command(:Circle, (0,0), 1)
-```
+`cmd_text` should be a complete command such as `A = (0,0)`,
+`Circle(A, 1)`, or `l1 = {Intersect(g,f)}`. The function sends the string
+unchanged as the command payload.
 """
-function send_command(name, args...; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
-    name_str = isa(name, Symbol) ? string(name) : string(name)
-    arg_strs = [string(a) for a in args]
-    cmd_text = string(name_str, "(", join(arg_strs, ", "), ")")
+function send_command(cmd_text::AbstractString; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
     payload = Dict("type"=>"command", "payload"=>cmd_text)
     return request(payload; host=host, port=port)
 end
@@ -141,7 +134,10 @@ When arguments include a `GGBObject`, replace it with its `label` before sending
 function send_command_eval(name, args_tuple)
     # evaluate and normalize args: replace GGBObject with its label
     args = Tuple((isa(a, GGBObject) ? a.label : a) for a in args_tuple)
-    return send_command(name, args...; host=DEFAULT_HOST, port=DEFAULT_PORT)
+    name_str = isa(name, Symbol) ? string(name) : string(name)
+    arg_strs = [string(a) for a in args]
+    cmd_text = string(name_str, "(", join(arg_strs, ", "), ")")
+    return send_command(cmd_text; host=DEFAULT_HOST, port=DEFAULT_PORT)
 end
 
 """Helper called by the macro: evaluate an argument tuple and call `send_function`.
@@ -162,7 +158,7 @@ end
 
 # Display only the label for brevity in REPL and printing
 Base.show(io::IO, ::MIME"text/plain", g::GGBObject) = print(io, g.label)
-Base.show(io::IO, g::GGBObject) = print(io, g.label)
+Base.show(io::IO, g::GGBObject) = print(io, g.data)
 
 """Refresh `g.data` by re-fetching the object's XML and decoding it.
 Returns the updated `GGBObject` (modified in-place).
@@ -390,6 +386,7 @@ macro ggblab(args...)
             ex = Expr(:call, head, args_rest...)
         end
     end
+
     if ex isa Expr && ex.head == :call && ex.args !== nothing && length(ex.args) >= 1 && ex.args[1] == :api
         inner = ex.args[2]
         if inner isa Expr && inner.head == :call
@@ -401,19 +398,35 @@ macro ggblab(args...)
             error("@ggblab api usage must be like `@ggblab api fn(args...)`")
         end
     end
-    if ex isa Expr && ex.head == :call
-        name = ex.args[1]
-        arg_nodes = ex.args[2:end]
-        args_tuple = Expr(:tuple, arg_nodes...)
-        return esc(Expr(:call, Expr(:call, :getfield, :(GeoGebra), QuoteNode(:send_command_wrap)), QuoteNode(name), args_tuple))
-    else
-        return esc(:(begin
-            using GeoGebra
-            payload = Dict("type"=>"command", "payload"=>string($(QuoteNode(ex))))
-            resp = GeoGebra.request(payload; host=GeoGebra.DEFAULT_HOST, port=GeoGebra.DEFAULT_PORT)
-            GeoGebra.process_labels_response(resp)
-        end))
+
+    # Serializer used by macro branches to convert expressions to literal
+    # command strings. Defined here so both call-style and brace-style
+    # inputs use the same rules.
+    function _expr_to_text(e)
+        if e isa QuoteNode
+            s = repr(e)
+            if startswith(s, '"') && endswith(s, '"') && length(s) >= 2
+                return s[2:end-1]
+            end
+            return repr(e)
+        elseif e isa Symbol
+            return repr(e)
+        elseif e isa Expr && e.head == :curly
+            inner = [_expr_to_text(a) for a in e.args]
+            return "{" * join(inner, ", ") * "}"
+        else
+            return string(e)
+        end
     end
+
+    # Serialize the entire call expression to a command string and send
+    # it as-is; do not perform per-argument evaluation here so forms
+    # like `O = (0,0)` or `{Intersect(c,g)}` are preserved.
+    cmd_text = _expr_to_text(ex)
+    return esc(:(begin
+        using GeoGebra
+        GeoGebra.send_command($(QuoteNode(cmd_text)); host=GeoGebra.DEFAULT_HOST, port=GeoGebra.DEFAULT_PORT)
+    end))
 end
 
 

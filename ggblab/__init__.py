@@ -42,6 +42,7 @@ except ImportError:
     __version__ = "dev"
 
 import asyncio
+import os
 
 from .comm import ggb_comm_instance
 from .file import ggb_file
@@ -356,61 +357,102 @@ def __dir__():
 # a `GeoGebra` instance. This is intentional for PyCall/pyimport usage
 # where callers expect the imported object to provide the instance API.
 # We do NOT call `init()` here; only construct the controller object.
+#
+# The module-replacement is optional and may interfere with some build
+# steps (for example `jupyter labextension develop --overwrite .`). To
+# allow those workflows, the replacement can be disabled by setting the
+# environment variable `GGBLAB_DISABLE_MODULE_REPLACEMENT` to any value.
 # ---------------------------------------------------------------------------
-try:
-    import sys as _sys
+if os.environ.get("GGBLAB_DISABLE_MODULE_REPLACEMENT"):
+    # Module replacement explicitly disabled via environment variable.
+    pass
+else:
+    try:
+        import sys as _sys
 
-    inst = _default_geo or _create_default_instance(suppress_warning=True)
-    if inst is not None:
-        try:
-            # Copy a few helpful module-level symbols onto the instance so
-            # existing import patterns like `ggb.GeoGebra` still work when
-            # the module object is replaced.
+        inst = _default_geo or _create_default_instance(suppress_warning=True)
+        if inst is not None:
             try:
-                setattr(inst, "GeoGebra", GeoGebra)
-                # Convenience forwarders
+                # Copy a few helpful module-level symbols onto the instance so
+                # existing import patterns like `ggb.GeoGebra` still work when
+                # the module object is replaced.
                 try:
-                    if "connect_to_bridge" in globals():
-                        setattr(
-                            inst, "connect_to_bridge", globals()["connect_to_bridge"]
-                        )
-                    if "function" in globals():
-                        setattr(inst, "function", globals()["function"])
-                    if "command" in globals():
-                        setattr(inst, "command", globals()["command"])
+                    setattr(inst, "GeoGebra", GeoGebra)
+                    # Convenience forwarders
+                    try:
+                        if "connect_to_bridge" in globals():
+                            setattr(
+                                inst, "connect_to_bridge", globals()["connect_to_bridge"]
+                            )
+                        if "function" in globals():
+                            setattr(inst, "function", globals()["function"])
+                        if "command" in globals():
+                            setattr(inst, "command", globals()["command"])
+                        # Expose the `schema` submodule on the instance so that
+                        # `pyimport("ggblab").schema.ggb_schema` works for PyCall.
+                        try:
+                            import importlib
+
+                            schema_mod = importlib.import_module(__name__ + ".schema")
+                            # Prefer exposing the compiled XMLSchema object
+                            # produced by `ggb_schema` as `ggb.schema` so that
+                            # `pyimport("ggblab").schema.ggb_schema` and
+                            # `pyimport("ggblab").schema` behave usefully in
+                            # PyCall consumers. If instantiation fails or the
+                            # compiled schema is unavailable, fall back to the
+                            # module object.
+                            try:
+                                schema_inst_cls = getattr(schema_mod, "ggb_schema", None)
+                                if schema_inst_cls is not None:
+                                    try:
+                                        schema_inst = schema_inst_cls()
+                                        schema_obj = getattr(schema_inst, "schema", None)
+                                        if schema_obj is not None:
+                                            setattr(inst, "schema", schema_obj)
+                                        else:
+                                            setattr(inst, "schema", schema_mod)
+                                    except Exception:
+                                        # If constructing the loader fails, expose module
+                                        setattr(inst, "schema", schema_mod)
+                                else:
+                                    setattr(inst, "schema", schema_mod)
+                            except Exception:
+                                setattr(inst, "schema", schema_mod)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    # setattr(inst, 'ggb_comm', ggb_comm)
+                    # setattr(inst, 'ggb_file', ggb_file)
                 except Exception:
                     pass
-                # setattr(inst, 'ggb_comm', ggb_comm)
-                # setattr(inst, 'ggb_file', ggb_file)
+                # Copy core module metadata so tools like autoreload that expect
+                # module objects (with __name__, __spec__, etc.) continue to work.
+                try:
+                    mod = _sys.modules.get(__name__)
+                    if mod is not None:
+                        for attr in (
+                            "__name__",
+                            "__package__",
+                            "__spec__",
+                            "__file__",
+                            "__path__",
+                            "__loader__",
+                        ):
+                            if hasattr(mod, attr):
+                                try:
+                                    setattr(inst, attr, getattr(mod, attr))
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
             except Exception:
                 pass
-            # Copy core module metadata so tools like autoreload that expect
-            # module objects (with __name__, __spec__, etc.) continue to work.
             try:
-                mod = _sys.modules.get(__name__)
-                if mod is not None:
-                    for attr in (
-                        "__name__",
-                        "__package__",
-                        "__spec__",
-                        "__file__",
-                        "__path__",
-                        "__loader__",
-                    ):
-                        if hasattr(mod, attr):
-                            try:
-                                setattr(inst, attr, getattr(mod, attr))
-                            except Exception:
-                                pass
+                _sys.modules[__name__] = inst
             except Exception:
+                # If replacing sys.modules fails for any reason, do nothing.
                 pass
-        except Exception:
-            pass
-        try:
-            _sys.modules[__name__] = inst
-        except Exception:
-            # If replacing sys.modules fails for any reason, do nothing.
-            pass
-except Exception:
-    # Never let import fail because of this compatibility step
-    pass
+    except Exception:
+        # Never let import fail because of this compatibility step
+        pass
