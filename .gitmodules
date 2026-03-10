@@ -1,0 +1,3 @@
+[submodule "julia/GeoGebra.jl"]
+	path = julia/GeoGebra.jl
+	url = https://github.com/moyhig-ecs/GeoGebra.jl.git
