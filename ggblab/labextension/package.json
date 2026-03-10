@@ -73,6 +73,7 @@
     "@types/react-addons-linked-state-mixin": "^0.14.22",
     "@typescript-eslint/eslint-plugin": "^6.1.0",
     "@typescript-eslint/parser": "^6.1.0",
+    "node-gyp": "^9.3.1",
     "css-loader": "^6.7.1",
     "esbuild": "^0.27.2",
     "eslint": "^8.36.0",
@@ -110,7 +111,7 @@
     "outputDir": "ggblab/labextension",
     "schemaDir": "schema",
     "_build": {
-      "load": "static/remoteEntry.c19d0075d2dd518acbdb.js",
+      "load": "static/remoteEntry.878ae870f277aef754fb.js",
       "extension": "./extension",
       "style": "./style"
     }

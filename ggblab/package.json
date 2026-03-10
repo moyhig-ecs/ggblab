@@ -1,6 +1,6 @@
 {
     "name": "ggblab",
-    "version": "1.7.0",
+    "version": "1.7.1",
     "description": "A JupyterLab extension for learning geometry and Python programming side-by-side with GeoGebra.",
     "keywords": [
         "jupyter",
