@@ -210,6 +210,7 @@ function process_labels_response(resp)
         return resp
     end
     labels = [strip(s) for s in split(resp, ',') if strip(s) != ""]
+    # println("Processing labels response: ", labels)
     objs = [fetch_object(lbl) for lbl in labels]
     return length(objs) == 1 ? objs[1] : objs
 end
@@ -218,24 +219,8 @@ end
 This calls the applet function `getAllObjectNames` and then fetches each
 object's XML and decodes it.
 """
-function list_objects(; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
-    resp = send_function("getAllObjectNames"; host=host, port=port)
-    labels = String[]
-    if resp isa AbstractString
-        labels = [strip(s) for s in split(resp, ',') if strip(s) != ""]
-    elseif resp isa AbstractVector
-        labels = [string(x) for x in resp]
-    elseif resp === nothing
-        return GGBObject[]
-    else
-        try
-            labels = [string(x) for x in resp]
-        catch
-            return GGBObject[]
-        end
-    end
-    return [fetch_object(lbl) for lbl in labels]
-end
+# `list_objects` removed — it did not behave as expected. Use
+# `refresh_all_objects!` which queries the applet and fetches objects.
 
 """Refresh all `GGBObject`s in `objs` in-place. Returns `objs`."""
 function refresh!(objs::AbstractVector{GGBObject})
@@ -249,22 +234,10 @@ function refresh!(objs::AbstractVector{GGBObject})
     return objs
 end
 
-"""Fetch current applet objects and refresh them in-place, returning the Vector of refreshed `GGBObject`s."""
-function refresh_all_objects!(; host::String=DEFAULT_HOST, port::Int=DEFAULT_PORT)
-    objs = list_objects(; host=host, port=port)
-    return refresh!(objs)
-end
+# `refresh_all_objects!` removed — it did not behave as expected. Use
+# `fetch_object` / `refresh!` individually as needed.
 
-"""Wrapper used by the macro to send commands and convert comma-separated
-label responses into `GGBObject`(s)."""
-function send_command_wrap(name, args_tuple)
-    resp = send_command_eval(name, args_tuple)
-    try
-        return process_labels_response(resp)
-    catch
-        return resp
-    end
-end
+# `send_command_wrap` was removed; macro now delegates to `@ggblab_command`.
 
 """Poll the bridge for a previously stored reply by `reply_id`.
 
@@ -358,6 +331,57 @@ The macro builds an argument tuple at expansion time and calls
 `send_command_eval` / `send_function_eval` at runtime so arguments are
 evaluated in the caller's scope.
 """
+# Extracted helper: handle `@ggblab api fn(args...)` macro branch
+macro ggblab_function(inner)
+    if inner isa Expr && inner.head == :call
+        name = inner.args[1]
+        arg_nodes = inner.args[2:end]
+        args_tuple = Expr(:tuple, arg_nodes...)
+        return esc(Expr(:call, Expr(:call, :getfield, :(GeoGebra), QuoteNode(:send_function_eval)), QuoteNode(name), args_tuple))
+    else
+        error("@ggblab api usage must be like `@ggblab api fn(args...)`")
+    end
+end
+
+macro isdefined_in_module(mod, sym)
+    return :(isdefined($(esc(mod)), $(QuoteNode(sym))))
+end
+
+macro ggblab_command(expr)
+    function walk(ex, depth=0)
+        block = nothing
+        indent = " " ^ depth
+        if ex isa Expr
+            # println(indent, "Expr Head: ", ex.head)
+            block = Expr(ex.head)
+            for arg in ex.args
+                push!(block.args, walk(arg, depth + 1))
+            end
+            return block
+        elseif ex isa Symbol
+            # Avoid evaluating symbols in the macro module; check the caller
+            # `Main` safely and fall back to the symbol itself on any error.
+            if isdefined(Main, Symbol(ex))
+                v = getfield(Main, Symbol(ex))
+                return isa(v, GGBObject) ? Symbol(v.label) : ex
+            else
+                return ex
+            end
+        elseif ex isa QuoteNode
+            # println(indent, "QuoteNode: ", typeof(ex), " = ", ex.value)
+            return ex.value
+        else
+            # println(indent, "Literal: ", typeof(ex), " = ", ex)
+            return ex
+        end
+    end
+    cmd_str = string(walk(expr))
+    # Build runtime code: send command, process labels, and refresh objects as needed
+    return esc(:(let _cmd = $(QuoteNode(cmd_str))
+                    GeoGebra.process_labels_response(GeoGebra.send_command(_cmd))
+                 end))
+end
+
 macro ggblab(args...)
     toks = args
     # If the macro was expanded with a leading LineNumberNode, the layout is
@@ -389,44 +413,11 @@ macro ggblab(args...)
 
     if ex isa Expr && ex.head == :call && ex.args !== nothing && length(ex.args) >= 1 && ex.args[1] == :api
         inner = ex.args[2]
-        if inner isa Expr && inner.head == :call
-            name = inner.args[1]
-            arg_nodes = inner.args[2:end]
-            args_tuple = Expr(:tuple, arg_nodes...)
-            return esc(Expr(:call, Expr(:call, :getfield, :(GeoGebra), QuoteNode(:send_function_eval)), QuoteNode(name), args_tuple))
-        else
-            error("@ggblab api usage must be like `@ggblab api fn(args...)`")
-        end
+        return Expr(:macrocall, Symbol("@ggblab_function"), __source__, inner)
     end
 
-    # Serializer used by macro branches to convert expressions to literal
-    # command strings. Defined here so both call-style and brace-style
-    # inputs use the same rules.
-    function _expr_to_text(e)
-        if e isa QuoteNode
-            s = repr(e)
-            if startswith(s, '"') && endswith(s, '"') && length(s) >= 2
-                return s[2:end-1]
-            end
-            return repr(e)
-        elseif e isa Symbol
-            return repr(e)
-        elseif e isa Expr && e.head == :curly
-            inner = [_expr_to_text(a) for a in e.args]
-            return "{" * join(inner, ", ") * "}"
-        else
-            return string(e)
-        end
-    end
-
-    # Serialize the entire call expression to a command string and send
-    # it as-is; do not perform per-argument evaluation here so forms
-    # like `O = (0,0)` or `{Intersect(c,g)}` are preserved.
-    cmd_text = _expr_to_text(ex)
-    return esc(:(begin
-        using GeoGebra
-        GeoGebra.send_command($(QuoteNode(cmd_text)); host=GeoGebra.DEFAULT_HOST, port=GeoGebra.DEFAULT_PORT)
-    end))
+    # Delegate non-API branch to the module-qualified `@ggblab_command` macro
+    return Expr(:macrocall, Symbol("@ggblab_command"), __source__, ex)
 end
 
 
@@ -455,6 +446,6 @@ macro await(expr)
              end)
 end
 
-export request, poll_reply, request_with_retry, set_default_host, set_default_port, send_command, send_function, send_command_eval, send_function_eval, send_command_wrap, fetch_object, list_objects, refresh, refresh!, GGBObject, @ggblab, @ggb, @await
+export request, poll_reply, request_with_retry, set_default_host, set_default_port, send_command, send_function, send_command_eval, send_function_eval, fetch_object, refresh, refresh!, GGBObject, @ggblab, @ggb, @ggblab_command, @ggblab_function, @await
 
 end # module
