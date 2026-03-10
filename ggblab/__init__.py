@@ -233,7 +233,7 @@ def _create_default_instance(suppress_warning: bool = False):
     return _default_geo
 
 
-def connect_to_bridge(host: str = "127.0.0.1", port: int = 0):
+def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765):
     """Configure the module to forward calls to a bridge started by
     `ggblab_core.AppletInjector.start_proxy_mode`.
 

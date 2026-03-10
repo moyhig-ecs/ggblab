@@ -321,17 +321,22 @@ function set_default_port(p::Integer)
     return DEFAULT_PORT
 end
 
-"""Macro helper: send commands/functions concisely with `@ggblab expr`.
+"""Handle `@ggblab api fn(args...)` macro branch.
 
-Examples:
-- `@ggblab Circle(0, 0, 1)` — send as a command
-- `@ggblab api getVersion()` — send as a function call
-
-The macro builds an argument tuple at expansion time and calls
-`send_command_eval` / `send_function_eval` at runtime so arguments are
-evaluated in the caller's scope.
+This internal macro is extracted to handle the API-style invocation:
+`@ggblab api fn(args...)`. It constructs a runtime call that evaluates
+arguments in the caller's scope and dispatches to `GeoGebra.send_function_eval`.
 """
-# Extracted helper: handle `@ggblab api fn(args...)` macro branch
+# Macro implementing the `@ggblab` command-style behavior.
+"""Send a GeoGebra command expression at runtime.
+
+`@ggblab_command` is a helper macro used by `@ggblab` to transform an
+expression such as `Circle(A, 1)` into a string command and send it
+to the bridge at runtime. Symbol arguments that evaluate to `GGBObject`
+instances are replaced with their `label` before sending. The macro
+ensures evaluation happens in the caller's scope and returns the
+processed response (calling `process_labels_response` as needed).
+"""
 macro ggblab_function(inner)
     if inner isa Expr && inner.head == :call
         name = inner.args[1]
@@ -343,6 +348,19 @@ macro ggblab_function(inner)
     end
 end
 
+"""Primary user-facing macro to send commands or API calls.
+
+Usage:
+- `@ggblab Circle(0, 0, 1)` sends a command string to the bridge.
+- `@ggblab api getVersion()` sends a function-style payload to the bridge.
+
+The macro handles leading expansion tokens (LineNumberNode/Module), routes
+API invocations to `@ggblab_function`, and routes command-style expressions
+to `@ggblab_command`. The generated runtime calls evaluate arguments in
+the caller scope so `x = @ggblab Circle(A, 1)` will assign the returned
+value.
+"""
+
 macro isdefined_in_module(mod, sym)
     return :(isdefined($(esc(mod)), $(QuoteNode(sym))))
 end
@@ -350,7 +368,7 @@ end
 macro ggblab_command(expr)
     function walk(ex, depth=0)
         block = nothing
-        indent = " " ^ depth
+        indent = repeat(" ", depth)
         if ex isa Expr
             # println(indent, "Expr Head: ", ex.head)
             block = Expr(ex.head)
@@ -361,8 +379,8 @@ macro ggblab_command(expr)
         elseif ex isa Symbol
             # Avoid evaluating symbols in the macro module; check the caller
             # `Main` safely and fall back to the symbol itself on any error.
-            if isdefined(Main, Symbol(ex))
-                v = getfield(Main, Symbol(ex))
+            if isdefined(__module__, Symbol(ex))
+                v = getfield(__module__, Symbol(ex))
                 return isa(v, GGBObject) ? Symbol(v.label) : ex
             else
                 return ex

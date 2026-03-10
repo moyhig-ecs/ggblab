@@ -471,10 +471,33 @@ def start_server(port: int = 8765, timeout: float = 10.0):
     def _runner(started_event: Optional[threading.Event] = None):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        server_coro = asyncio.start_server(
-            lambda r, w: _handle_client(r, w, timeout), "127.0.0.1", port
-        )
-        server = loop.run_until_complete(server_coro)
+        # Prefer to bind to port 8765 if available; otherwise fall back to the
+        # requested `port`. If both fail, propagate the last exception.
+        ports_to_try = [8765]
+        if port not in ports_to_try:
+            ports_to_try.append(port)
+
+        server = None
+        last_exc = None
+        for p in ports_to_try:
+            try:
+                server_coro = asyncio.start_server(
+                    lambda r, w: _handle_client(r, w, timeout), "127.0.0.1", p
+                )
+                server = loop.run_until_complete(server_coro)
+                bound_port = p
+                break
+            except Exception as e:
+                last_exc = e
+                # try next candidate port
+                continue
+
+        if server is None:
+            # nothing succeeded; re-raise the last exception so caller sees error
+            if last_exc is not None:
+                raise last_exc
+            else:
+                raise RuntimeError("failed to bind server to any candidate port")
         _bridge_state["loop"] = loop
         _bridge_state["server"] = server
         _bridge_state["running"] = True
