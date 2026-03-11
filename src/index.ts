@@ -1,12 +1,15 @@
 import { ILayoutRestorer, JupyterFrontEnd, JupyterFrontEndPlugin } from '@jupyterlab/application';
-import { MainAreaWidget, WidgetTracker } from '@jupyterlab/apputils';
-// ILauncher removed: launcher integration is not used in this build
+import { MainAreaWidget, WidgetTracker, ICommandPalette } from '@jupyterlab/apputils';
+import { ILauncher } from '@jupyterlab/launcher';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 //import { DockLayout } from '@lumino/widgets';
 
-import { reactIcon } from '@jupyterlab/ui-components';
+import { LabIcon } from '@jupyterlab/ui-components';
 import { GeoGebraWidget } from './widget';
 import { createWidgetManager  } from './widgets';
+import geogebraSvg from '../style/Geogebra.svg';
+
+export const geogebraIcon = new LabIcon({ name: 'ggblab:geogebra', svgstr: geogebraSvg });
 
 /**
  * Legacy/compatibility note:
@@ -29,6 +32,7 @@ import { registerWidgetManagerPlugin } from './widgets';
 
 namespace CommandIDs {
 	export const create = 'ggblab:create';
+	export const create_from_bridge = 'ggblab:create_from_bridge';
 }
 
 // const PANEL_CLASS = 'jp-ggblabPanel';
@@ -40,9 +44,17 @@ const plugin: JupyterFrontEndPlugin<void> = {
 	id: 'ggblab:plugin',
 	description: 'A JupyterLab extension.',
 	autoStart: true,
-	optional: [ISettingRegistry, ILayoutRestorer],
-	activate: (app: JupyterFrontEnd, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null) => {
+	optional: [ISettingRegistry, ILayoutRestorer, ILauncher, ICommandPalette],
+	activate: (app: JupyterFrontEnd, settingRegistry: ISettingRegistry | null, restorer: ILayoutRestorer | null, launcher: ILauncher | null, palette: ICommandPalette | null) => {
 		console.debug(`JupyterLab extension ggblab-${pkg.version} is activated!`);
+
+		// // Global flags to avoid duplicate bridge starts / widget creation
+		// if (!(window as any).__ggblab_bridge_started) {
+		// 	(window as any).__ggblab_bridge_started = false;
+		// }
+		// if (!(window as any).__ggblab_last_created_time) {
+		// 	(window as any).__ggblab_last_created_time = 0;
+		// }
 
 		// // Pragmatic global registration (option B): register a `jupyter.ggblab`
 		// // comm target on all currently running kernels so kernels that open
@@ -93,16 +105,23 @@ const plugin: JupyterFrontEndPlugin<void> = {
 			namespace: 'ggblab-tracker'
 		});
 
-		const command = CommandIDs.create;
-		commands.addCommand(command, {
-			caption: 'Create a new React Widget',
-			label: 'React Widget',
-			icon: args => (args['isPalette'] ? undefined : reactIcon),
+		const createCommand = CommandIDs.create;
+		const bridgeCommand = CommandIDs.create_from_bridge;
+		commands.addCommand(createCommand, {
+			caption: 'Create a new GeoGebra Widget',
+			label: 'GeoGebra Widget',
+			icon: geogebraIcon,
 			execute: async (args: any) => {
 				console.debug('socketPath:', args['socketPath']);
 
-				// Precompute widget id so we can detect and remove any existing panel
-				const idPart = (args['kernelId'] || '').substring(0, 8);
+				// Normal create flow (assume comm_bridge already running or kernel supplied)
+
+				// Precompute widget id so we can detect and remove any existing panel.
+				// If no kernelId is provided (launcher case), generate a short
+				// unique suffix so widgets are tracked correctly instead of
+				// colliding on the empty id.
+				const rawId = (args && args['kernelId']) || (`no-kernel-${Date.now().toString(36).slice(-6)}`);
+				const idPart = String(rawId).substring(0, 8);
 				const widgetId = `ggblab-${idPart}`;
 
 				// If a widget with the same id exists, close and remove it first.
@@ -142,15 +161,19 @@ const plugin: JupyterFrontEndPlugin<void> = {
 					wsPort: args['wsPort'] || 8888,
 					widgetManager: widgetManager
 				});
+
+
 				const widget = new MainAreaWidget<GeoGebraWidget>({ content });
 				// make widget id unique so restorer can identify it later
 				widget.id = widgetId;
 				widget.title.label = `GeoGebra (${idPart})`;
-				widget.title.icon = reactIcon;
+				widget.title.icon = geogebraIcon;
 
 				// register with tracker so state will be saved for restoration
 				try {
 					await tracker.add(widget);
+					// // mark creation time so bridge-start logic can detect kernel-driven creation
+					// (window as any).__ggblab_last_created_time = Date.now();
 				} catch (e) {
 					console.warn('Failed to add widget to tracker:', e);
 				}
@@ -158,6 +181,71 @@ const plugin: JupyterFrontEndPlugin<void> = {
 				app.shell.add(widget, 'main', {
 					mode: args['insertMode'] || 'split-right'
 				});
+			}
+		});
+		// Command that starts the comm_bridge via a background console and then
+		// delegates to the normal create command. Launcher tiles should invoke
+		// this command so the backend proxy is started automatically.
+		commands.addCommand(bridgeCommand, {
+			caption: 'Create ggblab widget (start bridge)',
+			label: 'GeoGebra (comm_bridge)',
+			icon: geogebraIcon,
+			execute: async (args: any) => {
+				// If bridge already started, skip injection.
+				// if (!(window as any).__ggblab_bridge_started) {
+				app.commands.execute('console:create', {
+					kernelPreference: { 
+						name: 'python3',
+						shutdownOnDispose: true,
+					},
+					name: 'ggblab-bridge-console',
+					path: 'ggblab_console.ipynb',
+					activate: false
+				}).then(() => {
+					new Promise(res => setTimeout(res, 1000)).then(() => {
+					// retry injecting a few times; some consoles take a moment to be ready
+						const injectCode = "from ggblab_core import AppletInjector\ninfo = AppletInjector.start_proxy_mode()\n";
+						// let injected = false;
+						// for (let attempt = 0; attempt < 6 && !injected; attempt++) {
+						app.commands.execute('console:inject', {
+							path: 'ggblab_console.ipynb',
+							code: injectCode,
+							activate: false
+						}).finally(() => {
+							// injected = true;
+							// (window as any).__ggblab_bridge_started = true;
+							console.debug('ggblab: started comm_bridge via console injection (bridge)');
+						});
+					});
+				}).catch(e => {
+					console.warn('ggblab: failed to start comm_bridge via console injection (bridge)', e);
+				}).finally(() => {
+					// (window as any).__ggblab_bridge_started = true;
+					console.debug('ggblab: marked bridge as started (bridge command)');
+				});
+					
+				// // Wait briefly to see if the kernel-side auto-creates a widget.
+				// const startWait = Date.now();
+				// let createdByKernel = false;
+				// for (let i = 0; i < 10; i++) {
+				// 	if ((window as any).__ggblab_last_created_time > startWait) {
+				// 		createdByKernel = true;
+				// 		break;
+				// 	}
+				// 	// wait 100ms
+				// 	await new Promise(res => setTimeout(res, 100));
+				// }
+				// if (createdByKernel) {
+				// 	console.debug('ggblab: widget created by kernel-side bridge; skipping frontend create');
+				// 	return;
+				// }
+
+				// // No kernel-created widget detected; create one from the frontend.
+				// try {
+				// 	await commands.execute(createCommand, args || {});
+				// } catch (e) {
+				// 	console.warn('ggblab: failed to execute create after bridge start', e);
+				// }
 			}
 		});
 
@@ -173,7 +261,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 			// passing it through `args` or a dedicated `initialXml` prop so the
 			// recreated widget can rehydrate the GeoGebra applet.
 			restorer.restore(tracker, {
-				command,
+				command: createCommand,
 				// use widget.id as the saved name so it is unique per widget
 				name: widget => widget.id,
 				// reconstruct args (kernelId) from the saved widget id so the
@@ -198,7 +286,21 @@ const plugin: JupyterFrontEndPlugin<void> = {
 			});
 		}
 
-		// Launcher integration removed: no launcher item will be added.
+		// If a Launcher was provided, add a launcher tile so users can
+		// create a ggblab widget (and start the comm_bridge via console
+		// injection when launched from the launcher).
+		if (launcher) {
+			launcher.add({
+				command: bridgeCommand,
+				category: 'Other',
+				rank: 1,
+				args: { launcherIconUrl: geogebraSvg }
+			});
+		}
+
+		// if (palette) {
+		// 	palette.addItem({ command: bridgeCommand, category: 'ggblab' });
+		// }
 	}
 };
 

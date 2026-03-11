@@ -1,1 +1,29 @@
 @import url('base.css');
+
+/* Make ggblab launcher icon larger and centered */
+.jp-LauncherCard[data-category='ggblab'] .jp-Launcher-kernelIcon,
+.jp-LauncherCard[data-category='ggblab'] img.jp-Launcher-kernelIcon {
+	width: var(--jp-private-launcher-large-icon-size);
+	height: var(--jp-private-launcher-large-icon-size);
+	object-fit: contain;
+}
+
+/* If using LabIcon (svg element), ensure it fills the area */
+.jp-LauncherCard[data-category='ggblab'] .lm-Widget svg,
+.jp-LauncherCard[data-category='ggblab'] .lm-Icon svg,
+.jp-LauncherCard[data-category='ggblab'] .jp-RenderedIcon svg {
+	width: var(--jp-private-launcher-large-icon-size) !important;
+	height: var(--jp-private-launcher-large-icon-size) !important;
+	display: block;
+}
+
+/* Ensure the LabIcon element container uses full size */
+.jp-LauncherCard[data-category='ggblab'] .lm-Icon,
+.jp-LauncherCard[data-category='ggblab'] .jp-RenderedIcon {
+	width: var(--jp-private-launcher-large-icon-size) !important;
+	height: var(--jp-private-launcher-large-icon-size) !important;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
