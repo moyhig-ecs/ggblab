@@ -49,6 +49,16 @@ class PersistentCounter:
             enabled (bool): Enable persistence. Default: True
         """
         self.cache_path = cache_path
+        # Allow explicit environment override to disable persistence (useful
+        # in embedded contexts where heuristics fail).
+        import os
+
+        if os.environ.get("GGBLAB_DISABLE_PERSISTENT_COUNTER") in ("1", "true", "True"):
+            print(
+                "Info: PersistentCounter disabled via GGBLAB_DISABLE_PERSISTENT_COUNTER env"
+            )
+            enabled = False
+
         # If running under Julia/PythonCall, disable shelve-backed persistence
         if enabled and called_from_julia():
             # Avoid cross-process shelve locks when invoked from Julia embedding

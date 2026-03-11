@@ -75,28 +75,39 @@ def called_from_julia(check_ancestors: bool = True, max_depth: int = 5) -> bool:
         if os.environ.get(k):
             return True
 
-    # Prefer psutil when available (more reliable)
+    # Fast-path: some embedder setups set an env var indicating Julia caller
+    if os.environ.get("PYTHONCALL_JULIA"):
+        return True
+
+    # Prefer psutil when available (more reliable). Use Process.parents() to
+    # inspect the full ancestor chain rather than manually walking ppid.
     try:
         import psutil  # type: ignore
 
-        pid = os.getppid()
-        depth = 0
-        while pid and pid != 0 and depth < max_depth:
-            p = psutil.Process(pid)
-            name = (p.name() or "").lower()
-            cmd = " ".join(p.cmdline() or []).lower()
-            if "julia" in name or "julia" in cmd:
-                return True
-            if not check_ancestors:
-                break
-            pid = p.ppid()
-            depth += 1
-        # also check current process cmdline
+        proc = psutil.Process()
+        # check current process cmdline/name first
         try:
-            if "julia" in " ".join(psutil.Process(os.getpid()).cmdline() or []).lower():
+            name = (proc.name() or "").lower()
+            cmd = " ".join(proc.cmdline() or []).lower()
+            if "julia" in name or "julia" in cmd:
                 return True
         except Exception:
             pass
+
+        if check_ancestors:
+            try:
+                for depth, anc in enumerate(proc.parents()):
+                    if depth >= max_depth:
+                        break
+                    try:
+                        aname = (anc.name() or "").lower()
+                        acmd = " ".join(anc.cmdline() or []).lower()
+                        if "julia" in aname or "julia" in acmd:
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                pass
     except Exception:
         # psutil not available: fall back to platform methods
         pass
@@ -119,7 +130,31 @@ def called_from_julia(check_ancestors: bool = True, max_depth: int = 5) -> bool:
                 return True
         if not check_ancestors:
             break
-        break
+        # move up the parent chain
+        try:
+            # Use /proc when available; otherwise ask ps for the PPID
+            if sys.platform.startswith("linux"):
+                try:
+                    with open(f"/proc/{pid}/status", "r", encoding="utf8") as f:
+                        for line in f:
+                            if line.startswith("PPid:"):
+                                pid = int(line.split()[1])
+                                break
+                        else:
+                            pid = 0
+                except Exception:
+                    pid = 0
+            else:
+                out = _safe_check_output(["ps", "-p", str(pid), "-o", "ppid="])
+                if out:
+                    try:
+                        pid = int(out.strip())
+                    except Exception:
+                        pid = 0
+                else:
+                    pid = 0
+        except Exception:
+            pid = 0
         depth += 1
 
     for a in sys.argv:
