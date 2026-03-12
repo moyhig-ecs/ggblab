@@ -4,4 +4,4 @@ This file makes `comm_bridge` an explicit package so type checkers
 and import resolution treat modules under it as `comm_bridge.*`.
 """
 
-__all__ = ["client", "server"]
+__all__ = ["client", "server", "Comm_Server", "OOB_Server"]

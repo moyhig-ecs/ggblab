@@ -197,28 +197,83 @@ class AppletInjector:
         injector = cls(kernel_id=kernel_id, comm_target=comm_target)
         # In proxy-mode we don't register the kernel-side comm target here;
         # the bridge will handle comm registration/attachment.
-        payload = injector.open(
-            appName=appName,
-            insertMode=insertMode,
-            socketPath=socketPath,
-            register_kernel_comm=False,
-        )
 
-        if _py_comm_bridge is None:
-            raise RuntimeError("comm_bridge.server not available in this environment")
+        # Instantiate and start OOB server first so we can inject socketPath
+        import importlib
 
-        # start on requested port (use 0 to request an ephemeral port)
-        state = _py_comm_bridge.start_server(
-            port=bridge_port or 0, timeout=bridge_timeout
-        )
+        try:
+            oob_mod = importlib.import_module("comm_bridge.OOB_Server")
+            OOBClass = getattr(oob_mod, "OOB_Server")
+        except Exception:
+            OOBClass = None
+
+        oob_instance = None
+        if OOBClass is not None:
+            try:
+                oob_instance = OOBClass(oob_timeout=bridge_timeout, socket_path=socketPath)
+                oob_instance.start()
+            except Exception:
+                oob_instance = None
+
+        # Now start the main TCP bridge using the Comm_Server wrapper if available
+        try:
+            comm_mod = importlib.import_module("comm_bridge.Comm_Server")
+            CommClass = getattr(comm_mod, "Comm_Server")
+        except Exception:
+            CommClass = None
+
+        bridge_state = None
+        if CommClass is not None:
+            try:
+                comm_inst = CommClass()
+                bridge_state = comm_inst.start(port=bridge_port or 8765, timeout=bridge_timeout)
+            except Exception:
+                bridge_state = None
+        else:
+            # fallback to legacy module if present
+            if _py_comm_bridge is None:
+                raise RuntimeError("comm_bridge.server not available in this environment")
+            bridge_state = _py_comm_bridge.start_server(port=bridge_port or 8765, timeout=bridge_timeout)
+
         # Remember bridge host/port for subsequent convenience calls
         try:
-            bound_port = state.get("port") if isinstance(state, dict) else None
+            bound_port = bridge_state.get("port") if isinstance(bridge_state, dict) else None
             if bound_port:
                 cls._proxy_bridge = {"host": bridge_host, "port": bound_port}
         except Exception:
             cls._proxy_bridge = None
-        return {"payload": payload, "bridge": state}
+
+        # If we started an OOB unix socket, pass its path into the frontend payload
+        socket_to_use = None
+        if oob_instance is not None and getattr(oob_instance, "socket_path", None):
+            socket_to_use = oob_instance.socket_path
+
+        # If OOB server exposes a serve port (client-facing API), capture it
+        serve_port = None
+        if oob_instance is not None:
+            serve_port = getattr(oob_instance, "serve_port", None) or getattr(oob_instance, "ws_port", None)
+
+        # Finally open the frontend injector after the bridge is started so the
+        # frontend can connect immediately without an artificial delay.
+        try:
+            payload = injector.open(
+                appName=appName,
+                insertMode=insertMode,
+                socketPath=socket_to_use or socketPath,
+                register_kernel_comm=False,
+            )
+        except Exception:
+            # Best-effort: if injection fails, still return bridge state for
+            # diagnostics.
+            payload = {"kernelId": kernel_id, "commTarget": comm_target, "socketPath": socket_to_use}
+
+        # Return tuple: (comm_server_instance or None, oob_server_instance or None, info_dict)
+        info = {"payload": payload, "bridge": bridge_state, "serve_port": serve_port}
+        try:
+            comm_obj = comm_inst if 'comm_inst' in locals() else None
+        except Exception:
+            comm_obj = None
+        return (comm_obj, oob_instance, info)
 
     @classmethod
     def function_sync(

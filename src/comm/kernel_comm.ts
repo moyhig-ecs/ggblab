@@ -7,6 +7,20 @@ export type KernelCommHelpers = {
 	makeIncomingHandler: (processCommandMessage: (cmd: any) => Promise<string>) => (msg: any) => Promise<void>;
 };
 
+// Global handle so external code (e.g. WebIO handlers) can call the
+// kernel-side send helper without holding the `resources` closure.
+export let globalCallRemoteSocketSend: (message: string) => Promise<void> = async (
+	_message: string
+) => {
+	throw new Error(
+		'globalCallRemoteSocketSend not initialized - call initKernelCommHelpers first'
+	);
+};
+
+export function callRemoteSocketSendGlobal(message: string): Promise<void> {
+	return globalCallRemoteSocketSend(message);
+}
+
 export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelpers {
 	// Default: enable fire-and-forget for kernel2 unless explicitly disabled.
 	if (resources && typeof resources.kernel2FireAndForget === 'undefined') {
@@ -273,5 +287,15 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 		return handler;
 	}
 
+		// expose the concrete implementation to global export so external
+		// WebIO handlers can call it without keeping the `resources` closure.
+		globalCallRemoteSocketSend = callRemoteSocketSend;
+		try {
+			// Also attach to globalThis so non-module consumers (WebIO inline handlers)
+			// can call `globalCallRemoteSocketSend(...)` directly in the browser.
+			(globalThis as any).globalCallRemoteSocketSend = callRemoteSocketSend;
+		} catch (e) {
+			// ignore if we can't assign to globalThis in some environments
+		}
 	return { callRemoteSocketSend, ensureKernelComm, attachCommCloseHandler, makeIncomingHandler };
 }
