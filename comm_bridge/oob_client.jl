@@ -151,9 +151,12 @@ function _run_tcp_client(host::AbstractString, port::Integer, messages::Observab
 end
 
 # Start client in a background Task so handlers can be registered.
-@async _run_tcp_client(host, port, messages)
+t = @async _run_tcp_client(host, port, messages)
 
 println("Observable `messages` created — register handlers with `on` from Observables.jl.")
+
+# Wait on the client task so the script keeps running and continues observing
+wait(t)
 
 # Convenience helper to register handlers
 function add_handler(fn::Function)
