@@ -298,7 +298,7 @@ class IngestLoop:
         self.server = server
 
         # Move socket reservation and prebind port logic here (ingest-specific)
-        if getattr(self.server, "socket_path", None):
+        if self.server.socket_path:
             # caller provided path; nothing to reserve
             pass
         else:
@@ -327,7 +327,7 @@ class IngestLoop:
                 ...
         """
         # Prepare path/port and return the appropriate websockets context manager
-        if getattr(self.server, "socket_path", None):
+        if self.server.socket_path:
             path = self.server.socket_path
             parent = os.path.dirname(path)
             if parent and not os.path.exists(parent):
@@ -336,7 +336,7 @@ class IngestLoop:
                 os.remove(path)
             return unix_serve(self.handler, path=path)
         else:
-            port = getattr(self.server, "ws_port", None)
+            port = self.server.ws_port
             if port is None:
                 port = 0
             return serve(self.handler, "127.0.0.1", port)
@@ -348,7 +348,7 @@ class IngestLoop:
 
         Returns the server handle (or None on failure).
         """
-        if getattr(self.server, "socket_path", None):
+        if self.server.socket_path:
             path = self.server.socket_path
             parent = os.path.dirname(path)
             if parent and not os.path.exists(parent):
@@ -358,7 +358,7 @@ class IngestLoop:
             ingest_server = await unix_serve(self.handler, path=path)
             self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting unix socket server at {path}"})
         else:
-            port = getattr(self.server, "ws_port", None)
+            port = self.server.ws_port
             if port is None:
                 port = 0
             ingest_server = await serve(self.handler, "127.0.0.1", port)
