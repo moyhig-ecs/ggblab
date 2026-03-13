@@ -19,46 +19,48 @@ end
 host = "127.0.0.1"
 port = nothing
 
-# Parse ARGS robustly: accept `host:port`, a bare port, or flags `--port=NNN` / `--host=NAME`
-if length(ARGS) >= 1
-    global host, port
+function parse_args()
+    local_host = "127.0.0.1"
+    local_port = nothing
     i = 1
     while i <= length(ARGS)
         a = ARGS[i]
         if startswith(a, "--port=")
             try
-                port = parse(Int, split(a, '=', limit=2)[2])
+                local_port = parse(Int, split(a, '=', limit=2)[2])
             catch
             end
         elseif a == "--port" && i < length(ARGS)
             try
-                port = parse(Int, ARGS[i+1])
+                local_port = parse(Int, ARGS[i+1])
             catch
             end
             i += 1
         elseif startswith(a, "--host=")
-            host = split(a, '=', limit=2)[2]
+            local_host = split(a, '=', limit=2)[2]
         elseif a == "--host" && i < length(ARGS)
-            host = ARGS[i+1]
+            local_host = ARGS[i+1]
             i += 1
         elseif occursin(':', a)
             parts = split(a, ':')
-            host = parts[1]
+            local_host = parts[1]
             try
-                port = parse(Int, parts[2])
+                local_port = parse(Int, parts[2])
             catch
             end
         else
-            # bare token: try parse int as port, otherwise treat as host
             try
-                port = parse(Int, a)
+                local_port = parse(Int, a)
             catch
-                host = a
+                local_host = a
             end
         end
         i += 1
     end
+    return local_host, local_port
 end
+
+host, port = parse_args()
 if port === nothing
     envp = get(ENV, "GGB_WS_PORT", nothing)
     if envp !== nothing
