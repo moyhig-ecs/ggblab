@@ -69,12 +69,8 @@ class OOB_Server:
         self.serve_port: Optional[int] = None
 
         # create handler loop wrappers (defined below)
-        try:
-            self.ingest_loop = IngestLoop(self)
-            self.observer_loop = ObserverLoop(self)
-        except Exception:
-            self.ingest_loop = None
-            self.observer_loop = None
+        self.ingest_loop = IngestLoop(self)
+        self.observer_loop = ObserverLoop(self)
 
     def start(self):
         try:
@@ -88,59 +84,31 @@ class OOB_Server:
         self.server_thread.start()
 
     def stop(self):
-        try:
-            self._stop_event.set()
-        except Exception:
-            pass
+        self._stop_event.set()
         # join server thread (allow background loop to observe _stop_event)
-        try:
-            if self.server_thread is not None:
-                self.server_thread.join(timeout=1.0)
-        except Exception:
-            pass
+        if self.server_thread is not None:
+            self.server_thread.join(timeout=1.0)
 
         # Close and await server handles on the background loop if possible
-        try:
-            for srv in (getattr(self, "ingest_server", None), getattr(self, "serve_server", None)):
-                if srv is None:
-                    continue
-                # synchronous close() if available
-                try:
-                    close_fn = getattr(srv, "close", None)
-                    if callable(close_fn):
-                        close_fn()
-                except Exception:
-                    pass
+        for srv in (getattr(self, "ingest_server", None), getattr(self, "serve_server", None)):
+            if srv is None:
+                continue
+            # synchronous close() if available
+            close_fn = getattr(srv, "close", None)
+            if callable(close_fn):
+                close_fn()
 
-                # schedule wait_closed() on background loop if available
-                try:
-                    wait_closed = getattr(srv, "wait_closed", None)
-                    if callable(wait_closed) and getattr(self, "_loop", None) is not None and self._loop.is_running():
-                        try:
-                            asyncio.run_coroutine_threadsafe(wait_closed(), self._loop)
-                        except Exception:
-                            pass
-                    else:
-                        # best-effort synchronous wait
-                        try:
-                            asyncio.run(wait_closed())
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
+            # schedule wait_closed() on background loop if available
+            wait_closed = getattr(srv, "wait_closed", None)
+            if callable(wait_closed) and getattr(self, "_loop", None) is not None and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(wait_closed(), self._loop)
+            elif callable(wait_closed):
+                asyncio.run(wait_closed())
 
         # remove unix socket file if we used one
-        try:
-            sp = getattr(self, "socket_path", None)
-            if sp and os.path.exists(sp):
-                try:
-                    os.remove(sp)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        sp = getattr(self, "socket_path", None)
+        if sp and os.path.exists(sp):
+            os.remove(sp)
 
     async def _server(self):
         loop = asyncio.get_running_loop()
@@ -160,23 +128,17 @@ class OOB_Server:
         serve_server = None
         try:
             async with self.ingest_loop.serve_context() as ingest_server:
-                try:
-                    self._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting ingest server"})
-                except Exception:
-                    pass
+                self._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting ingest server"})
 
                 # Start observer (client-facing) server inside the same context
                 try:
                     serve_server = await self.observer_loop.start()
                 except Exception:
                     serve_server = None
-                try:
-                    if serve_server is not None:
-                        self.serve_port = serve_server.sockets[0].getsockname()[1]
-                        self.ws_port = self.serve_port
-                    else:
-                        self.serve_port = None
-                except Exception:
+                if serve_server is not None:
+                    self.serve_port = serve_server.sockets[0].getsockname()[1]
+                    self.ws_port = self.serve_port
+                else:
                     self.serve_port = None
 
                 # store handles and run until stop
@@ -190,69 +152,50 @@ class OOB_Server:
 
     async def _handle_object_update(self, payload: Any):
         changes = {}
-        try:
-            if isinstance(payload, list) and payload and isinstance(payload[0], list):
-                for pair in payload:
-                    if isinstance(pair, list) and len(pair) >= 2:
-                        name, value = pair[0], pair[1]
-                        self.shared_objects[name] = value
-                        changes[name] = value
-            elif isinstance(payload, list) and len(payload) >= 2 and not any(isinstance(i, list) for i in payload):
-                name, value = payload[0], payload[1]
-                self.shared_objects[name] = value
-                changes[name] = value
-            elif isinstance(payload, dict):
-                if "name" in payload and "value" in payload:
-                    self.shared_objects[payload["name"]] = payload["value"]
-                    changes[payload["name"]] = payload["value"]
-                else:
-                    for k, v in payload.items():
-                        self.shared_objects[k] = v
-                        changes[k] = v
-        except Exception:
-            return
+        if isinstance(payload, list) and payload and isinstance(payload[0], list):
+            for pair in payload:
+                if isinstance(pair, list) and len(pair) >= 2:
+                    name, value = pair[0], pair[1]
+                    self.shared_objects[name] = value
+                    changes[name] = value
+        elif isinstance(payload, list) and len(payload) >= 2 and not any(isinstance(i, list) for i in payload):
+            name, value = payload[0], payload[1]
+            self.shared_objects[name] = value
+            changes[name] = value
+        elif isinstance(payload, dict):
+            if "name" in payload and "value" in payload:
+                self.shared_objects[payload["name"]] = payload["value"]
+                changes[payload["name"]] = payload["value"]
+            else:
+                for k, v in payload.items():
+                    self.shared_objects[k] = v
+                    changes[k] = v
 
         if changes:
+            # increment sequence and record change
             try:
-                # increment sequence and record change
-                try:
-                    self._seq += 1
-                except Exception:
-                    self._seq = getattr(self, "_seq", 0) + 1
-                try:
-                    self._change_log.append((self._seq, dict(changes)))
-                except Exception:
-                    pass
-                await self.recv_queue.put({"type": "shared_objects_update", "seq": self._seq, "payload": changes})
+                self._seq += 1
             except Exception:
-                pass
+                self._seq = getattr(self, "_seq", 0) + 1
+            self._change_log.append((self._seq, dict(changes)))
+            await self.recv_queue.put({"type": "shared_objects_update", "seq": self._seq, "payload": changes})
 
             loop = asyncio.get_running_loop()
             for cb in list(self.shared_listeners):
-                try:
-                    if inspect.iscoroutinefunction(cb):
-                        asyncio.create_task(cb(changes, self._seq))
-                    else:
-                        await loop.run_in_executor(None, functools.partial(cb, changes, self._seq))
-                except Exception:
-                    pass
+                if inspect.iscoroutinefunction(cb):
+                    asyncio.create_task(cb(changes, self._seq))
+                else:
+                    await loop.run_in_executor(None, functools.partial(cb, changes, self._seq))
 
-            # broadcast update to connected clients
             # broadcast update to connected clients (inline to avoid removed send_all)
-            try:
-                if self.clients:
-                    text = (json.dumps({"type": "shared_objects_update", "seq": self._seq, "payload": changes}) + "\n").encode("utf-8")
-                    coros = []
-                    for w in list(self.clients):
-                        try:
-                            w.write(text)
-                            coros.append(w.drain())
-                        except Exception:
-                            pass
-                    if coros:
-                        await asyncio.gather(*coros, return_exceptions=True)
-            except Exception:
-                pass
+            if self.clients:
+                text = (json.dumps({"type": "shared_objects_update", "seq": self._seq, "payload": changes}) + "\n").encode("utf-8")
+                coros = []
+                for w in list(self.clients):
+                    w.write(text)
+                    coros.append(w.drain())
+                if coros:
+                    await asyncio.gather(*coros, return_exceptions=True)
             
     async def _ingest_handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle incoming OOB messages from the frontend or other producers.
@@ -355,37 +298,24 @@ class IngestLoop:
         self.server = server
 
         # Move socket reservation and prebind port logic here (ingest-specific)
-        try:
-            if getattr(self.server, "socket_path", None):
-                # caller provided path; nothing to reserve
-                pass
-            else:
-                if os.name in ["posix"]:
-                    _fd, _path = tempfile.mkstemp(prefix="/tmp/ggb_")
-                    os.close(_fd)
-                    try:
-                        os.remove(_path)
-                    except Exception:
-                        pass
-                    self.server.socket_path = _path
-                    try:
-                        self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest socket_path {self.server.socket_path}"})
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-                        s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-                        s.bind(("127.0.0.1", 0))
-                        _, p = s.getsockname()
-                        self.server.ws_port = p
-                        s.close()
-                        self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest ws_port {self.server.ws_port}"})
-                    except Exception:
-                        pass
-
-        except Exception:
+        if getattr(self.server, "socket_path", None):
+            # caller provided path; nothing to reserve
             pass
+        else:
+            if os.name == "posix":
+                _fd, _path = tempfile.mkstemp(prefix="/tmp/ggb_")
+                os.close(_fd)
+                os.remove(_path)
+                self.server.socket_path = _path
+                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest socket_path {self.server.socket_path}"})
+            else:
+                s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+                s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+                s.bind(("127.0.0.1", 0))
+                _, p = s.getsockname()
+                self.server.ws_port = p
+                s.close()
+                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest ws_port {self.server.ws_port}"})
 
         # (observer prebind moved to ObserverLoop)
 
@@ -399,17 +329,11 @@ class IngestLoop:
         # Prepare path/port and return the appropriate websockets context manager
         if getattr(self.server, "socket_path", None):
             path = self.server.socket_path
-            try:
-                parent = os.path.dirname(path)
-                if parent and not os.path.exists(parent):
-                    os.makedirs(parent, exist_ok=True)
-            except Exception:
-                pass
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except Exception:
-                pass
+            parent = os.path.dirname(path)
+            if parent and not os.path.exists(parent):
+                os.makedirs(parent, exist_ok=True)
+            if os.path.exists(path):
+                os.remove(path)
             return unix_serve(self.handler, path=path)
         else:
             port = getattr(self.server, "ws_port", None)
@@ -424,99 +348,57 @@ class IngestLoop:
 
         Returns the server handle (or None on failure).
         """
-        try:
-            if getattr(self.server, "socket_path", None):
-                path = self.server.socket_path
-                try:
-                    parent = os.path.dirname(path)
-                    if parent and not os.path.exists(parent):
-                        os.makedirs(parent, exist_ok=True)
-                except Exception:
-                    pass
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                except Exception:
-                    pass
-                ingest_server = await unix_serve(self.handler, path=path)
-                try:
-                    self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting unix socket server at {path}"})
-                except Exception:
-                    pass
-            else:
-                port = getattr(self.server, "ws_port", None)
-                if port is None:
-                    port = 0
-                ingest_server = await serve(self.handler, "127.0.0.1", port)
-                try:
-                    self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting TCP socket server at 127.0.0.1:{port}"})
-                except Exception:
-                    pass
+        if getattr(self.server, "socket_path", None):
+            path = self.server.socket_path
+            parent = os.path.dirname(path)
+            if parent and not os.path.exists(parent):
+                os.makedirs(parent, exist_ok=True)
+            if os.path.exists(path):
+                os.remove(path)
+            ingest_server = await unix_serve(self.handler, path=path)
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting unix socket server at {path}"})
+        else:
+            port = getattr(self.server, "ws_port", None)
+            if port is None:
+                port = 0
+            ingest_server = await serve(self.handler, "127.0.0.1", port)
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting TCP socket server at 127.0.0.1:{port}"})
 
-            self.server.ingest_server = ingest_server
-            return ingest_server
-        except Exception:
-            return None
+        self.server.ingest_server = ingest_server
+        return ingest_server
 
     async def handler(self, websocket):
-        try:
-            async for msg in websocket:
-                try:
-                    self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": msg})
-                except Exception:
-                    pass
+        async for msg in websocket:
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": msg})
 
-                try:
-                    data = json.loads(msg) if isinstance(msg, str) else msg
-                except Exception:
-                    try:
-                        await self.server.recv_queue.put(msg)
-                    except Exception:
-                        pass
-                    continue
+            try:
+                data = json.loads(msg) if isinstance(msg, str) else msg
+            except Exception:
+                await self.server.recv_queue.put(msg)
+                continue
 
-                if isinstance(data, dict) and data.get("type") == "bulk_actions":
-                    payload = data.get("payload")
-                    if isinstance(payload, list):
-                        for entry in payload:
-                            try:
-                                if not isinstance(entry, dict):
-                                    continue
-                                etype = entry.get("type")
-                                epayload = entry.get("payload")
-                                if etype == "object_update":
-                                    try:
-                                        await self.server._handle_object_update(epayload)
-                                    except Exception:
-                                        pass
-                                else:
-                                    try:
-                                        if isinstance(epayload, (dict, list)):
-                                            try:
-                                                await self.server._handle_object_update(epayload)
-                                            except Exception:
-                                                pass
-                                        else:
-                                            await self.server.recv_queue.put(entry)
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                pass
-                    continue
+            if isinstance(data, dict) and data.get("type") == "bulk_actions":
+                payload = data.get("payload")
+                if isinstance(payload, list):
+                    for entry in payload:
+                        if not isinstance(entry, dict):
+                            continue
+                        etype = entry.get("type")
+                        epayload = entry.get("payload")
+                        if etype == "object_update":
+                            await self.server._handle_object_update(epayload)
+                        else:
+                            if isinstance(epayload, (dict, list)):
+                                await self.server._handle_object_update(epayload)
+                            else:
+                                await self.server.recv_queue.put(entry)
+                continue
 
-                if isinstance(data, dict) and data.get("type") == "object_update":
-                    try:
-                        await self.server._handle_object_update(data.get("payload"))
-                    except Exception:
-                        pass
-                    continue
+            if isinstance(data, dict) and data.get("type") == "object_update":
+                await self.server._handle_object_update(data.get("payload"))
+                continue
 
-                try:
-                    await self.server.recv_queue.put(data)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+            await self.server.recv_queue.put(data)
 
 
 class ObserverLoop:
@@ -537,10 +419,7 @@ class ObserverLoop:
         try:
             port =  0
             serve_server = await asyncio.start_server(self.handler, "127.0.0.1", port)
-            try:
-                self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": f"Starting serve TCP server at 127.0.0.1:{port}"})
-            except Exception:
-                pass
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": f"Starting serve TCP server at 127.0.0.1:{port}"})
             self.server.serve_server = serve_server
             return serve_server
         except Exception:
@@ -554,39 +433,30 @@ class ObserverLoop:
                 raw = await reader.readline()
                 if not raw:
                     break
+                text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
+                self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": text})
                 try:
-                    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
-                    try:
-                        self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": text})
-                    except Exception:
-                        pass
                     data = json.loads(text) if isinstance(text, str) else text
                 except Exception:
                     continue
 
                 if isinstance(data, dict) and data.get("op") is not None:
                     op = data.get("op")
-                    try:
-                        if op == "get_shared_snapshot":
-                            out = {"type": "shared_objects_snapshot", "seq": self.server._seq, "payload": self.server.shared_objects}
-                            writer.write((json.dumps(out) + "\n").encode("utf-8"))
-                            await writer.drain()
-                            continue
-                        if op == "get_shared_diffs":
-                            since = data.get("since", 0)
-                            diffs = []
-                            try:
-                                for s, ch in list(self.server._change_log):
-                                    if s > since:
-                                        diffs.append({"seq": s, "payload": ch})
-                            except Exception:
-                                pass
-                            out = {"type": "shared_objects_diffs", "since": since, "seq": self.server._seq, "payload": diffs}
-                            writer.write((json.dumps(out) + "\n").encode("utf-8"))
-                            await writer.drain()
-                            continue
-                    except Exception:
-                        pass
+                    if op == "get_shared_snapshot":
+                        out = {"type": "shared_objects_snapshot", "seq": self.server._seq, "payload": self.server.shared_objects}
+                        writer.write((json.dumps(out) + "\n").encode("utf-8"))
+                        await writer.drain()
+                        continue
+                    if op == "get_shared_diffs":
+                        since = data.get("since", 0)
+                        diffs = []
+                        for s, ch in list(self.server._change_log):
+                            if s > since:
+                                diffs.append({"seq": s, "payload": ch})
+                        out = {"type": "shared_objects_diffs", "since": since, "seq": self.server._seq, "payload": diffs}
+                        writer.write((json.dumps(out) + "\n").encode("utf-8"))
+                        await writer.drain()
+                        continue
 
                 _id = data.get("id") if isinstance(data, dict) else None
                 if _id:
@@ -594,30 +464,18 @@ class ObserverLoop:
                     with self.server._pending_lock:
                         fut = self.server.pending_futures.pop(_id, None)
                     if fut:
-                        try:
-                            if not fut.done():
-                                fut.set_result(data.get("payload"))
-                        except Exception:
-                            pass
+                        if not fut.done():
+                            fut.set_result(data.get("payload"))
                     else:
                         if self.server.debug:
-                            try:
-                                await self.server.recv_queue.put({"type": "unexpected_response", "id": _id, "payload": data.get("payload")})
-                            except Exception:
-                                pass
+                            await self.server.recv_queue.put({"type": "unexpected_response", "id": _id, "payload": data.get("payload")})
                 else:
-                    try:
-                        await self.server.recv_queue.put(data)
-                    except Exception:
-                        pass
+                    await self.server.recv_queue.put(data)
 
                 await asyncio.sleep(0)
         finally:
             with self.server._client_lock:
-                try:
-                    self.server.clients.remove(writer)
-                except Exception:
-                    pass
+                self.server.clients.remove(writer)
 
 
 __all__ = ["OOB_Server"]
