@@ -18,21 +18,45 @@ end
 # Determine host/port: accept `host:port` or just a port as first arg, or use ENV GGB_WS_PORT.
 host = "127.0.0.1"
 port = nothing
+
+# Parse ARGS robustly: accept `host:port`, a bare port, or flags `--port=NNN` / `--host=NAME`
 if length(ARGS) >= 1
-    # ensure assignments are to globals (avoid soft-scope warnings in some REPL/environments)
     global host, port
-    a = ARGS[1]
-    if occursin(':', a)
-        parts = split(a, ':')
-        host = parts[1]
-        port = parse(Int, parts[2])
-    else
-        try
-            port = parse(Int, a)
-        catch
-            # treat as host, require port env or default
-            host = a
+    i = 1
+    while i <= length(ARGS)
+        a = ARGS[i]
+        if startswith(a, "--port=")
+            try
+                port = parse(Int, split(a, '=', limit=2)[2])
+            catch
+            end
+        elseif a == "--port" && i < length(ARGS)
+            try
+                port = parse(Int, ARGS[i+1])
+            catch
+            end
+            i += 1
+        elseif startswith(a, "--host=")
+            host = split(a, '=', limit=2)[2]
+        elseif a == "--host" && i < length(ARGS)
+            host = ARGS[i+1]
+            i += 1
+        elseif occursin(':', a)
+            parts = split(a, ':')
+            host = parts[1]
+            try
+                port = parse(Int, parts[2])
+            catch
+            end
+        else
+            # bare token: try parse int as port, otherwise treat as host
+            try
+                port = parse(Int, a)
+            catch
+                host = a
+            end
         end
+        i += 1
     end
 end
 if port === nothing
