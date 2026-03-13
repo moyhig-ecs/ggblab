@@ -111,7 +111,7 @@ function _run_tcp_client(host::AbstractString, port::Integer, messages::Observab
                             if isa(parsed, Dict) && get(parsed, "type", nothing) == "shared_objects_snapshot"
                                 local_seq = get(parsed, "seq", 0)
                                 local_objs = get(parsed, "payload", Dict())
-                                notify!(messages, parsed)
+                                Observables.notify!(messages, parsed)
                                 continue
                             elseif isa(parsed, Dict) && get(parsed, "type", nothing) == "shared_objects_update"
                                 seq = get(parsed, "seq", 0)
@@ -121,7 +121,7 @@ function _run_tcp_client(host::AbstractString, port::Integer, messages::Observab
                                         local_objs[k] = v
                                     end
                                     local_seq = seq
-                                    notify!(messages, parsed)
+                                    Observables.notify!(messages, parsed)
                                     continue
                                 else
                                     continue
@@ -131,11 +131,11 @@ function _run_tcp_client(host::AbstractString, port::Integer, messages::Observab
                             @warn "Error processing shared_objects message: $e"
                         end
 
-                        notify!(messages, parsed)
+                        Observables.notify!(messages, parsed)
                     end
                 catch e
                     @error "Error while reading from socket: $e"
-                    notify!(messages, e)
+                    Observables.notify!(messages, e)
                 finally
                     try
                         close(sock)
@@ -144,7 +144,7 @@ function _run_tcp_client(host::AbstractString, port::Integer, messages::Observab
                 end
         catch e
             @error "Connection failed to $host:$port — $e"
-            notify!(messages, e)
+            Observables.notify!(messages, e)
             sleep(0.5)
         end
     end
