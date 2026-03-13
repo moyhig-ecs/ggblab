@@ -5,6 +5,7 @@ export type KernelCommHelpers = {
 	ensureKernelComm: (opts: any) => Promise<any | null>;
 	attachCommCloseHandler: (opts: { c: any; setClosed: (b: boolean) => void; commTarget: string; dbg?: any }) => void;
 	makeIncomingHandler: (processCommandMessage: (cmd: any) => Promise<string>) => (msg: any) => Promise<void>;
+	observe?: (name: string, value: any) => Promise<void>;
 };
 
 // Global handle so external code (e.g. WebIO handlers) can call the
@@ -298,6 +299,16 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 			// Attach a namespaced global to avoid polluting the top-level scope.
 			(globalThis as any).ggblab = (globalThis as any).ggblab || {};
 			(globalThis as any).ggblab.listen = callRemoteSocketSend;
+			// convenience: allow callers to call observe(name, value) which builds
+			// an object_update message and forwards via callRemoteSocketSend.
+			(globalThis as any).ggblab.observe = (name: string, value: any) => {
+				try {
+					const msg = JSON.stringify({ type: 'object_update', payload: { name: name, value: value } });
+					callRemoteSocketSend(msg).catch(() => {});
+				} catch (e) {
+					// ignore
+				}
+			};
 			// Keep a single-name compatibility export for existing consumers.
 			(globalThis as any).listen_at_ggblab = callRemoteSocketSend;
 		} catch (e) {
@@ -306,5 +317,5 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 
 		// Export a typed reference for internal modules that import this file.
 		// (Top-level `ggblabGlobal` already points at `globalThis.ggblab`.)
-	return { callRemoteSocketSend, ensureKernelComm, attachCommCloseHandler, makeIncomingHandler };
+	return { callRemoteSocketSend, ensureKernelComm, attachCommCloseHandler, makeIncomingHandler, observe: async (name: string, value: any) => await callRemoteSocketSend(JSON.stringify({ type: 'object_update', payload: { name, value } })) };
 }
