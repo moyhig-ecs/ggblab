@@ -19,6 +19,8 @@ end
 host = "127.0.0.1"
 port = nothing
 if length(ARGS) >= 1
+    # ensure assignments are to globals (avoid soft-scope warnings in some REPL/environments)
+    global host, port
     a = ARGS[1]
     if occursin(':', a)
         parts = split(a, ':')
