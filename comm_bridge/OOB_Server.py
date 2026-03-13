@@ -154,6 +154,7 @@ class OOB_Server:
             self.observe_server = observe_server
 
     async def _handle_object_update(self, payload: Any):
+        self._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Object update payload: {payload}"})
         changes = {}
         if isinstance(payload, list) and payload and isinstance(payload[0], list):
             for pair in payload:
@@ -370,7 +371,9 @@ class IngestLoop:
 
             try:
                 data = json.loads(msg) if isinstance(msg, str) else msg
+                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Parsed ingest message: {data}"})
             except Exception:
+                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Failed to parse ingest message: {msg}"})
                 await self.server.recv_queue.put(msg)
                 continue
 
@@ -392,6 +395,7 @@ class IngestLoop:
                 continue
 
             if isinstance(data, dict) and data.get("type") == "object_update":
+                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Object update payload: {data.get('payload')}"})
                 await self.server._handle_object_update(data.get("payload"))
                 continue
 

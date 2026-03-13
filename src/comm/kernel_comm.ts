@@ -9,17 +9,21 @@ export type KernelCommHelpers = {
 
 // Global handle so external code (e.g. WebIO handlers) can call the
 // kernel-side send helper without holding the `resources` closure.
-export let globalCallRemoteSocketSend: (message: string) => Promise<void> = async (
+export let listen_at_ggblab: (message: string) => Promise<void> = async (
 	_message: string
 ) => {
 	throw new Error(
-		'globalCallRemoteSocketSend not initialized - call initKernelCommHelpers first'
+		'listen_at_ggblab not initialized - call initKernelCommHelpers first'
 	);
 };
 
 export function callRemoteSocketSendGlobal(message: string): Promise<void> {
-	return globalCallRemoteSocketSend(message);
+	return listen_at_ggblab(message);
 }
+
+// Top-level convenience reference to the namespaced global. May be undefined
+// until `initKernelCommHelpers` runs and assigns `globalThis.ggblab.listen`.
+export const ggblabGlobal = (globalThis as any).ggblab as { listen?: (message: string) => Promise<void> } | undefined;
 
 export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelpers {
 	// Default: enable fire-and-forget for kernel2 unless explicitly disabled.
@@ -289,13 +293,18 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 
 		// expose the concrete implementation to global export so external
 		// WebIO handlers can call it without keeping the `resources` closure.
-		globalCallRemoteSocketSend = callRemoteSocketSend;
+		listen_at_ggblab = callRemoteSocketSend;
 		try {
-			// Also attach to globalThis so non-module consumers (WebIO inline handlers)
-			// can call `globalCallRemoteSocketSend(...)` directly in the browser.
-			(globalThis as any).globalCallRemoteSocketSend = callRemoteSocketSend;
+			// Attach a namespaced global to avoid polluting the top-level scope.
+			(globalThis as any).ggblab = (globalThis as any).ggblab || {};
+			(globalThis as any).ggblab.listen = callRemoteSocketSend;
+			// Keep a single-name compatibility export for existing consumers.
+			(globalThis as any).listen_at_ggblab = callRemoteSocketSend;
 		} catch (e) {
 			// ignore if we can't assign to globalThis in some environments
 		}
+
+		// Export a typed reference for internal modules that import this file.
+		// (Top-level `ggblabGlobal` already points at `globalThis.ggblab`.)
 	return { callRemoteSocketSend, ensureKernelComm, attachCommCloseHandler, makeIncomingHandler };
 }
