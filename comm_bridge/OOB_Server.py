@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 from collections import deque
 import queue
 from websockets.asyncio.server import serve, unix_serve
+import errno
 
 
 class OOB_Server:
@@ -31,21 +32,23 @@ class OOB_Server:
     """
 
     # raw incoming message buffer for diagnostics (stores dicts: {ts, dir, raw})
-    _raw_buffer = queue.Queue()
+    _raw_buffer = queue.Queue(maxsize=100)
 
-    def __init__(self, oob_timeout: float = 30.0, socket_path: Optional[str] = None):
+    def __init__(self, oob_timeout: float = 30.0,  port: Optional[int] = None):
         # server transport state
         # If caller provided a socket_path, use it. Otherwise proactively
         # reserve a transport depending on the platform so callers can
         # inspect `socket_path` or `ws_port` immediately after `start()`.
         # let IngestLoop perform socket reservation/setup
-        self.socket_path: Optional[str] = socket_path
+        # Do not process or reserve `socket_path` here; IngestLoop handles socket reservation.
+        # Keep attribute if present for later use, but do not perform setup in constructor.
+        self.socket_path: Optional[str] = None
         # prebind port placeholder - IngestLoop may set this during its init
         # self._prebind_port = None
         self.ws_port: Optional[int] = None
         self.server_handle = None
         self.ingest_server = None
-        self.serve_server = None
+        self.observe_server = None
         self.server_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         # running asyncio loop for the background server thread
@@ -65,8 +68,9 @@ class OOB_Server:
         self._change_log = deque(maxlen=1000)
         self.oob_timeout = oob_timeout
         self.debug = False
-        # prebind a separate serve port for client-facing API to reduce races
-        self.serve_port: Optional[int] = None
+        # prebind a separate observe port for client-facing API to reduce races
+        # optional requested observe port (if caller wants to reserve a specific port)
+        self.observe_port: Optional[int] = port
 
         # create handler loop wrappers (defined below)
         self.ingest_loop = IngestLoop(self)
@@ -90,7 +94,7 @@ class OOB_Server:
             self.server_thread.join(timeout=1.0)
 
         # Close and await server handles on the background loop if possible
-        for srv in (getattr(self, "ingest_server", None), getattr(self, "serve_server", None)):
+        for srv in (getattr(self, "ingest_server", None), getattr(self, "observe_server", None)):
             if srv is None:
                 continue
             # synchronous close() if available
@@ -121,34 +125,33 @@ class OOB_Server:
 
         # Prepare ingest server (use unix socket on POSIX if socket_path present)
         ingest_server = None
-        serve_server = None
+        observe_server = None
 
         # Start ingest server using an async context (required by websockets)
         ingest_server = None
-        serve_server = None
+        observe_server = None
         try:
             async with self.ingest_loop.serve_context() as ingest_server:
                 self._raw_buffer.put({"ts": time.time(), "dir": "ingest_ws", "raw": f"Starting ingest server"})
 
                 # Start observer (client-facing) server inside the same context
                 try:
-                    serve_server = await self.observer_loop.start()
+                    observe_server = await self.observer_loop.start()
                 except Exception:
-                    serve_server = None
-                if serve_server is not None:
-                    self.serve_port = serve_server.sockets[0].getsockname()[1]
-                    self.ws_port = self.serve_port
+                    observe_server = None
+                if observe_server is not None:
+                    self.observe_port = observe_server.sockets[0].getsockname()[1]
                 else:
-                    self.serve_port = None
+                    self.observe_port = None
 
                 # store handles and run until stop
                 self.ingest_server = ingest_server
-                self.serve_server = serve_server
+                self.observe_server = observe_server
                 await loop.run_in_executor(None, self._stop_event.wait)
         except Exception:
             # if context fails, ensure attributes remain set to None
             self.ingest_server = ingest_server
-            self.serve_server = serve_server
+            self.observe_server = observe_server
 
     async def _handle_object_update(self, payload: Any):
         changes = {}
@@ -252,9 +255,9 @@ class OOB_Server:
         bridge.
         """
         try:
-            return {"socket_path": getattr(self, "socket_path", None), "ws_port": getattr(self, "ws_port", None), "serve_port": getattr(self, "serve_port", None)}
+            return {"socket_path": getattr(self, "socket_path", None), "ws_port": getattr(self, "ws_port", None), "observe_port": getattr(self, "observe_port", None)}
         except Exception:
-            return {"socket_path": None, "ws_port": None, "serve_port": None}
+            return {"socket_path": None, "ws_port": None, "observe_port": None}
 
     def clear_raw_buffer(self):
         """Clear the raw message buffer."""
@@ -297,27 +300,21 @@ class IngestLoop:
     def __init__(self, server: OOB_Server):
         self.server = server
 
-        # Move socket reservation and prebind port logic here (ingest-specific)
-        if self.server.socket_path:
-            # caller provided path; nothing to reserve
-            pass
+        if os.name in ["posix"]:
+            _fd, _path = tempfile.mkstemp(prefix="/tmp/ggb_")
+            os.close(_fd)
+            os.remove(_path)
+            self.server.socket_path = _path
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest socket_path {self.server.socket_path}"})
         else:
-            if os.name == "posix":
-                _fd, _path = tempfile.mkstemp(prefix="/tmp/ggb_")
-                os.close(_fd)
-                os.remove(_path)
-                self.server.socket_path = _path
-                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest socket_path {self.server.socket_path}"})
-            else:
-                s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-                s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-                s.bind(("127.0.0.1", 0))
-                _, p = s.getsockname()
-                self.server.ws_port = p
-                s.close()
-                self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest ws_port {self.server.ws_port}"})
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", 0))
+            _, p = s.getsockname()
+            self.server.ws_port = p
+            s.close()
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "ingest", "raw": f"Reserved ingest ws_port {self.server.ws_port}"})
 
-        # (observer prebind moved to ObserverLoop)
 
     def serve_context(self):
         """Return an async context manager for starting the ingest websocket server.
@@ -414,14 +411,33 @@ class ObserverLoop:
     async def start(self):
         """Start the observer (client-facing) TCP server and return the handle.
 
-        Uses an ephemeral port (0). Attaches the server to `self.server.serve_server`.
+        Uses an ephemeral port (0). Attaches the server to `self.server.observe_server`.
         """
         try:
-            port =  0
-            serve_server = await asyncio.start_server(self.handler, "127.0.0.1", port)
-            self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": f"Starting serve TCP server at 127.0.0.1:{port}"})
-            self.server.serve_server = serve_server
-            return serve_server
+            # use optional prebound/requested port if provided, otherwise ephemeral
+            req_port = getattr(self.server, "observe_port", None) if hasattr(self, "server") else None
+            port = req_port if req_port is not None else 0
+            try:
+                observe_server = await asyncio.start_server(self.handler, "127.0.0.1", port)
+            except OSError as e:
+                # If the requested port is in use or permission denied, fall back to ephemeral
+                if req_port is not None and getattr(e, "errno", None) in (errno.EADDRINUSE, errno.EACCES):
+                    observe_server = await asyncio.start_server(self.handler, "127.0.0.1", 0)
+                    bound_port = observe_server.sockets[0].getsockname()[1]
+                    self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": f"Requested serve port {req_port} unavailable; bound to ephemeral {bound_port}"})
+                else:
+                    raise
+
+            # Determine actual bound port for logging
+            try:
+                bound = observe_server.sockets[0].getsockname()
+                bound_port = bound[1] if bound else None
+            except Exception:
+                bound_port = None
+
+            self.server._raw_buffer.put({"ts": time.time(), "dir": "serve", "raw": f"Starting serve TCP server at 127.0.0.1:{bound_port}"})
+            self.server.observe_server = observe_server
+            return observe_server
         except Exception:
             return None
 

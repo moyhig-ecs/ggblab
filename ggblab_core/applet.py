@@ -110,6 +110,7 @@ class AppletInjector:
         appName: str = "suite",
         insertMode: str = "split-right",
         socketPath: Optional[str] = None,
+        ws_port: Optional[int] = None,
         register_kernel_comm: bool = True,
     ) -> Dict[str, Any]:
         """Open the applet using `ipylab` and return the payload sent.
@@ -161,6 +162,7 @@ class AppletInjector:
             "commTarget": self.comm_target,
             "insertMode": insertMode,
             "socketPath": socketPath,
+            "wsPort": ws_port,
             "appName": appName,
         }
         # Execute the frontend command used by the main ggblab extension
@@ -180,12 +182,12 @@ class AppletInjector:
         cls,
         appName: str = "suite",
         insertMode: str = "split-right",
-        socketPath: Optional[str] = None,
         kernel_id: Optional[str] = None,
         comm_target: str = "jupyter.ggblab",
         register_kernel_comm: bool = True,
         bridge_host: str = "127.0.0.1",
-        bridge_port: int = 0,
+        bridge_port: int = 8765,
+        observe_port: int = 8764,
         bridge_timeout: float = 10.0,
     ) -> Dict[str, Any]:
         """Inject the applet and start a local py_comm_bridge on an ephemeral port.
@@ -210,7 +212,8 @@ class AppletInjector:
         oob_instance = None
         if OOBClass is not None:
             try:
-                oob_instance = OOBClass(oob_timeout=bridge_timeout, socket_path=socketPath)
+                # allow caller to request a specific observe_port (serve port)
+                oob_instance = OOBClass(oob_timeout=bridge_timeout, port=observe_port)
                 oob_instance.start()
             except Exception:
                 oob_instance = None
@@ -226,14 +229,12 @@ class AppletInjector:
         if CommClass is not None:
             try:
                 comm_inst = CommClass()
-                bridge_state = comm_inst.start(port=bridge_port or 8765, timeout=bridge_timeout)
+                # start bridge using the configured bridge_port (default 8765)
+                bridge_state = comm_inst.start(port=bridge_port, timeout=bridge_timeout)
             except Exception:
                 bridge_state = None
         else:
-            # fallback to legacy module if present
-            if _py_comm_bridge is None:
-                raise RuntimeError("comm_bridge.server not available in this environment")
-            bridge_state = _py_comm_bridge.start_server(port=bridge_port or 8765, timeout=bridge_timeout)
+            raise RuntimeError("comm_bridge.server not available in this environment")
 
         # Remember bridge host/port for subsequent convenience calls
         try:
@@ -243,11 +244,6 @@ class AppletInjector:
         except Exception:
             cls._proxy_bridge = None
 
-        # If we started an OOB unix socket, pass its path into the frontend payload
-        socket_to_use = None
-        if oob_instance is not None and getattr(oob_instance, "socket_path", None):
-            socket_to_use = oob_instance.socket_path
-
         # If OOB server exposes a serve port (client-facing API), capture it
         serve_port = None
         if oob_instance is not None:
@@ -256,16 +252,23 @@ class AppletInjector:
         # Finally open the frontend injector after the bridge is started so the
         # frontend can connect immediately without an artificial delay.
         try:
+            # pass OOB socket information (either socketPath or wsPort may be None)
             payload = injector.open(
                 appName=appName,
                 insertMode=insertMode,
-                socketPath=socket_to_use or socketPath,
+                socketPath=(getattr(oob_instance, "socket_path", None) if oob_instance is not None else None),
+                ws_port=(getattr(oob_instance, "ws_port", None) if oob_instance is not None else None),
                 register_kernel_comm=False,
             )
         except Exception:
             # Best-effort: if injection fails, still return bridge state for
-            # diagnostics.
-            payload = {"kernelId": kernel_id, "commTarget": comm_target, "socketPath": socket_to_use}
+            # diagnostics. Use any known OOB socket info if available.
+            payload = {
+                "kernelId": kernel_id,
+                "commTarget": comm_target,
+                "socketPath": (getattr(oob_instance, "socket_path", None) if oob_instance is not None else None),
+                "wsPort": (getattr(oob_instance, "ws_port", None) if oob_instance is not None else None),
+            }
 
         # Return tuple: (comm_server_instance or None, oob_server_instance or None, info_dict)
         info = {"payload": payload, "bridge": bridge_state, "serve_port": serve_port}
