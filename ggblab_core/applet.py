@@ -214,6 +214,9 @@ class AppletInjector:
             try:
                 # allow caller to request a specific observe_port (serve port)
                 oob_instance = OOBClass(oob_timeout=bridge_timeout, port=observe_port)
+                oob_instance.set_broadcast_enabled(
+                    True
+                )  # ensure broadcasting is enabled for proxy mode
                 oob_instance.start()
             except Exception:
                 oob_instance = None
@@ -238,7 +241,9 @@ class AppletInjector:
 
         # Remember bridge host/port for subsequent convenience calls
         try:
-            bound_port = bridge_state.get("port") if isinstance(bridge_state, dict) else None
+            bound_port = (
+                bridge_state.get("port") if isinstance(bridge_state, dict) else None
+            )
             if bound_port:
                 cls._proxy_bridge = {"host": bridge_host, "port": bound_port}
         except Exception:
@@ -247,7 +252,9 @@ class AppletInjector:
         # If OOB server exposes a serve port (client-facing API), capture it
         serve_port = None
         if oob_instance is not None:
-            serve_port = getattr(oob_instance, "serve_port", None) or getattr(oob_instance, "ws_port", None)
+            serve_port = getattr(oob_instance, "serve_port", None) or getattr(
+                oob_instance, "ws_port", None
+            )
 
         # Finally open the frontend injector after the bridge is started so the
         # frontend can connect immediately without an artificial delay.
@@ -256,8 +263,16 @@ class AppletInjector:
             payload = injector.open(
                 appName=appName,
                 insertMode=insertMode,
-                socketPath=(getattr(oob_instance, "socket_path", None) if oob_instance is not None else None),
-                ws_port=(getattr(oob_instance, "ws_port", None) if oob_instance is not None else None),
+                socketPath=(
+                    getattr(oob_instance, "socket_path", None)
+                    if oob_instance is not None
+                    else None
+                ),
+                ws_port=(
+                    getattr(oob_instance, "ws_port", None)
+                    if oob_instance is not None
+                    else None
+                ),
                 register_kernel_comm=False,
             )
         except Exception:
@@ -266,14 +281,22 @@ class AppletInjector:
             payload = {
                 "kernelId": kernel_id,
                 "commTarget": comm_target,
-                "socketPath": (getattr(oob_instance, "socket_path", None) if oob_instance is not None else None),
-                "wsPort": (getattr(oob_instance, "ws_port", None) if oob_instance is not None else None),
+                "socketPath": (
+                    getattr(oob_instance, "socket_path", None)
+                    if oob_instance is not None
+                    else None
+                ),
+                "wsPort": (
+                    getattr(oob_instance, "ws_port", None)
+                    if oob_instance is not None
+                    else None
+                ),
             }
 
         # Return tuple: (comm_server_instance or None, oob_server_instance or None, info_dict)
         info = {"payload": payload, "bridge": bridge_state, "serve_port": serve_port}
         try:
-            comm_obj = comm_inst if 'comm_inst' in locals() else None
+            comm_obj = comm_inst if "comm_inst" in locals() else None
         except Exception:
             comm_obj = None
         return (comm_obj, oob_instance, info)

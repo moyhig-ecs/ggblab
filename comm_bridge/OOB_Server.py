@@ -87,6 +87,8 @@ class OOB_Server:
         self.observer_loop = ObserverLoop(self)
         # runtime toggle to disable broadcasting (useful for debugging stalls)
         self.broadcast_enabled = True
+        # broadcast queue (created on observer loop when needed)
+        self._broadcast_queue: Optional[asyncio.Queue] = None
 
     def set_broadcast_enabled(self, enabled: bool):
         try:
@@ -375,56 +377,45 @@ class OOB_Server:
                     )
 
             # broadcast update to connected clients if enabled. Writers belong to the
-            # observer loop; schedule broadcast on that loop to avoid cross-loop
-            # await/drain issues.
+            # observer loop; enqueue broadcast on that loop to avoid cross-loop
+            # await/drain issues. A dedicated broadcaster task on the observer
+            # loop will consume the queue and perform actual writes.
             if getattr(self, "broadcast_enabled", True) and self.clients:
                 try:
                     if (
                         getattr(self, "_loop", None) is not None
                         and asyncio.get_running_loop() is not self._loop
                     ):
-                        # schedule on observer loop and record scheduling
+                        # schedule enqueue on observer loop (non-blocking from ingest)
                         try:
                             self._push_raw_buffer(
                                 {
                                     "ts": time.time(),
                                     "dir": "serve",
-                                    "raw": f"Scheduling broadcast on observer loop seq={seq}",
+                                    "raw": f"Enqueuing broadcast on observer loop seq={seq}",
                                 }
                             )
-                            fut = asyncio.run_coroutine_threadsafe(
-                                self._broadcast_update(changes, seq), self._loop
-                            )
-                            # capture exceptions from the scheduled coroutine so they don't disappear
-                            try:
+                            # ensure broadcast queue exists on observer loop
+                            if getattr(self, "_broadcast_queue", None) is None:
+                                try:
+                                    asyncio.run_coroutine_threadsafe(
+                                        self._create_broadcast_queue(), self._loop
+                                    ).result(timeout=1.0)
+                                except Exception:
+                                    pass
 
-                                def _cb(f):
-                                    try:
-                                        exc = f.exception()
-                                        if exc:
-                                            self._push_raw_buffer(
-                                                {
-                                                    "ts": time.time(),
-                                                    "dir": "serve",
-                                                    "raw": f"Broadcast coroutine raised: {traceback.format_exception(type(exc), exc, exc.__traceback__)}",
-                                                }
-                                            )
-                                    except Exception:
-                                        try:
-                                            self._push_raw_buffer(
-                                                {
-                                                    "ts": time.time(),
-                                                    "dir": "serve",
-                                                    "raw": f"Broadcast callback handling failed: {traceback.format_exc()}",
-                                                }
-                                            )
-                                        except Exception:
-                                            pass
-
-                                fut.add_done_callback(_cb)
-                            except Exception:
-                                # best-effort: ignore callback attach failures
-                                pass
+                            if getattr(self, "_broadcast_queue", None) is not None:
+                                try:
+                                    asyncio.run_coroutine_threadsafe(
+                                        self._broadcast_queue.put((changes, seq)),
+                                        self._loop,
+                                    )
+                                except Exception:
+                                    # enqueue failed; fallback to direct broadcast
+                                    await self._broadcast_update(changes, seq)
+                            else:
+                                # no queue available; fallback
+                                await self._broadcast_update(changes, seq)
                         except Exception:
                             # fallback: attempt to run in current loop
                             await self._broadcast_update(changes, seq)
@@ -515,6 +506,62 @@ class OOB_Server:
             except Exception:
                 pass
             return
+
+    async def _create_broadcast_queue(self):
+        """Create the broadcast queue and start the broadcaster task on the
+        observer loop. This must be executed on the observer loop."""
+        if getattr(self, "_broadcast_queue", None) is None:
+            self._broadcast_queue = asyncio.Queue()
+            try:
+                asyncio.create_task(self._broadcaster())
+            except Exception:
+                try:
+                    self._push_raw_buffer(
+                        {
+                            "ts": time.time(),
+                            "dir": "serve",
+                            "raw": "Failed to start broadcaster task",
+                        }
+                    )
+                except Exception:
+                    pass
+
+    async def _broadcaster(self):
+        """Consume broadcast queue and forward updates to clients.
+
+        Runs on the observer loop and serializes writes so slow clients don't
+        block the ingest path.
+        """
+        while True:
+            try:
+                item = await self._broadcast_queue.get()
+                if item is None:
+                    return
+                changes, seq = item
+                try:
+                    await self._broadcast_update(changes, seq)
+                except Exception:
+                    try:
+                        self._push_raw_buffer(
+                            {
+                                "ts": time.time(),
+                                "dir": "serve",
+                                "raw": f"Broadcaster failed for seq={seq}: {traceback.format_exc()}",
+                            }
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                try:
+                    self._push_raw_buffer(
+                        {
+                            "ts": time.time(),
+                            "dir": "serve",
+                            "raw": f"Broadcaster loop exception: {traceback.format_exc()}",
+                        }
+                    )
+                except Exception:
+                    pass
 
     # websocket-based ingest moved to IngestLoop.handler
 
@@ -850,6 +897,20 @@ class ObserverLoop:
                 }
             )
             self.server.observe_server = observe_server
+            # Ensure broadcaster queue/task exists on the observer loop
+            try:
+                await self.server._create_broadcast_queue()
+            except Exception:
+                try:
+                    self.server._push_raw_buffer(
+                        {
+                            "ts": time.time(),
+                            "dir": "serve",
+                            "raw": f"Failed to create broadcast queue: {traceback.format_exc()}",
+                        }
+                    )
+                except Exception:
+                    pass
             return observe_server
         except Exception:
             return None
