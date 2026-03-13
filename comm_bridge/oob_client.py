@@ -69,10 +69,10 @@ def _read_loop(sock: socket.socket):
 def main():
     p = argparse.ArgumentParser(description="ggblab OOB TCP client")
     p.add_argument("--host", default="127.0.0.1", help="Host to connect to (default 127.0.0.1)")
-    p.add_argument("--port", type=int, default=None, help="TCP port to connect to (default 8765 or $GGB_WS_PORT)")
+    p.add_argument("--port", type=int, default=None, help="TCP port to connect to (default 8765)")
     args = p.parse_args()
 
-    port = args.port or int(os.environ.get("GGB_WS_PORT", 8765))
+    port = args.port or 8765
     host = args.host
 
     while True:
