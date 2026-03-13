@@ -309,14 +309,40 @@ def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765):
                 return resp.get("reply", resp) or resp
             return resp
 
+        async def _mod_listen(name, enabled=True, timeout=None):
+            payload = {"type": "listen", "payload": [name, bool(enabled)]}
+            import importlib
+
+            client = None
+            for modname in (
+                "comm_bridge.client",
+                "ggblab.comm_bridge.client",
+                "ggblab_core.comm_bridge.client",
+            ):
+                try:
+                    client = importlib.import_module(modname)
+                    break
+                except Exception:
+                    continue
+            if client is None:
+                raise RuntimeError("comm_bridge.client not available")
+            resp = await asyncio.to_thread(
+                client.request, payload, host, port, timeout or 10.0
+            )
+            if isinstance(resp, dict):
+                return resp.get("reply", resp) or resp
+            return resp
+
         globals()["function"] = _mod_function
         globals()["command"] = _mod_command
+        globals()["listen"] = _mod_listen
 
         # Patch the default instance if already created
         if _default_geo is not None:
             try:
                 setattr(_default_geo, "function", _mod_function)
                 setattr(_default_geo, "command", _mod_command)
+                setattr(_default_geo, "listen", _mod_listen)
             except Exception:
                 pass
     except Exception:
