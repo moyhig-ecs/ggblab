@@ -14,17 +14,11 @@ import tempfile
 import threading
 import time
 import uuid
-import traceback
 
 from IPython import get_ipython
 from websockets.asyncio.server import serve, unix_serve
 
 from ggblab.errors import GeoGebraAppletError
-# Reuse shared ingest implementation
-try:
-    from comm_bridge.ingest import IngestLoop
-except Exception:
-    IngestLoop = None
 
 # Optional ipywidgets import for DOMWidget-based comm bridge
 try:
@@ -68,20 +62,6 @@ class ggb_comm:
         self.use_ipython_comm = True
         self.enable_widget_bridge = False
         self.debug = False
-        # asyncio queue used by an ingest server to place incoming messages.
-        try:
-            self.recv_queue = asyncio.Queue()
-        except Exception:
-            self.recv_queue = None
-
-        # Ingest loop helper (optional)
-        try:
-            if IngestLoop is not None:
-                self.ingest_loop = IngestLoop(self)
-            else:
-                self.ingest_loop = None
-        except Exception:
-            self.ingest_loop = None
         try:
             self.oob_timeout = float(os.environ.get("GGB_OOB_TIMEOUT", "30"))
         except Exception:
@@ -93,16 +73,6 @@ class ggb_comm:
         except Exception:
             self._stop_event = threading.Event()
 
-        # Start ingest thread if available
-        try:
-            if getattr(self, "ingest_loop", None) is not None:
-                if getattr(self, "_ingest_thread", None) is None or not getattr(self, "_ingest_thread").is_alive():
-                    self._ingest_thread = threading.Thread(target=self._ingest_thread_main, daemon=True)
-                    self._ingest_thread.start()
-        except Exception:
-            pass
-
-        # Start main server thread
         self.server_thread = threading.Thread(
             target=lambda: asyncio.run(self.server()), daemon=True
         )
@@ -130,22 +100,6 @@ class ggb_comm:
         except Exception as e:
             with self.thread_lock:
                 self.logs.append(f"stop(): error closing server_handle: {e}")
-
-        # Attempt to stop ingest thread/loop
-        try:
-            if getattr(self, "_ingest_loop", None) is not None:
-                try:
-                    self._ingest_loop.call_soon_threadsafe(self._ingest_loop.stop)
-                except Exception:
-                    try:
-                        self._ingest_loop.call_soon_threadsafe(lambda: None)
-                    except Exception:
-                        pass
-            if getattr(self, "_ingest_thread", None) is not None:
-                self._ingest_thread.join(timeout=1.0)
-        except Exception as e:
-            with self.thread_lock:
-                self.logs.append(f"stop(): error stopping ingest thread: {e}")
 
     async def server(self):
         loop = asyncio.get_running_loop()
@@ -190,8 +144,90 @@ class ggb_comm:
                     with self.thread_lock:
                         self.logs.append(f"recv:type:logging_failed {_e}")
 
-                # object_update handling is delegated to the instance-level handler
-                # so it can be invoked by external ingest servers.
+                async def _handle_object_update(payload):
+                    try:
+                        changes = {}
+                        with self.thread_lock:
+                            cls = self.__class__
+                            if (
+                                isinstance(payload, list)
+                                and payload
+                                and isinstance(payload[0], list)
+                            ):
+                                for pair in payload:
+                                    if isinstance(pair, list) and len(pair) >= 2:
+                                        name = pair[0]
+                                        value = pair[1]
+                                        cls.shared_objects[name] = value
+                                        changes[name] = value
+                            elif (
+                                isinstance(payload, list)
+                                and len(payload) >= 2
+                                and not any(isinstance(i, list) for i in payload)
+                            ):
+                                name = payload[0]
+                                value = payload[1]
+                                cls.shared_objects[name] = value
+                                changes[name] = value
+                            elif isinstance(payload, dict):
+                                if "name" in payload and "value" in payload:
+                                    cls.shared_objects[payload["name"]] = payload[
+                                        "value"
+                                    ]
+                                    changes[payload["name"]] = payload["value"]
+                                else:
+                                    for k, v in payload.items():
+                                        cls.shared_objects[k] = v
+                                        changes[k] = v
+
+                        if changes:
+                            try:
+                                self.recv_events.put(
+                                    {
+                                        "type": "shared_objects_update",
+                                        "payload": changes,
+                                    }
+                                )
+                            except Exception:
+                                with self.thread_lock:
+                                    self.logs.append(
+                                        "Failed to enqueue shared_objects_update event"
+                                    )
+
+                        if changes and getattr(cls, "_shared_listeners", None):
+                            loop = asyncio.get_running_loop()
+                            for cb in list(cls._shared_listeners):
+                                try:
+                                    import inspect
+
+                                    if inspect.iscoroutinefunction(cb):
+                                        try:
+                                            await cb(changes)
+                                        except Exception as e:
+                                            with self.thread_lock:
+                                                self.logs.append(
+                                                    f"Error in async shared_objects listener: {e}"
+                                                )
+                                    else:
+                                        try:
+                                            await loop.run_in_executor(
+                                                None, functools.partial(cb, changes)
+                                            )
+                                        except Exception as e:
+                                            with self.thread_lock:
+                                                self.logs.append(
+                                                    f"Error in sync shared_objects listener: {e}"
+                                                )
+                                except Exception:
+                                    with self.thread_lock:
+                                        self.logs.append(
+                                            "Error invoking shared_objects listener"
+                                        )
+                    except Exception as e:
+                        with self.thread_lock:
+                            self.logs.append(
+                                f"Failed to process object_update payload: {e}"
+                            )
 
                 if isinstance(_data, dict) and _data.get("type") == "bulk_actions":
                     payload = _data.get("payload")
@@ -212,7 +248,7 @@ class ggb_comm:
                                     epayload = entry.get("payload")
                                     if etype == "object_update":
                                         try:
-                                            await self._handle_object_update(epayload)
+                                            await _handle_object_update(epayload)
                                         except Exception:
                                             with self.thread_lock:
                                                 self.logs.append(
@@ -241,7 +277,7 @@ class ggb_comm:
                 if isinstance(_data, dict) and _data.get("type") == "object_update":
                     payload = _data.get("payload")
                     try:
-                        await self._handle_object_update(payload)
+                        await _handle_object_update(payload)
                     except Exception as e:
                         with self.thread_lock:
                             self.logs.append(
@@ -361,149 +397,6 @@ class ggb_comm:
                     with self.thread_lock:
                         self.logs.append("Failed to create ipywidgets bridge")
             return
-
-    async def _handle_object_update(self, payload):
-        try:
-            self._push_raw_buffer(
-                {"ts": time.time(), "dir": "ingest", "raw": f"Object update payload: {payload}",}
-            )
-        except Exception:
-            pass
-
-        changes = {}
-        try:
-            # parse payload into a plain changes dict
-            if isinstance(payload, list) and payload and isinstance(payload[0], list):
-                for pair in payload:
-                    if isinstance(pair, list) and len(pair) >= 2:
-                        name, value = pair[0], pair[1]
-                        changes[name] = value
-            elif (
-                isinstance(payload, list)
-                and len(payload) >= 2
-                and not any(isinstance(i, list) for i in payload)
-            ):
-                name, value = payload[0], payload[1]
-                changes[name] = value
-            elif isinstance(payload, dict):
-                if "name" in payload and "value" in payload:
-                    changes[payload["name"]] = payload["value"]
-                else:
-                    for k, v in payload.items():
-                        changes[k] = v
-        except Exception as e:
-            with self.thread_lock:
-                self.logs.append(f"Failed to parse object_update payload: {e}")
-
-        if changes:
-            try:
-                # update shared_objects under lock
-                with self.thread_lock:
-                    cls = self.__class__
-                    for k, v in changes.items():
-                        cls.shared_objects[k] = v
-            except Exception:
-                pass
-
-            try:
-                self.recv_events.put({"type": "shared_objects_update", "payload": changes,})
-            except Exception:
-                with self.thread_lock:
-                    self.logs.append("Failed to enqueue shared_objects_update event")
-
-            if getattr(self.__class__, "_shared_listeners", None):
-                loop = asyncio.get_running_loop()
-                for cb in list(self.__class__._shared_listeners):
-                    try:
-                        import inspect
-
-                        if inspect.iscoroutinefunction(cb):
-                            try:
-                                await cb(changes)
-                            except Exception as e:
-                                with self.thread_lock:
-                                    self.logs.append(f"Error in async shared_objects listener: {e}")
-                        else:
-                            try:
-                                await loop.run_in_executor(None, functools.partial(cb, changes))
-                            except Exception as e:
-                                with self.thread_lock:
-                                    self.logs.append(f"Error in sync shared_objects listener: {e}")
-                    except Exception:
-                        with self.thread_lock:
-                            self.logs.append("Error invoking shared_objects listener")
-
-    def _ingest_thread_main(self):
-        """Run the ingest websocket server on its own asyncio loop in a background thread."""
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            self._ingest_loop = loop
-            # start the ingest server and keep loop running
-            try:
-                if getattr(self, "ingest_loop", None) is None:
-                    return
-                ingest_srv = loop.run_until_complete(self.ingest_loop.start())
-                self.ingest_server = ingest_srv
-                try:
-                    self._push_raw_buffer({"ts": time.time(), "dir": "ingest_ws", "raw": "Ingest thread started"})
-                except Exception:
-                    pass
-            except Exception:
-                try:
-                    self._push_raw_buffer({"ts": time.time(), "dir": "ingest_ws", "raw": f"Ingest thread failed to start: {traceback.format_exc()}"})
-                except Exception:
-                    pass
-                self._ingest_loop = None
-                return
-
-            try:
-                # ensure recv_queue exists in this loop and start a forwarder
-                try:
-                    if getattr(self, "recv_queue", None) is None:
-                        self.recv_queue = asyncio.Queue()
-                    loop.create_task(self._ingest_queue_forward())
-                except Exception:
-                    pass
-
-                loop.run_forever()
-            finally:
-                try:
-                    if self.ingest_server is not None:
-                        close_fn = getattr(self.ingest_server, "close", None)
-                        wait_closed = getattr(self.ingest_server, "wait_closed", None)
-                        if callable(close_fn):
-                            loop.run_until_complete(close_fn())
-                        if callable(wait_closed):
-                            loop.run_until_complete(wait_closed())
-                except Exception:
-                    pass
-        finally:
-            try:
-                asyncio.set_event_loop(None)
-            except Exception:
-                pass
-            self._ingest_loop = None
-            try:
-                self._push_raw_buffer({"ts": time.time(), "dir": "ingest_ws", "raw": "Ingest thread exiting"})
-            except Exception:
-                pass
-
-    async def _ingest_queue_forward(self):
-        """Forward items from the asyncio `recv_queue` into the thread-safe `recv_events` queue."""
-        try:
-            while True:
-                try:
-                    item = await self.recv_queue.get()
-                except Exception:
-                    break
-                try:
-                    self.recv_events.put(item)
-                except Exception:
-                    with self.thread_lock:
-                        self.logs.append("Failed to forward ingest recv_queue item to recv_events")
-        except Exception:
-            pass
 
         try:
             get_ipython().kernel.comm_manager.register_target(
