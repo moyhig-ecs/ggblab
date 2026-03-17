@@ -47,6 +47,16 @@ import os
 from .comm import ggb_comm_instance
 from .file import ggb_file
 from .ggbapplet import GeoGebra
+# Lightweight parser and schema helpers — import lazily when possible
+try:
+    from .parser import ggb_parser as ggb_parse
+except Exception:
+    ggb_parse = None
+
+try:
+    from .schema import ggb_schema as ggb_schema
+except Exception:
+    ggb_schema = None
 
 # Construction I/O was moved from `ggblab_extra` into the core package.
 # Expose `DataFrameIO` / `ConstructionIO` at package level so installs
@@ -390,6 +400,17 @@ else:
                                     setattr(inst, "schema", schema_mod)
                             except Exception:
                                 setattr(inst, "schema", schema_mod)
+                        except Exception:
+                            pass
+
+                        # Also expose ggb_file, ggb_parse, ggb_schema names on the instance
+                        try:
+                            if "ggb_file" in globals():
+                                setattr(inst, "ggb_file", globals()["ggb_file"])
+                            if "ggb_parse" in globals():
+                                setattr(inst, "ggb_parse", globals()["ggb_parse"])
+                            if "ggb_schema" in globals():
+                                setattr(inst, "ggb_schema", globals()["ggb_schema"])
                         except Exception:
                             pass
                     except Exception:

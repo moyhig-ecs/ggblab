@@ -16,6 +16,33 @@ class BridgeProxy:
     def __init__(self, host: str = "127.0.0.1", port: int = 8765):
         self.host = host
         self.port = port
+        # Provide convenient accessors for common ggblab utilities when
+        # connecting via `pyimport("ggblab.comm_bridge").connect()` from
+        # other languages (e.g., Julia). These are best-effort and will
+        # silently remain None if the imports fail.
+        try:
+            from ggblab import ggb_file, ggb_parser, ggb_schema
+
+            try:
+                self.file = ggb_file()
+            except Exception:
+                self.file = None
+
+            try:
+                self.parser = ggb_parser()
+            except Exception:
+                self.parser = None
+
+            try:
+                # ggb_schema() returns a wrapper object; take its `.schema`
+                # attribute for direct encode/decode access.
+                self.schema = ggb_schema().schema
+            except Exception:
+                self.schema = None
+        except Exception:
+            self.file = None
+            self.parser = None
+            self.schema = None
 
     async def _request(self, payload: Any, timeout: Optional[float] = None):
         import importlib
