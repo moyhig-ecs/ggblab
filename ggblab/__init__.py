@@ -236,96 +236,25 @@ def _create_default_instance(suppress_warning: bool = False):
 
 
 def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765, *, export_globals: bool = False):
-    """Connect to a running comm-bridge and return a proxy object.
+    """Deprecated compatibility wrapper.
 
-    By default this function does not mutate module globals to avoid
-    import-time side-effects. Call with ``export_globals=True`` to keep the
-    historical behaviour of installing ``function``/``command``/``listen`` on
-    the module and the default instance.
-
-    Returns:
-        BridgeProxy: object with async methods `function`, `command`, `listen`.
+    Prefer calling `ggblab.comm_bridge.connect(...)` directly. This helper
+    remains for backward compatibility and will forward to the canonical
+    implementation while emitting a DeprecationWarning.
     """
+    import warnings
+
     try:
-        import ggblab_core2 as _g2
+        from . import comm_bridge as _cb
+
+        warnings.warn(
+            "ggblab.connect_to_bridge() is deprecated; use ggblab.comm_bridge.connect() instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _cb.connect(host=host, port=port, export_globals=export_globals)
     except Exception as e:
-        raise RuntimeError("ggblab_core2 is required for connect_to_bridge") from e
-
-    # Ensure bridge is started / reachable via ggblab_core2 helper (best-effort)
-    try:
-        _g2.connect_to_bridge(host=host, port=port)
-    except Exception:
-        # allow downstream code to still create a proxy even if this helper fails
-        pass
-
-    class BridgeProxy:
-        def __init__(self, host, port):
-            self.host = host
-            self.port = port
-
-        async def _request(self, payload, timeout: Optional[float] = None):
-            import importlib
-
-            client = None
-            for modname in (
-                "comm_bridge.client",
-                "ggblab.comm_bridge.client",
-                "ggblab_core.comm_bridge.client",
-            ):
-                try:
-                    client = importlib.import_module(modname)
-                    break
-                except Exception:
-                    continue
-            if client is None:
-                raise RuntimeError("comm_bridge.client not available")
-            return await asyncio.to_thread(client.request, payload, self.host, self.port, timeout or 10.0)
-
-        async def function(self, name, args=None, timeout=None):
-            resp = await self._request({"type": "function", "payload": {"name": name, "args": args}}, timeout)
-            if isinstance(resp, dict):
-                if "reply" in resp:
-                    resp = resp["reply"]
-                if isinstance(resp, dict) and "payload" in resp:
-                    p = resp["payload"]
-                    if isinstance(p, dict) and "value" in p:
-                        return p["value"]
-                if "value" in resp:
-                    return resp["value"]
-            return resp
-
-        async def command(self, command, timeout=None):
-            resp = await self._request({"type": "command", "payload": command}, timeout)
-            if isinstance(resp, dict):
-                return resp.get("reply", resp) or resp
-            return resp
-
-        async def listen(self, name, enabled=True, timeout=None):
-            resp = await self._request({"type": "listen", "payload": [name, bool(enabled)]}, timeout)
-            if isinstance(resp, dict):
-                return resp.get("reply", resp) or resp
-            return resp
-
-    proxy = BridgeProxy(host, port)
-
-    if export_globals:
-        try:
-            globals()["function"] = proxy.function
-            globals()["command"] = proxy.command
-            globals()["listen"] = proxy.listen
-        except Exception:
-            pass
-
-        # Patch the default instance if already created
-        if _default_geo is not None:
-            try:
-                setattr(_default_geo, "function", proxy.function)
-                setattr(_default_geo, "command", proxy.command)
-                setattr(_default_geo, "listen", proxy.listen)
-            except Exception:
-                pass
-
-    return proxy
+        raise RuntimeError("failed to locate comm_bridge.connect") from e
 
 
 class _AppletHelper:
