@@ -185,13 +185,15 @@ def load_ipython_extension(ipython):
 
 
 # Auto-register IPython extension when `import ggblab` happens inside
-# an IPython environment (e.g., Jupyter notebook). This is best-effort
-# and must not fail import if IPython is unavailable.
+# an IPython environment (e.g., Jupyter notebook). This used to be
+# automatic but is now opt-in to avoid surprising side-effects during
+# plain `import`. To enable the old behaviour set the environment
+# variable `GGBLAB_ENABLE_AUTOLOAD=1` before importing.
 try:
     from IPython import get_ipython as _get_ipython
 
     _ip = _get_ipython()
-    if _ip is not None:
+    if _ip is not None and os.environ.get("GGBLAB_ENABLE_AUTOLOAD"):
         try:
             load_ipython_extension(_ip)
         except Exception:
@@ -233,29 +235,35 @@ def _create_default_instance(suppress_warning: bool = False):
     return _default_geo
 
 
-def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765):
-    """Configure the module to forward calls to a bridge started by
-    `ggblab_core.AppletInjector.start_proxy_mode`.
+def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765, *, export_globals: bool = False):
+    """Connect to a running comm-bridge and return a proxy object.
 
-    After calling this, module-level `function`/`command` will be
-    available and will forward to the bridge at `host:port`.
+    By default this function does not mutate module globals to avoid
+    import-time side-effects. Call with ``export_globals=True`` to keep the
+    historical behaviour of installing ``function``/``command``/``listen`` on
+    the module and the default instance.
+
+    Returns:
+        BridgeProxy: object with async methods `function`, `command`, `listen`.
     """
     try:
         import ggblab_core2 as _g2
     except Exception as e:
         raise RuntimeError("ggblab_core2 is required for connect_to_bridge") from e
 
+    # Ensure bridge is started / reachable via ggblab_core2 helper (best-effort)
     try:
         _g2.connect_to_bridge(host=host, port=port)
     except Exception:
-        raise
+        # allow downstream code to still create a proxy even if this helper fails
+        pass
 
-    # Also expose simple module-level forwarding helpers that call
-    # ggblab_core.applet.AppletInjector.*_sync via the bridge.
-    try:
+    class BridgeProxy:
+        def __init__(self, host, port):
+            self.host = host
+            self.port = port
 
-        async def _mod_function(name, args=None, timeout=None):
-            payload = {"type": "function", "payload": {"name": name, "args": args}}
+        async def _request(self, payload, timeout: Optional[float] = None):
             import importlib
 
             client = None
@@ -271,9 +279,10 @@ def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765):
                     continue
             if client is None:
                 raise RuntimeError("comm_bridge.client not available")
-            resp = await asyncio.to_thread(
-                client.request, payload, host, port, timeout or 10.0
-            )
+            return await asyncio.to_thread(client.request, payload, self.host, self.port, timeout or 10.0)
+
+        async def function(self, name, args=None, timeout=None):
+            resp = await self._request({"type": "function", "payload": {"name": name, "args": args}}, timeout)
             if isinstance(resp, dict):
                 if "reply" in resp:
                     resp = resp["reply"]
@@ -285,71 +294,78 @@ def connect_to_bridge(host: str = "127.0.0.1", port: int = 8765):
                     return resp["value"]
             return resp
 
-        async def _mod_command(command, timeout=None):
-            payload = {"type": "command", "payload": command}
-            import importlib
-
-            client = None
-            for modname in (
-                "comm_bridge.client",
-                "ggblab.comm_bridge.client",
-                "ggblab_core.comm_bridge.client",
-            ):
-                try:
-                    client = importlib.import_module(modname)
-                    break
-                except Exception:
-                    continue
-            if client is None:
-                raise RuntimeError("comm_bridge.client not available")
-            resp = await asyncio.to_thread(
-                client.request, payload, host, port, timeout or 10.0
-            )
+        async def command(self, command, timeout=None):
+            resp = await self._request({"type": "command", "payload": command}, timeout)
             if isinstance(resp, dict):
                 return resp.get("reply", resp) or resp
             return resp
 
-        async def _mod_listen(name, enabled=True, timeout=None):
-            payload = {"type": "listen", "payload": [name, bool(enabled)]}
-            import importlib
-
-            client = None
-            for modname in (
-                "comm_bridge.client",
-                "ggblab.comm_bridge.client",
-                "ggblab_core.comm_bridge.client",
-            ):
-                try:
-                    client = importlib.import_module(modname)
-                    break
-                except Exception:
-                    continue
-            if client is None:
-                raise RuntimeError("comm_bridge.client not available")
-            resp = await asyncio.to_thread(
-                client.request, payload, host, port, timeout or 10.0
-            )
+        async def listen(self, name, enabled=True, timeout=None):
+            resp = await self._request({"type": "listen", "payload": [name, bool(enabled)]}, timeout)
             if isinstance(resp, dict):
                 return resp.get("reply", resp) or resp
             return resp
 
-        globals()["function"] = _mod_function
-        globals()["command"] = _mod_command
-        globals()["listen"] = _mod_listen
+    proxy = BridgeProxy(host, port)
+
+    if export_globals:
+        try:
+            globals()["function"] = proxy.function
+            globals()["command"] = proxy.command
+            globals()["listen"] = proxy.listen
+        except Exception:
+            pass
 
         # Patch the default instance if already created
         if _default_geo is not None:
             try:
-                setattr(_default_geo, "function", _mod_function)
-                setattr(_default_geo, "command", _mod_command)
-                setattr(_default_geo, "listen", _mod_listen)
+                setattr(_default_geo, "function", proxy.function)
+                setattr(_default_geo, "command", proxy.command)
+                setattr(_default_geo, "listen", proxy.listen)
             except Exception:
                 pass
-    except Exception:
-        # best-effort only
-        pass
 
-    return True
+    return proxy
+
+
+class _AppletHelper:
+    """Helper to explicitly inject/open a GeoGebra frontend panel.
+
+    Usage:
+        ggb = await ggblab.applet.inject(appName="suite")
+    """
+
+    async def inject(self, appName: str = "suite", insertMode: str = "split-right"):
+        try:
+            from ggblab_core2.applet import AppletInjector2
+
+            inj = AppletInjector2()
+            # AppletInjector2.open may return an initialized GeoGebra instance
+            ggb = inj.open(appName=appName, insertMode=insertMode)
+            return ggb
+        except Exception:
+            # Fallback: try to import local GeoGebra controller and init
+            try:
+                from .ggbapplet import GeoGebra
+
+                ggb = GeoGebra()
+                # call init in an async-aware way
+                try:
+                    if hasattr(ggb, "_run_sync"):
+                        ggb._run_sync(ggb.init(appName=appName))
+                    else:
+                        import asyncio as _asyncio
+
+                        await _asyncio.ensure_future(ggb.init(appName=appName))
+                except Exception:
+                    pass
+                return ggb
+            except Exception:
+                raise
+
+
+# Public helper instance for explicit applet injection
+applet = _AppletHelper()
 
 
 def __getattr__(name):
@@ -386,11 +402,12 @@ def __dir__():
 #
 # The module-replacement is optional and may interfere with some build
 # steps (for example `jupyter labextension develop --overwrite .`). To
-# allow those workflows, the replacement can be disabled by setting the
-# environment variable `GGBLAB_DISABLE_MODULE_REPLACEMENT` to any value.
+# avoid surprising import-time side-effects the replacement is disabled by
+# default. To opt in to the old behaviour set the environment variable
+# `GGBLAB_ENABLE_MODULE_REPLACEMENT` to any value.
 # ---------------------------------------------------------------------------
-if os.environ.get("GGBLAB_DISABLE_MODULE_REPLACEMENT"):
-    # Module replacement explicitly disabled via environment variable.
+if not os.environ.get("GGBLAB_ENABLE_MODULE_REPLACEMENT"):
+    # Module replacement disabled by default to avoid import-time side effects.
     pass
 else:
     try:

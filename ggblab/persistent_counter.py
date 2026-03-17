@@ -65,9 +65,11 @@ class PersistentCounter:
             print("Info: PersistentCounter disabled when called from Julia/PythonCall")
             enabled = False
         self.enabled = enabled
+        # Delay opening the shelve DB until first use to avoid opening
+        # it on import (which can lead to cross-thread close errors).
+        # The DB will be opened lazily by `_ensure_open()` in accessor
+        # methods.
         self._db = None
-        if self.enabled:
-            self._open()
             # Note: For large-scale or cross-process counters consider using an
             # external key-value store in your deployment. This utility is a
             # lightweight shelve-backed convenience included in the core package.
@@ -82,13 +84,23 @@ class PersistentCounter:
             # Note: If the shelve backend is incompatible on your platform you may
             # see warnings; consider removing or recreating the cache file.
 
+    def _ensure_open(self):
+        """Ensure the shelve DB is opened (lazy open)."""
+        if not self.enabled:
+            return
+        if self._db is None:
+            self._open()
+
     def increment(self, keys):
         """Increment counts for given keys.
 
         Args:
             keys (set or iterable): Keys to increment
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return
+        self._ensure_open()
+        if self._db is None:
             return
 
         for key in keys:
@@ -109,7 +121,10 @@ class PersistentCounter:
         Returns:
             dict: Keys mapped to their counts
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return {}
+        self._ensure_open()
+        if self._db is None:
             return {}
 
         try:
@@ -121,7 +136,10 @@ class PersistentCounter:
 
     def clear(self):
         """Clear all stored data."""
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return
+        self._ensure_open()
+        if self._db is None:
             return
 
         try:
@@ -132,12 +150,26 @@ class PersistentCounter:
             # Note: Clearing is irreversible for the current cache file.
 
     def close(self):
-        """Close the database."""
+        """Close the database.
+
+        Swallow `sqlite3.ProgrammingError` that arises when a sqlite-backed
+        shelve is closed from a different thread than it was opened in. The
+        error is non-actionable at this point; we prefer to avoid noisy
+        exception tracebacks during interpreter shutdown or thread teardown.
+        """
         if self._db is not None:
             try:
                 self._db.close()
                 self._db = None
             except Exception as e:
+                try:
+                    import sqlite3
+
+                    if isinstance(e, sqlite3.ProgrammingError):
+                        # Ignore cross-thread close error
+                        return
+                except Exception:
+                    pass
                 print(f"Warning: Could not close database: {e}")
             # Note: Always call `close()` before process exit to ensure data is flushed.
 
@@ -150,7 +182,10 @@ class PersistentCounter:
         Returns:
             bool: True if key exists, False otherwise
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return False
+        self._ensure_open()
+        if self._db is None:
             return False
         try:
             return key in self._db
@@ -163,7 +198,10 @@ class PersistentCounter:
         Yields:
             Keys in the database
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return iter([])
+        self._ensure_open()
+        if self._db is None:
             return iter([])
         try:
             return iter(self._db)
@@ -176,7 +214,10 @@ class PersistentCounter:
         Returns:
             int: Number of stored keys
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return 0
+        self._ensure_open()
+        if self._db is None:
             return 0
         try:
             return len(self._db)
@@ -195,7 +236,10 @@ class PersistentCounter:
         Raises:
             KeyError: If key does not exist
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            raise KeyError(key)
+        self._ensure_open()
+        if self._db is None:
             raise KeyError(key)
         try:
             return self._db[key]
@@ -211,10 +255,21 @@ class PersistentCounter:
             key: Key to set
             value: Count value to set
         """
-        if not self.enabled or self._db is None:
+        if not self.enabled:
+            return
+        self._ensure_open()
+        if self._db is None:
             return
         try:
             self._db[key] = value
             self._db.sync()
         except Exception as e:
             print(f"Warning: Could not set key '{key}': {e}")
+
+    def __del__(self):
+        # Ensure DB closed on object finalization; swallow sqlite3 thread
+        # errors similarly to `close()`.
+        try:
+            self.close()
+        except Exception:
+            pass
