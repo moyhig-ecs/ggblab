@@ -3,7 +3,7 @@ import React, { useEffect, useRef /*, useState */ } from 'react';
 //import MetaTags from 'react-meta-tags';
 
 import setupKernelResources from './jupyterlab';
-import { registerWidgetCommTargets } from '../widgets';
+// import { registerWidgetCommTargets } from '../widgets';
 import { DockLayout } from '@lumino/widgets';
 import type { WidgetManagerType } from '../widgets';
 // widgetManager registration is handled inside `setupKernelResources`
@@ -165,25 +165,25 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			const processCommandMessage = createProcessCommandMessage(resources, callRemoteSocketSend, isArrayOfArrays, dbg);
 			const handleIncomingCommMessage = makeIncomingHandler(processCommandMessage);
 
-			try {
-				if (props.widgetManager) {
-					dbg('widgetManager present; skipping raw jupyter.widget comm registration');
-				} else {
-					const opts = {
-						callRemoteSocketSend,
-						kernel2: resources.kernel2,
-						socketPath: resources.socketPath,
-						wsUrl: `ws://localhost:${resources.wsPort}/`,
-						getAppletApi: () => resources.appletApi,
-						isArrayOfArrays: isArrayOfArrays,
-						dbg
-					};
-					const unregisterFn = registerWidgetCommTargets(resources.kernelConn, opts as any);
-					resources.unregisterWidgetCommTargets = unregisterFn;
-				}
-			} catch (e: any) {
-				dbg('Widget comm target registration skipped or failed', e);
-			}
+			// try {
+			// 	if (props.widgetManager) {
+			// 		dbg('widgetManager present; skipping raw jupyter.widget comm registration');
+			// 	} else {
+			// 		const opts = {
+			// 			callRemoteSocketSend,
+			// 			kernel2: resources.kernel2,
+			// 			socketPath: resources.socketPath,
+			// 			wsUrl: `ws://localhost:${resources.wsPort}/`,
+			// 			getAppletApi: () => resources.appletApi,
+			// 			isArrayOfArrays: isArrayOfArrays,
+			// 			dbg
+			// 		};
+			// 		const unregisterFn = registerWidgetCommTargets(resources.kernelConn, opts as any);
+			// 		resources.unregisterWidgetCommTargets = unregisterFn;
+			// 	}
+			// } catch (e: any) {
+			// 	dbg('Widget comm target registration skipped or failed', e);
+			// }
 
 			async function ggbOnLoad(api: any) {
 				dbg('GeoGebra applet loaded:', api);

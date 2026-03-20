@@ -28,7 +28,8 @@ export function createWidgetManagerLegacy() {
 
 // Import package.json to reflect the package version in the UI log.
 import pkg from '../package.json';
-import { registerWidgetManagerPlugin } from './widgets';
+// import { registerWidgetManagerPlugin } from './widgets';
+import { registerWidgetManagerPlugin, registerGlobalGGBlabCommTargets } from './widgets';
 
 namespace CommandIDs {
 	export const create = 'ggblab:create';
@@ -56,16 +57,36 @@ const plugin: JupyterFrontEndPlugin<void> = {
 		// 	(window as any).__ggblab_last_created_time = 0;
 		// }
 
-		// // Pragmatic global registration (option B): register a `jupyter.ggblab`
-		// // comm target on all currently running kernels so kernels that open
-		// // comms to that target will be delivered to the front-end. Keep the
-		// // returned unregister function so we can clean up on unload.
-		// let _unregisterGlobalGGBlab: (() => void) | null = null;
-		// registerGlobalGGBlabCommTargets(app)
-		// 	.then(unreg => {
-		// 		_unregisterGlobalGGBlab = unreg;
-		// 	})
-		// 	.catch(e => console.warn('Failed to register global ggblab comm targets', e));
+		// Pragmatic global registration: register a `jupyter.ggblab` comm
+		// target on all currently running kernels so kernels that open
+		// comms to that target will be delivered to the front-end. Keep the
+		// returned unregister function so we can clean up on unload.
+		let _unregisterGlobalGGBlab: (() => void) | null = null;
+		try {
+			console.warn('Registering global ggblab comm targets for all kernels');
+			registerGlobalGGBlabCommTargets(app)
+				.then(unreg => {
+					_unregisterGlobalGGBlab = unreg;
+				})
+				.catch(e => console.warn('Failed to register global ggblab comm targets', e));
+		} catch (e) {
+			console.warn('registerGlobalGGBlabCommTargets threw', e);
+		}
+
+		// Ensure we cleanup registrations on page unload so KernelConnections
+		// are not left dangling. Reference `_unregisterGlobalGGBlab` here so
+		// TypeScript recognizes the variable as used.
+		try {
+			window.addEventListener('beforeunload', () => {
+				try {
+					_unregisterGlobalGGBlab && _unregisterGlobalGGBlab();
+				} catch (_e) {
+					// ignore
+				}
+			});
+		} catch (e) {
+			// ignore environments where addEventListener isn't available
+		}
 
 		// Small global helper so comm handlers running in the kernelConn scope
 		// can ask the frontend to create/open a ggblab widget for a kernel id.

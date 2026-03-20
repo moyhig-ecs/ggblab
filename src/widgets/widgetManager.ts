@@ -166,7 +166,7 @@ export function registerWidgetCommTargets(kernelConn: any, opts: IRegisterWidget
 import { KernelAPI, KernelConnection, ServerConnection } from '@jupyterlab/services';
 import { PageConfig } from '@jupyterlab/coreutils';
 
-export const ENABLE_RUNNING_CHANGED = false;
+export const ENABLE_RUNNING_CHANGED = true;
 
 export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => void> {
 	const baseUrl = PageConfig.getBaseUrl();
@@ -368,6 +368,7 @@ export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => 
 
 	try {
 		const kernels = await KernelAPI.listRunning();
+		dbg('Initial kernel listing succeeded', { kernels });
 		(kernels || []).forEach(registerKernel);
 	} catch (e) {
 		console.warn('Failed to list running kernels for ggblab registration', e);
@@ -383,6 +384,7 @@ export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => 
 					unregisterKernel(id);
 				}
 			});
+			dbg('onRunningChanged processed', { currentIds: Array.from(currentIds), registryKeys: Array.from(registry.keys()) });
 		} catch (e) {
 			console.warn('Error handling runningChanged for ggblab', e);
 		}

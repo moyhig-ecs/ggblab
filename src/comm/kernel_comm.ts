@@ -240,12 +240,65 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 			try {
 				_dbg('Kernel comm onMsg received', { commTarget: resources.commTarget || '', msg });
 
-				const command = JSON.parse(msg.content.data as any);
-				_dbg('Parsed command:', command.type, command.payload);
+				let command: any = null;
+				try {
+					const raw = msg && msg.content && msg.content.data;
+					if (typeof raw === 'string') {
+						command = JSON.parse(raw as any);
+					} else if (raw && typeof raw === 'object') {
+						// IJulia sends Dicts which arrive as objects in the frontend.
+						// Try to find the actual command payload if nested (e.g. raw.data).
+						if ((raw as any).data && typeof (raw as any).data === 'object') {
+							command = (raw as any).data;
+						} else if ((raw as any).payload && typeof (raw as any).payload === 'object') {
+							command = (raw as any).payload;
+						} else {
+							command = raw;
+						}
+					} else {
+						// Fallback: attempt to parse whatever is present, or null
+						try {
+							command = JSON.parse(raw as any);
+						} catch (e) {
+							command = raw;
+						}
+					}
+				} catch (err) {
+					_dbg && _dbg('Failed to parse incoming comm message; treating as object', err);
+					command = (msg && msg.content && msg.content.data) || null;
+				}
+				_dbg('Parsed command:', command && command.type, command && command.payload);
 
 				let rmsg: any = null;
 				try {
 					rmsg = await processCommandMessage(command);
+					// Ensure reply includes request id from the incoming command so
+					// kernel-side callers can pair responses with their requests.
+					try {
+						const reqId = command && (command.req_id || command.id || command.request_id || command.requestId) || null;
+						if (reqId != null) {
+							let replyObj: any = null;
+							if (typeof rmsg === 'string') {
+								try {
+									replyObj = JSON.parse(rmsg as any);
+								} catch {
+									replyObj = { reply: rmsg };
+								}
+							} else if (rmsg && typeof rmsg === 'object') {
+								replyObj = rmsg;
+							} else {
+								replyObj = { reply: rmsg };
+							}
+							// attach canonical req_id field if not present
+							if (!replyObj.req_id && !replyObj.id && !replyObj.request_id) {
+								replyObj.req_id = reqId;
+							}
+							rmsg = JSON.stringify(replyObj);
+						}
+					} catch (e) {
+						// non-fatal: if we cannot normalize the reply, fall back to original
+						log && log('kernel_comm: failed to attach req_id to reply', e);
+					}
 				} catch (e) {
 					_dbg('Error processing command', e);
 					rmsg = JSON.stringify({ type: 'error', id: command?.id || null, payload: { message: 'Processing failed' } });

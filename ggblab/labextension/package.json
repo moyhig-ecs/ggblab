@@ -58,6 +58,7 @@
     "@jupyterlab/application": "^4.0.0",
     "@jupyterlab/apputils": "^4.6.1",
     "@jupyterlab/launcher": "^4.5.1",
+    "@jupyterlab/services": "7",
     "@jupyterlab/settingregistry": "^4.0.0",
     "@lumino/widgets": "^2.7.2",
     "@marshallku/react-postscribe": "^0.2.0",
@@ -73,13 +74,13 @@
     "@types/react-addons-linked-state-mixin": "^0.14.22",
     "@typescript-eslint/eslint-plugin": "^6.1.0",
     "@typescript-eslint/parser": "^6.1.0",
-    "node-gyp": "^9.3.1",
     "css-loader": "^6.7.1",
     "esbuild": "^0.27.2",
     "eslint": "^8.36.0",
     "eslint-config-prettier": "^8.8.0",
     "eslint-plugin-prettier": "^5.0.0",
     "jest": "^29.2.0",
+    "node-gyp": "^9.3.1",
     "npm-run-all2": "^7.0.1",
     "prettier": "^3.0.0",
     "react": "^19.2.4",
@@ -111,7 +112,7 @@
     "outputDir": "ggblab/labextension",
     "schemaDir": "schema",
     "_build": {
-      "load": "static/remoteEntry.a3bcf81cf0a21f870f55.js",
+      "load": "static/remoteEntry.7c9e4a26574140d5f04f.js",
       "extension": "./extension",
       "style": "./style"
     }
