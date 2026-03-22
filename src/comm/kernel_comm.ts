@@ -49,7 +49,7 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 		if (resources && resources.kernel2 && typeof resources.kernel2.requestExecute === 'function') {
 			try {
 				try {
-					log && log('performSend: using kernel2.requestExecute', { kernel2: !!resources.kernel2, socketPath: socketPath || undefined, wsUrlPreview: wsUrl || undefined });
+					log && log('performSend: using kernel2.requestExecute', { kernel2: !!resources.kernel2, socketPath: socketPath || undefined, wsPort: resources.wsPort || undefined, wsUrl: wsUrl || undefined });
 				} catch (e) {
 					// eslint-disable-next-line no-empty
 				}

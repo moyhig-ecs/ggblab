@@ -16,6 +16,7 @@ export interface IGeoGebraResources {
 	kernelId?: string;
 	commTarget?: string;
 	socketPath?: string | null;
+	wsUrl?: string;
 	wsPort?: number;
 	kernel2?: any;
 	kernelManager?: any;

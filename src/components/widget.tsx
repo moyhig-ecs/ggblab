@@ -46,6 +46,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 			commTarget: string;
 			socketPath: string | null;
 			wsPort: number;
+			wsUrl: string;
 			kernel2: any = null;
 			kernelManager: any = null;
 			kernelConn: any = null;
@@ -67,6 +68,7 @@ const GeoGebraApplet = (props: IGeoGebraAppletProps): JSX.Element => {
 				this.commTarget = commTarget;
 				this.socketPath = socketPath;
 				this.wsPort = wsPort;
+				this.wsUrl = wsPort ? `ws://localhost:${wsPort}` : '';
 			}
 
 			async dispose() {

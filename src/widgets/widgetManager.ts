@@ -239,7 +239,9 @@ export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => 
 											await app.commands.execute('ggblab:create', {
 												kernelId: id,
 												commTarget: 'jupyter.ggblab',
-												insertMode: command.insertMode || 'split-right'
+												insertMode: command.insertMode || 'split-right',
+												socketPath: command.socketPath || null,
+												wsPort: command.wsPort || null
 											});
 										}
 									} catch (e) {
