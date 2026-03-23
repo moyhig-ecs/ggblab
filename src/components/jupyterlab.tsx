@@ -358,7 +358,7 @@ except Exception as _e:
 									try {
 										const g: any = window as any;
 										if (g && typeof g.__ggblab_create_widget_for_kernel === 'function') {
-											await g.__ggblab_create_widget_for_kernel(targetKernelId, { insertMode: command.insertMode });
+											await g.__ggblab_create_widget_for_kernel(targetKernelId, { insertMode: command.insertMode, socketPath: command.socketPath, wsPort: command.wsPort });
 										}
 									} catch (e) {
 										dbg('per-kernel control inject failed', e);

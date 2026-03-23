@@ -7,7 +7,10 @@ few functions and delegates heavy work to sibling modules.
 
 # Lightweight facade utilities (moved into sympy subpackage).
 
+# This module keeps a small set of convenience helpers that previously
 import re
+import inspect
+from ggblab.utils_julia import maybe_await, called_from_julia, patch_ggb_for_julia, jl_function_sync
 # This module keeps a small set of convenience helpers that previously
 # lived in `ggblab_extra/sympy_utils.py`. It intentionally only exposes a
 from typing import Optional
@@ -295,7 +298,17 @@ async def is_applet_3d_from_ggblab(ggb=None) -> Optional[bool]:
         return None
 
     try:
-        xml = await ggb.function("getXML")
+            try:
+                if patch_ggb_for_julia is not None:
+                    patch_ggb_for_julia(ggb)
+            except Exception:
+                pass
+
+            if called_from_julia() and jl_function_sync is not None:
+                xml = jl_function_sync("getXML", None)
+            else:
+                res = ggb.function("getXML")
+                xml = await maybe_await(res)
     except (AttributeError, TypeError, RuntimeError, ValueError):
         return None
     if not xml:

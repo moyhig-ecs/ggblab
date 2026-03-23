@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 from typing import Optional
+import inspect
 
 
 def _safe_check_output(cmd: list[str]) -> Optional[str]:
@@ -162,3 +163,103 @@ def called_from_julia(check_ancestors: bool = True, max_depth: int = 5) -> bool:
             return True
 
     return False
+
+
+async def maybe_await(value):
+    """Await *value* if it's awaitable unless running under Julia.
+
+    When Python is embedded in Julia (detected by `called_from_julia()`),
+    many juliacall-backed functions are synchronous and should not be
+    awaited. This helper returns the awaited result in normal Python
+    usage, but returns the original value when running under Julia so
+    callers can treat both cases uniformly.
+    """
+    try:
+        if called_from_julia():
+            return value
+        if inspect.isawaitable(value):
+            return await value
+        return value
+    except Exception:
+        # On error, propagate to caller
+        raise
+
+
+# juliacall proxy helpers
+_jl = None
+def _get_jl_main():
+    """Return the juliacall Main proxy or None if unavailable."""
+    global _jl
+    if _jl is not None:
+        return _jl
+    try:
+        from juliacall import Main as jl  # type: ignore
+        _jl = jl
+        return _jl
+    except Exception:
+        _jl = None
+        return None
+
+def _convert_julia_seq_to_pylist(res):
+    try:
+        if hasattr(res, "pylist") and callable(getattr(res, "pylist")):
+            return res.pylist()
+        if hasattr(res, "tolist") and callable(getattr(res, "tolist")):
+            return res.tolist()
+        if hasattr(res, "to_py") and callable(getattr(res, "to_py")):
+            return res.to_py()
+    except Exception:
+        pass
+    return res
+
+def jl_function_sync(name_or_names, args=None):
+    """Call `jl.GeoGebra.send_function` synchronously via juliacall.
+
+    Raises RuntimeError if juliacall/Main is unavailable.
+    """
+    jl = _get_jl_main()
+    if jl is None:
+        raise RuntimeError("juliacall Main not available")
+    if args is None:
+        res = jl.GeoGebra.send_function(name_or_names)
+    elif isinstance(args, (list, tuple)):
+        res = jl.GeoGebra.send_function(name_or_names, *args)
+    else:
+        res = jl.GeoGebra.send_function(name_or_names, args)
+    return _convert_julia_seq_to_pylist(res)
+
+def jl_command_sync(cmd_text):
+    jl = _get_jl_main()
+    if jl is None:
+        raise RuntimeError("juliacall Main not available")
+    return jl.GeoGebra.send_command(cmd_text)
+
+
+def patch_ggb_for_julia(ggb):
+    """Monkeypatch a `ggb` object so `ggb.function`/`ggb.command` call
+    into Julia synchronously when running under juliacall.
+
+    This sets `ggb._jl_patched = True` to avoid double-patching.
+    """
+    if ggb is None:
+        return
+    if not called_from_julia():
+        return
+    try:
+        if getattr(ggb, "_jl_patched", False):
+            return
+        # bind methods that call into Julia
+        import types as _types
+
+        def _fn(self, name_or_names, args=None):
+            return jl_function_sync(name_or_names, args)
+
+        def _cmd(self, cmd_text):
+            return jl_command_sync(cmd_text)
+
+        ggb.function = _types.MethodType(_fn, ggb)
+        ggb.command = _types.MethodType(_cmd, ggb)
+        setattr(ggb, "_jl_patched", True)
+    except Exception:
+        # Best-effort: do not raise on failures to patch
+        return

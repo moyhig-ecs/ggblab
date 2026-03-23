@@ -16,6 +16,34 @@ from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Union
 
 import polars as pl
 import polars.selectors as cs
+import asyncio
+import types
+
+# Optional juliacall integration: if running inside a Julia-embedded Python
+# (or juliacall is available), provide async wrappers that call into
+# `jl.GeoGebra.send_function` / `jl.GeoGebra.send_command` so existing
+# `ggb.function(...)` usage can be redirected to Julia implementations.
+HAVE_JL = False
+_jl = None
+try:
+    # Prefer using the project's `called_from_julia()` probe to detect
+    # whether Python is running embedded inside Julia. Import helpers
+    # from `ggblab.utils_julia` to route calls to Julia when appropriate.
+    try:
+        from ggblab.utils_julia import called_from_julia, maybe_await, jl_function_sync, jl_command_sync, patch_ggb_for_julia
+    except Exception:
+        called_from_julia = lambda: False
+        maybe_await = lambda x: x
+        jl_function_sync = None
+        jl_command_sync = None
+        patch_ggb_for_julia = None
+except Exception:
+    called_from_julia = lambda: False
+    maybe_await = lambda x: x
+    jl_function_sync = None
+    jl_command_sync = None
+    patch_ggb_for_julia = None
+
 
 if TYPE_CHECKING:
     from ggblab.ggbapplet import GeoGebra
@@ -56,6 +84,15 @@ class ConstructionIO:
         "curvecartesian",
     ]
 
+    # Common GeoGebra function names used when querying object properties
+    FUNCTION_FIELDS = [
+        "getObjectType",
+        "getCommandString",
+        "getValueString",
+        "getCaption",
+        "getLayer",
+    ]
+
     # NOTE: XML errata handling has been moved to the ggb_file helper in
     # `ggblab.file`. ConstructionIO will call the file-level errata helpers
     # when attempting to decode legacy XML formats.
@@ -73,19 +110,25 @@ class ConstructionIO:
             )
 
         construction: Dict[str, Any] = {}
-        objs = await ggb.function("getAllObjectNames")
+        # Call ggb.function and await only if necessary. `maybe_await`
+        # ensures that when Python is embedded in Julia we don't await
+        # synchronous juliacall results.
+        # If available, patch the ggb instance to call into Julia
+        # synchronously; this mirrors the previous local behavior.
+        try:
+            if patch_ggb_for_julia is not None:
+                patch_ggb_for_julia(ggb)
+        except Exception:
+            pass
+
+        res = ggb.function("getAllObjectNames")
+        objs = await maybe_await(res)
+
         for o in objs:
-            r = await ggb.function(
-                [
-                    "getObjectType",
-                    "getCommandString",
-                    "getValueString",
-                    "getCaption",
-                    "getLayer",
-                ],
-                [o],
-            )
-            r2 = await ggb.function("getXML", [o])
+            r_res = ggb.function(ConstructionIO.FUNCTION_FIELDS, [o])
+            r = await maybe_await(r_res)
+            r2_res = ggb.function("getXML", [o])
+            r2 = await maybe_await(r2_res)
             try:
                 o2 = ggb.file.ggb_schema.decode(r2)
             except Exception:
@@ -100,7 +143,18 @@ class ConstructionIO:
                 except Exception:
                     o2 = {}
 
-            construction[o] = r + [
+            # Ensure `r` is a list-like sequence before concatenation. When
+            # the frontend returns a null/None payload `r` may be None which
+            # would raise TypeError on addition. Normalize to a list of
+            # placeholders matching the expected fields.
+            if isinstance(r, (list, tuple)):
+                r_list = list(r)
+            elif r is None:
+                r_list = [None] * len(ConstructionIO.FUNCTION_FIELDS)
+            else:
+                r_list = [r]
+
+            construction[o] = r_list + [
                 o2.get("show", [{}])[0].get("@object"),
                 o2.get("show", [{}])[0].get("@label"),
                 o2.get("auxiliary", [{}])[0].get("@val"),

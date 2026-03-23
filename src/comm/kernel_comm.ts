@@ -247,10 +247,16 @@ export function initKernelCommHelpers(resources: any, dbg?: any): KernelCommHelp
 						command = JSON.parse(raw as any);
 					} else if (raw && typeof raw === 'object') {
 						// IJulia sends Dicts which arrive as objects in the frontend.
-						// Try to find the actual command payload if nested (e.g. raw.data).
-						if ((raw as any).data && typeof (raw as any).data === 'object') {
+						// If the wrapper already contains command metadata (type/id/req_id),
+						// prefer the wrapper so we don't lose those fields when payload
+						// is itself an object (e.g. function calls).
+						const looksLikeCommand = !!((raw as any).type || (raw as any).req_id || (raw as any).id || (raw as any).request_id || (raw as any).requestId);
+						if (looksLikeCommand) {
+							command = raw;
+						} else if ((raw as any).data && typeof (raw as any).data === 'object') {
 							command = (raw as any).data;
 						} else if ((raw as any).payload && typeof (raw as any).payload === 'object') {
+							// payload is an object but wrapper lacks metadata; use payload
 							command = (raw as any).payload;
 						} else {
 							command = raw;

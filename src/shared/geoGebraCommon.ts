@@ -22,7 +22,20 @@ export function createProcessCommandMessage(resources: any, callRemoteSocketSend
 				const apiName = cmd.payload.name;
 				dbg('apiName:', apiName);
 				let value: any[] = [];
-				const args = cmd.payload.args;
+				let args: any = cmd.payload.args;
+				// Some senders may stringify the args array into a single string
+				// (e.g. "[\"O\", \"c\"]"). Detect that case and parse
+				// so downstream code receives a proper array.
+				if (Array.isArray(args) && args.length === 1 && typeof args[0] === 'string') {
+					try {
+						const parsedArgs = JSON.parse(args[0]);
+						if (Array.isArray(parsedArgs)) {
+							args = parsedArgs;
+						}
+					} catch (e) {
+						dbg('Failed to parse stringified args', e);
+					}
+				}
 				value = [];
 				(Array.isArray(apiName) ? apiName : [apiName]).forEach((f: string) => {
 					dbg('call', f, args);
