@@ -200,17 +200,9 @@ def _get_jl_main():
         _jl = None
         return None
 
-def _convert_julia_seq_to_pylist(res):
-    try:
-        if hasattr(res, "pylist") and callable(getattr(res, "pylist")):
-            return res.pylist()
-        if hasattr(res, "tolist") and callable(getattr(res, "tolist")):
-            return res.tolist()
-        if hasattr(res, "to_py") and callable(getattr(res, "to_py")):
-            return res.to_py()
-    except Exception:
-        pass
-    return res
+# Note: previous attempts to coerce julia sequence-like results to Python
+# lists caused inconsistent behaviour across juliacall versions. We now
+# return raw results and let callers handle conversion as needed.
 
 def jl_function_sync(name_or_names, args=None):
     """Call `jl.GeoGebra.send_function` synchronously via juliacall.
@@ -226,7 +218,7 @@ def jl_function_sync(name_or_names, args=None):
         res = jl.GeoGebra.send_function(name_or_names, *args)
     else:
         res = jl.GeoGebra.send_function(name_or_names, args)
-    return _convert_julia_seq_to_pylist(res)
+    return res
 
 def jl_command_sync(cmd_text):
     jl = _get_jl_main()
@@ -245,21 +237,17 @@ def patch_ggb_for_julia(ggb):
         return
     if not called_from_julia():
         return
-    try:
-        if getattr(ggb, "_jl_patched", False):
-            return
-        # bind methods that call into Julia
-        import types as _types
-
-        def _fn(self, name_or_names, args=None):
-            return jl_function_sync(name_or_names, args)
-
-        def _cmd(self, cmd_text):
-            return jl_command_sync(cmd_text)
-
-        ggb.function = _types.MethodType(_fn, ggb)
-        ggb.command = _types.MethodType(_cmd, ggb)
-        setattr(ggb, "_jl_patched", True)
-    except Exception:
-        # Best-effort: do not raise on failures to patch
+    if getattr(ggb, "_jl_patched", False):
         return
+    # bind methods that call into Julia
+    import types as _types
+
+    def _fn(self, name_or_names, args=None):
+        return jl_function_sync(name_or_names, args)
+
+    def _cmd(self, cmd_text):
+        return jl_command_sync(cmd_text)
+
+    ggb.function = _types.MethodType(_fn, ggb)
+    ggb.command = _types.MethodType(_cmd, ggb)
+    setattr(ggb, "_jl_patched", True)

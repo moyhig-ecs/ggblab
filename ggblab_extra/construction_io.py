@@ -115,11 +115,8 @@ class ConstructionIO:
         # synchronous juliacall results.
         # If available, patch the ggb instance to call into Julia
         # synchronously; this mirrors the previous local behavior.
-        try:
-            if patch_ggb_for_julia is not None:
-                patch_ggb_for_julia(ggb)
-        except Exception:
-            pass
+        if patch_ggb_for_julia is not None:
+            patch_ggb_for_julia(ggb)
 
         res = ggb.function("getAllObjectNames")
         objs = await maybe_await(res)
