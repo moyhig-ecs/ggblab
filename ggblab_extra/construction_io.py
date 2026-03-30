@@ -13,6 +13,7 @@ import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Union
+import re
 
 import polars as pl
 import polars.selectors as cs
@@ -47,6 +48,17 @@ except Exception:
 
 if TYPE_CHECKING:
     from ggblab.ggbapplet import GeoGebra
+
+
+def _normalize_exponent(xml: str) -> str:
+    """Convert lowercase scientific 'e' to uppercase 'E' in numeric literals.
+
+    GeoGebra sometimes emits numbers like '3.67e-16'. XML schema validation
+    used elsewhere expects 'E' (pattern includes 'E') so normalize here.
+    """
+    if not isinstance(xml, str):
+        return xml
+    return re.sub(r'(?<=\d)e(?=[+-]?\d+)', 'E', xml)
 
 
 class ConstructionIO:
@@ -126,6 +138,11 @@ class ConstructionIO:
             r = await maybe_await(r_res)
             r2_res = ggb.function("getXML", [o])
             r2 = await maybe_await(r2_res)
+            # Normalize scientific exponent notation: GeoGebra sometimes
+            # emits lowercase 'e' (e.g. 3.67e-16) which fails XML schema
+            # validators that expect 'E'. Convert to 'E' before decoding.
+            if isinstance(r2, str):
+                r2 = _normalize_exponent(r2)
             try:
                 o2 = ggb.file.ggb_schema.decode(r2)
             except Exception:
@@ -135,7 +152,9 @@ class ConstructionIO:
                     vr = ET.fromstringlist(
                         chain(["<construction>"], r, ["</construction>"])
                     )
-                    o3 = ggb.file.ggb_schema.decode(ET.tostring(vr).decode("utf-8"))
+                    xml_vr = ET.tostring(vr).decode("utf-8")
+                    xml_vr = _normalize_exponent(xml_vr)
+                    o3 = ggb.file.ggb_schema.decode(xml_vr)
                     o2 = o3.get("element", [{}])[0]
                 except Exception:
                     o2 = {}
@@ -176,16 +195,16 @@ class ConstructionIO:
         # example older label formats like `O_{1}`), run errata handlers
         # to conservatively transform the XML and retry decoding.
         try:
-            o = c.ggb_schema.decode(c.geogebra_xml)
+            o = c.ggb_schema.decode(_normalize_exponent(c.geogebra_xml))
         except Exception:
             try:
                 # Apply file-level errata handlers available on the loaded
                 # ggb_file instance and retry decoding.
                 xml_fixed = getattr(c, "_apply_xml_errata", lambda x: x)(c.geogebra_xml)
-                o = c.ggb_schema.decode(xml_fixed)
+                o = c.ggb_schema.decode(_normalize_exponent(xml_fixed))
             except Exception:
-                # If decoding still fails, re-raise by attempting the original
-                # decode again so the original exception propagates.
+                # If decoding still fails, attempt original decode so the
+                # original exception propagates as before.
                 o = c.ggb_schema.decode(c.geogebra_xml)
 
         construction: Dict[str, Any] = {}

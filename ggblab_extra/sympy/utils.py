@@ -16,6 +16,13 @@ from ggblab.utils_julia import maybe_await, called_from_julia, patch_ggb_for_jul
 from typing import Optional
 
 
+def _normalize_exponent(xml: str) -> str:
+    """Convert lowercase scientific 'e' to uppercase 'E' in GeoGebra XML."""
+    if not isinstance(xml, str):
+        return xml
+    return re.sub(r'(?<=\d)e(?=[+-]?\d+)', 'E', xml)
+
+
 def expr_from_value(
     s: str, transformations=None, local_dict=None, extra_transformations=None
 ):
@@ -316,6 +323,7 @@ async def is_applet_3d_from_ggblab(ggb=None) -> Optional[bool]:
     try:
         import xml.etree.ElementTree as ET
 
+        xml = _normalize_exponent(xml)
         root = ET.fromstring(xml)
     except (ImportError, ET.ParseError, ValueError):
         return None
