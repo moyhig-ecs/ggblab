@@ -17,8 +17,6 @@ import re
 
 import polars as pl
 import polars.selectors as cs
-import asyncio
-import types
 
 # Optional juliacall integration: if running inside a Julia-embedded Python
 # (or juliacall is available), provide async wrappers that call into
@@ -27,20 +25,38 @@ import types
 HAVE_JL = False
 _jl = None
 try:
-    # Prefer using the project's `called_from_julia()` probe to detect
-    # whether Python is running embedded inside Julia. Import helpers
-    # from `ggblab.utils_julia` to route calls to Julia when appropriate.
+    # Prefer local package helpers first (e.g. sibling `utils_julia`) so
+    # that running from the workspace uses local implementations. Fall
+    # back to the top-level `ggblab.utils_julia` for compatibility when
+    # the local helper is not available.
     try:
-        from ggblab.utils_julia import called_from_julia, maybe_await, jl_function_sync, jl_command_sync, patch_ggb_for_julia
+        from .utils_julia import (called_from_julia, jl_command_sync,
+                                  jl_function_sync, maybe_await,
+                                  patch_ggb_for_julia)
     except Exception:
-        called_from_julia = lambda: False
-        maybe_await = lambda x: x
-        jl_function_sync = None
-        jl_command_sync = None
-        patch_ggb_for_julia = None
+        try:
+            from ggblab.utils_julia import (called_from_julia, jl_command_sync,
+                                            jl_function_sync, maybe_await,
+                                            patch_ggb_for_julia)
+        except Exception:
+
+            def called_from_julia():
+                return False
+
+            def maybe_await(x):
+                return x
+
+            jl_function_sync = None
+            jl_command_sync = None
+            patch_ggb_for_julia = None
 except Exception:
-    called_from_julia = lambda: False
-    maybe_await = lambda x: x
+
+    def called_from_julia():
+        return False
+
+    def maybe_await(x):
+        return x
+
     jl_function_sync = None
     jl_command_sync = None
     patch_ggb_for_julia = None
@@ -390,13 +406,18 @@ class ConstructionIO:
         # Build a mapping from object name -> 1-based sequence index
         try:
             rows = (
-                df.select(["Name", "Sequence", "Command"]).sort("Sequence").to_dicts()
+                df.select(["Name", "Sequence", "Command", "Type", "Value"])
+                .sort("Sequence")
+                .to_dicts()
             )
         except Exception:
             # Fallback for older polars versions
             rows = sorted(
                 [
-                    {k: r.get(k) for k in ("Name", "Sequence", "Command")}
+                    {
+                        k: r.get(k)
+                        for k in ("Name", "Sequence", "Command", "Type", "Value")
+                    }
                     for r in df.to_dicts()
                 ],
                 key=lambda x: x.get("Sequence") or 0,
@@ -433,7 +454,23 @@ class ConstructionIO:
         out: list[str] = []
         for r in rows:
             cmd = r.get("Command")
-            t = _transform_command(cmd)
+            t = ""
+            if cmd:
+                t = _transform_command(cmd)
+            else:
+                # If Command is empty and the object is numeric, try using Value
+                typ = r.get("Type")
+                val = r.get("Value")
+                name = r.get("Name")
+                if (typ is not None and str(typ).lower() == "numeric") and val and name:
+                    # If Value is already an assignment like "r = 1.5", use it;
+                    # otherwise construct "Name = Value".
+                    sval = str(val)
+                    if "=" in sval:
+                        candidate = sval
+                    else:
+                        candidate = f"{name} = {sval}"
+                    t = _transform_command(candidate)
             if t:
                 out.append(t)
         return out
@@ -464,14 +501,17 @@ class ConstructionIO:
             # rows that have a non-empty Command value.
             try:
                 rows = (
-                    df.select(["Name", "Sequence", "Command"])
+                    df.select(["Name", "Sequence", "Command", "Type", "Value"])
                     .sort("Sequence")
                     .to_dicts()
                 )
             except Exception:
                 rows = sorted(
                     [
-                        {k: r.get(k) for k in ("Name", "Sequence", "Command")}
+                        {
+                            k: r.get(k)
+                            for k in ("Name", "Sequence", "Command", "Type", "Value")
+                        }
                         for r in df.to_dicts()
                     ],
                     key=lambda x: x.get("Sequence") or 0,
@@ -481,9 +521,21 @@ class ConstructionIO:
             for r in rows:
                 name = r.get("Name")
                 cmd = r.get("Command")
-                if name is None or not cmd:
+                if name is None:
                     continue
-                out.append(f"{name} = {cmd}")
+                if cmd:
+                    out.append(f"{name} = {cmd}")
+                    continue
+                # fallback: if numeric and Value is present, use Value
+                typ = r.get("Type")
+                val = r.get("Value")
+                if typ is not None and str(typ).lower() == "numeric" and val:
+                    sval = str(val)
+                    if "=" in sval:
+                        out.append(sval)
+                    else:
+                        out.append(f"{name} = {sval}")
+                    continue
             if as_string:
                 return "\n".join(out)
             return out
