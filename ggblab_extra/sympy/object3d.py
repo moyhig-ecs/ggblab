@@ -82,6 +82,12 @@ class Object3D:
             if inner is not None:
                 return cls(kind="point", obj=inner, value=value, command=command)
 
+        # Explicit `plane` should use the plane parser and return kind="plane".
+        if declared == "plane":
+            inner = _try_plane_from_value(value)
+            if inner is not None:
+                return cls(kind="plane", obj=inner, value=value, command=command)
+
         if declared == "surface":
             inner = _try_surface_from_value(value)
             if inner is not None:
@@ -197,6 +203,19 @@ def _try_surface_from_value(val: str):
 
         s = surface_from_value(val)
         return s.sympy if getattr(s, "sympy", None) is not None else s
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return None
+    return None
+
+
+def _try_plane_from_value(val: str):
+    if not val:
+        return None
+    try:
+        from .plane import plane_from_value
+
+        p = plane_from_value(val)
+        return p
     except (ImportError, AttributeError, TypeError, ValueError):
         return None
     return None
