@@ -247,6 +247,16 @@ export async function registerGlobalGGBlabCommTargets(app?: any): Promise<() => 
 									} catch (e) {
 										dbg('Failed to execute ggblab:create for inject request', e);
 									}
+									// Support create_from_bridge control messages by invoking
+									// the corresponding frontend command. Payload is passed through.
+								} else if (command && command.type === 'create_from_bridge') {
+									try {
+										if (app && app.commands && typeof app.commands.execute === 'function') {
+											await app.commands.execute('ggblab:create_from_bridge');
+										}
+									} catch (e) {
+										dbg('Failed to execute ggblab:create_from_bridge for control request', e);
+									}
 								}
 								// other control message types can be handled here
 							} catch (e) {
