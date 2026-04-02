@@ -1,0 +1,11 @@
+ca-certificates
+curl
+gnupg
+netbase
+wget
+tzdata
+mercurial
+openssh-client
+subversion
+procps
+vim
