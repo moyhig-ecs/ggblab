@@ -44,9 +44,12 @@ source = "nodejs"
 fields = ["description", "authors", "urls", "keywords"]
 
 [tool.hatch.build.targets.sdist]
+artifacts = ["ggblab/labextension"]
 exclude = [".github", "binder"]
 
 [tool.hatch.build.targets.wheel.shared-data]
+"ggblab/labextension" = "share/jupyter/labextensions/ggblab"
+"install.json" = "share/jupyter/labextensions/ggblab/install.json"
 # Labextension packaging disabled for editable installs to avoid copying
 # built JupyterLab assets into the environment during `pip install -e .`.
 # If you need prebuilt labextension packaging for releases, restore these
@@ -54,6 +57,25 @@ exclude = [".github", "binder"]
 
 [tool.hatch.build.hooks.version]
 path = "ggblab/_version.py"
+
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.5"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "ggblab/labextension/static/style.js",
+    "ggblab/labextension/package.json",
+]
+skip-if-exists = ["ggblab/labextension/static/style.js"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["jlpm"]
+
+[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
+build_cmd = "install:extension"
+npm = ["jlpm"]
+source_dir = "src"
+build_dir = "ggblab/labextension"
 
 # Jupyter builder hooks disabled for editable installs to avoid running
 # npm builds or copying labextension assets during `pip install -e .`.

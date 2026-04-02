@@ -11,8 +11,18 @@ dependencies:
   - scikit-learn
   - seaborn
   - nbgitpuller
+  - lxml
+  - xlrd
+  - jupyterlab>=4.5
+  - jupyterlab-myst
+  - jupytext
+  - openai
+  - langchain
+  - langchain-openai
+  - webio-jupyter-extension
   - pip
   - pip:
       - julia
       - juliacall
       - ggblab
+      - japanize-matplotlib
