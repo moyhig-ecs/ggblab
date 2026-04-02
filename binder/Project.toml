@@ -1,0 +1,11 @@
+[deps]
+CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
+GeoGebra = "db4dc2ca-38af-41b7-ab88-76237475b77d"
+
+[compat]
+julia = "1.12"
+
+
+
+
+
