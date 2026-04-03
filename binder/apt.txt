@@ -9,3 +9,4 @@ openssh-client
 subversion
 procps
 vim
+unzip

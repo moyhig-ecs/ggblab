@@ -16,13 +16,22 @@ dependencies:
   - jupyterlab>=4.5
   - jupyterlab-myst
   - jupytext
-  - openai
-  - langchain
-  - langchain-openai
-  - webio-jupyter-extension
+# - openai
+# - langchain
+# - langchain-openai
+# for ggblab
+  - websockets
+  - ipylab
+  - aiofiles
+  - xmlschema
+  - networkx
+  - ipykernel
+  - pyperclip
+  - psutil
   - pip
   - pip:
       - julia
       - juliacall
       - ggblab
       - japanize-matplotlib
+      - https://github.com/moyhig-ecs/WebIO.jl/releases/download/v0.8.21/webio_jupyter_extension-0.1.0-py3-none-any.whl
