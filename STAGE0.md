@@ -9,5 +9,6 @@
 
 実行 (JupyterLab):
 ```
-PYTHONPATH=$PWD jupyter lab --ServerApp.jpserver_extensions='{"ggblab.host.relay": true}'
+# jupyter_server_config.py に  c.ServerApp.jpserver_extensions = {"ggblab.host.relay": True}
+PYTHONPATH=$PWD jupyter lab --config=jupyter_server_config.py
 ```
