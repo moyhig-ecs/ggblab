@@ -34,3 +34,4 @@ PYTHONPATH=$PWD JUPYTER_CONFIG_DIR=$PWD/probes/lab_config jupyter lab --config=p
 - IJulia は control と requests の両 socket を同じ `handlers` 辞書で dispatch するので、ipykernel と違い `wire_control_handlers` 相当の細工は不要。
 - 制約: Julia の task は協調型。cell 側の待ちは `take!` / `wait` / `sleep` のように yield するものに限る(busy loop は control task を飢えさせる)。
 - 未解決(browser 側): kernel が開いた comm の target を JupyterLab が知らないと `Exception opening new comm` → comm_close される(Python でも同じ)。Python は ipywidgets の comm に相乗りして回避したが、Julia には相乗り先が無い → comm 設計を続けるなら target を登録する labextension が要る。comm 無し設計(server 拡張の郵便箱)ならこの問題自体が消える。
+- browser フル構成 8898・同 page で再 Restart & Run All (2 回目の inject): `LABELS ['A', 'B', 'c'] after 0.09 s` / `XML_LEN 4925 | has Circle: True`。

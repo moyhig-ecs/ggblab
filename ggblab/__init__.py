@@ -1,9 +1,8 @@
-"""ggblab — replay lineage (stage 0: 鞭毛 = applet mount + control-channel comm + external ops).
+"""ggblab — replay lineage (stage 0 v2: 鞭毛 = applet mount from a trusted HTML output + HTTP polling + phantom comm on
+the control socket). No ipywidgets. Conventions: C0-A control channel (kernel side only); C1 five verbs; C2 never rely
+on the shell channel for replies, queue until the applet is ready; C3 Horn-clause style.
+The anywidget adapter (host/anywidget_host.py) is kept as adapter #1 for marimo; import it explicitly."""
+from .host.control import ControlBridge, kernel_id
+from .host.html_host import GeoGebra, find_server
 
-Conventions (2026-09-03 draft): C0 origin A = control-channel comm_msg; C1 host adapters behind 5 verbs;
-C2 never rely on the shell channel for applet replies; C3 Horn-clause style (heads = discriminated unions).
-"""
-from .host.control import ControlBridge, ControlComm, kernel_id
-from .host.anywidget_host import GeoGebraWidget, GeoGebra
-
-__all__ = ["ControlBridge", "ControlComm", "kernel_id", "GeoGebraWidget", "GeoGebra"]
+__all__ = ["ControlBridge", "kernel_id", "GeoGebra", "find_server"]

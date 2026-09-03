@@ -107,18 +107,8 @@ class GeoGebraWidget(anywidget.AnyWidget):
 
 
 def _to_json(req: Request, req_id: str) -> str:
-    match req:                                   # C3: exhaustive over the Request union
-        case Eval(commands=c):   d = {"kind": "eval", "commands": list(c)}
-        case XmlIn(xml=x):       d = {"kind": "xml_in", "xml": x}
-        case XmlOut():           d = {"kind": "xml_out"}
-        case Listen(enable=e):   d = {"kind": "listen", "enable": e}
-        case Delete(label=l):    d = {"kind": "delete", "label": l}
-        case Value(label=l):     d = {"kind": "value", "label": l}
-        case _:
-            from typing import assert_never
-            assert_never(req)
-    d["req_id"] = req_id
-    return json.dumps(d)
+    from .base import to_json
+    return json.dumps(to_json(req, req_id))
 
 
 class GeoGebra:

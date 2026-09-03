@@ -1,10 +1,12 @@
 """C0-A — control-channel delivery of applet replies (Jupyter hosts).
 
-Design (2026-09-03, after the browser diagnosis): no kernel-created comm target. The reply rides the *widget's own* comm
-(ipywidgets/anywidget: open on both sides, so JupyterLab never rejects it). The relay (relay.py) sends an ipywidgets
-`custom` message for that comm_id on the kernel's CONTROL socket; ipykernel dispatches it on the control thread once
-comm_* handlers are wired into `control_handlers` (ipykernel wires them only into shell_handlers). The widget's
-`on_msg` callback resolves the pending reply -> the shell thread, blocked in `wait`, wakes up.
+Design v2 (2026-09-03 evening, teacher's ruling: no ipywidgets, frontend polls): the kernel opens a *phantom comm* —
+a comm registered only in this kernel's comm manager, with `primary=False` so no comm_open is ever published. No
+frontend sees it, so nothing can reject it. The relay (relay.py) addresses a comm_msg to its comm_id on the kernel's
+CONTROL socket; ipykernel dispatches it on the control thread once comm_* handlers are wired into `control_handlers`
+(ipykernel wires them only into shell_handlers; IJulia dispatches both sockets through the same table). The handler
+resolves the pending reply and the shell thread, blocked in `wait`, wakes up.
+Verified headless 09-03: Python 1.51 s / Julia 1.58 s while the cell blocks; shell-socket negative control times out.
 """
 from __future__ import annotations
 import os, threading, uuid, time
@@ -48,6 +50,26 @@ class ControlBridge:
         self._lock = threading.Lock()
         self.thread_seen: set[str] = set()
         self.control_wired = wire_control_handlers()
+        self.comm = None
+        self.comm_id: str | None = None
+        self._open_phantom_comm()
+
+    TARGET = "ggblab_control"
+
+    def _open_phantom_comm(self) -> None:
+        """Kernel-private comm: registered here, never announced (primary=False => no comm_open on iopub)."""
+        try:
+            from comm import get_comm_manager
+            from ipykernel.comm import Comm
+        except Exception:
+            return                                   # not an ipykernel (marimo / plain python): host supplies replies itself
+        try:
+            c = Comm(target_name=self.TARGET, primary=False)
+            get_comm_manager().register_comm(c)
+            c.on_msg(lambda msg: self.dispatch((msg.get("content") or {}).get("data") or {}))
+            self.comm, self.comm_id = c, c.comm_id
+        except Exception:
+            self.comm, self.comm_id = None, None
 
     def new_request(self) -> str:
         rid = uuid.uuid4().hex[:12]
@@ -71,7 +93,7 @@ class ControlBridge:
         self._events.append(cb)
 
     def dispatch(self, content: dict) -> None:
-        """content = {req_id?, kind?, data?} as posted by the browser (via relay) or sent by the widget model."""
+        """content = {req_id?, kind?, data?} as posted by the browser (via relay -> phantom comm) or by a reactive host."""
         self.thread_seen.add(threading.current_thread().name)
         rid = content.get("req_id")
         if rid and rid in self._pending:
@@ -84,14 +106,5 @@ class ControlBridge:
                 except Exception: pass
 
 
-# backwards-compatible name used by probe #1 (mechanism test with a bare comm)
-class ControlComm(ControlBridge):
-    TARGET = "ggblab-control"
-    def __init__(self) -> None:
-        super().__init__()
-        from comm import create_comm
-        self.comm = create_comm(target_name=self.TARGET, data={"role": "reply-channel"})
-        self.comm.on_msg(lambda msg: self.dispatch(msg.get("content", {}).get("data", {}) or {}))
-    @property
-    def comm_id(self) -> str:
-        return self.comm.comm_id
+# probe #1 (bare-comm mechanism test) keeps the old name
+ControlComm = ControlBridge

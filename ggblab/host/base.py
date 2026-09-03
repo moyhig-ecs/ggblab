@@ -67,3 +67,19 @@ class Host(Protocol):
     def send(self, req: Request) -> str: ...            # returns req_id
     def wait(self, req_id: str, timeout: float) -> object: ...
     def on_event(self, cb: Callable[[dict], None]) -> None: ...
+
+
+def to_json(req: Request, req_id: str) -> dict:
+    """One clause per head (C3); `assert_never` makes a missing clause a type error."""
+    match req:
+        case Eval(commands=c):   d = {"kind": "eval", "commands": list(c)}
+        case XmlIn(xml=x):       d = {"kind": "xml_in", "xml": x}
+        case XmlOut():           d = {"kind": "xml_out"}
+        case Listen(enable=e):   d = {"kind": "listen", "enable": e}
+        case Delete(label=l):    d = {"kind": "delete", "label": l}
+        case Value(label=l):     d = {"kind": "value", "label": l}
+        case _:
+            from typing import assert_never
+            assert_never(req)
+    d["req_id"] = req_id
+    return d
