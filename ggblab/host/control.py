@@ -35,6 +35,24 @@ class ControlComm:
         self.comm = create_comm(target_name=self.TARGET, data={"role": "reply-channel"})
         self.comm.on_msg(self._on_msg)
         self.thread_seen: set[str] = set()
+        self.control_wired = self._wire_control_channel()
+
+    @staticmethod
+    def _wire_control_channel() -> bool:
+        """ipykernel wires comm_* handlers only into shell_handlers (diag 2026-09-03: control -> 'UNKNOWN CONTROL
+        MESSAGE TYPE: comm_msg'). control_handlers is a plain dict, so register the same comm_manager handlers there;
+        process_control then dispatches them on the control thread. No-op outside ipykernel (marimo / Pluto are reactive)."""
+        try:
+            from IPython import get_ipython
+            k = getattr(get_ipython(), "kernel", None)
+            if k is None or not hasattr(k, "control_handlers") or not hasattr(k, "comm_manager"):
+                return False
+            for t in ("comm_msg", "comm_close", "comm_open"):
+                if t not in k.control_handlers and hasattr(k.comm_manager, t):
+                    k.control_handlers[t] = getattr(k.comm_manager, t)
+            return True
+        except Exception:
+            return False
 
     @property
     def comm_id(self) -> str:
