@@ -7,4 +7,4 @@
 [submodule "gh-pages"]
 	path = gh-pages
 	url = git@github.com:moyhig-ecs/moyhig-ecs.github.io.git
-	branch = gh-pages
+	branch = main
