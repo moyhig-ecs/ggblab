@@ -45,8 +45,8 @@ def run(code, timeout=60):
         elif m["msg_type"]=="error": out.append("ERROR: "+m["content"]["ename"]+": "+m["content"]["evalue"])
         elif m["msg_type"]=="status" and m["content"]["execution_state"]=="idle": break
     return "".join(out).strip()
-print(run("import threading; from ggblab.host.control import ControlComm, kernel_id; c = ControlComm(); c._pending['R']={'event':threading.Event(),'data':None,'t0':0}; print('kernel_id(from connection file) =', kernel_id()); print('comm_id =', c.comm_id); print('control wired =', c.control_wired)"))
-cid = run("print(c.comm_id)"); kid_in_kernel = run("print(kernel_id())")
+print(run("import threading; from ggblab import GeoGebra, kernel_id; g = GeoGebra(); c = g.ctl; c._pending['R']={'event':threading.Event(),'data':None,'t0':0}; print('kernel_id(from connection file) =', kernel_id()); print('widget comm_id (model_id) =', g.widget.model_id); print('control wired =', c.control_wired)"))
+cid = run("print(g.widget.model_id)"); kid_in_kernel = run("print(kernel_id())")
 print("kernel_id match (REST vs in-kernel):", kid == kid_in_kernel)
 mid = kc.execute("import time; t0=time.time(); d=c.wait('R', timeout=20); print('GOT', d, 'after', round(time.time()-t0,2), 's; threads', sorted(c.thread_seen))")
 time.sleep(1.5)
@@ -63,7 +63,7 @@ while time.time()<t_end:
     elif m["msg_type"]=="error": out.append("ERROR: "+m["content"]["ename"]+": "+m["content"]["evalue"])
     elif m["msg_type"]=="status" and m["content"]["execution_state"]=="idle": break
 res="".join(out).strip(); print(res)
-print("RESULT:", "PASS (browser-side POST -> relay -> control socket -> blocked cell returned)" if ("GOT" in res and "'via': 'relay'" in res and "Control" in res) else "FAIL")
+print("RESULT:", "PASS (browser-side POST -> relay -> control socket -> widget on_msg -> blocked cell returned)" if ("GOT" in res and "'via': 'relay'" in res and "Control" in res) else "FAIL")
 kc.stop_channels()
 try: api(f"/api/kernels/{kid}", None, "DELETE")
 except Exception: pass

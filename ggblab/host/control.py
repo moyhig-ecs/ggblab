@@ -1,11 +1,10 @@
-"""C0-A — control-channel comm: replies from the applet reach the kernel while a cell is running.
+"""C0-A — control-channel delivery of applet replies (Jupyter hosts).
 
-Kernel side: open a Comm (target 'ggblab-control'). The frontend never needs to handle this comm; it only
-needs its comm_id. The relay (jupyter_server extension, see relay.py) sends `comm_msg` on the kernel's
-CONTROL socket; ipykernel >= 6 dispatches comm messages on the control thread
-(ipykernel 7.2.0 kernelbase.py: "control channel accepts all shell messages and some of its own").
-The handler resolves the pending reply by req_id and sets a threading.Event; the shell thread, blocked
-in `wait`, wakes up.
+Design (2026-09-03, after the browser diagnosis): no kernel-created comm target. The reply rides the *widget's own* comm
+(ipywidgets/anywidget: open on both sides, so JupyterLab never rejects it). The relay (relay.py) sends an ipywidgets
+`custom` message for that comm_id on the kernel's CONTROL socket; ipykernel dispatches it on the control thread once
+comm_* handlers are wired into `control_handlers` (ipykernel wires them only into shell_handlers). The widget's
+`on_msg` callback resolves the pending reply -> the shell thread, blocked in `wait`, wakes up.
 """
 from __future__ import annotations
 import os, threading, uuid, time
@@ -24,41 +23,32 @@ def kernel_id() -> str | None:
     return None
 
 
-class ControlComm:
-    TARGET = "ggblab-control"
+def wire_control_handlers() -> bool:
+    """Register the comm_* handlers on ipykernel's control table (plain dict). No-op outside ipykernel."""
+    try:
+        from IPython import get_ipython
+        k = getattr(get_ipython(), "kernel", None)
+        if k is None or not hasattr(k, "control_handlers") or not hasattr(k, "comm_manager"):
+            return False
+        for t in ("comm_msg", "comm_close", "comm_open"):
+            if t not in k.control_handlers and hasattr(k.comm_manager, t):
+                k.control_handlers[t] = getattr(k.comm_manager, t)
+        return True
+    except Exception:
+        return False
+
+
+class ControlBridge:
+    """Pending-reply table. `resolve()` is called from the widget's on_msg (control thread in Jupyter, or the reactive
+    runtime elsewhere); `wait()` blocks the caller on an Event."""
 
     def __init__(self) -> None:
-        from comm import create_comm  # ipykernel 7 uses the `comm` package
         self._pending: dict[str, dict] = {}
         self._events: list[Callable[[dict], None]] = []
         self._lock = threading.Lock()
-        self.comm = create_comm(target_name=self.TARGET, data={"role": "reply-channel"})
-        self.comm.on_msg(self._on_msg)
         self.thread_seen: set[str] = set()
-        self.control_wired = self._wire_control_channel()
+        self.control_wired = wire_control_handlers()
 
-    @staticmethod
-    def _wire_control_channel() -> bool:
-        """ipykernel wires comm_* handlers only into shell_handlers (diag 2026-09-03: control -> 'UNKNOWN CONTROL
-        MESSAGE TYPE: comm_msg'). control_handlers is a plain dict, so register the same comm_manager handlers there;
-        process_control then dispatches them on the control thread. No-op outside ipykernel (marimo / Pluto are reactive)."""
-        try:
-            from IPython import get_ipython
-            k = getattr(get_ipython(), "kernel", None)
-            if k is None or not hasattr(k, "control_handlers") or not hasattr(k, "comm_manager"):
-                return False
-            for t in ("comm_msg", "comm_close", "comm_open"):
-                if t not in k.control_handlers and hasattr(k.comm_manager, t):
-                    k.control_handlers[t] = getattr(k.comm_manager, t)
-            return True
-        except Exception:
-            return False
-
-    @property
-    def comm_id(self) -> str:
-        return self.comm.comm_id
-
-    # --- pending replies (req_id -> {event, data}) ---
     def new_request(self) -> str:
         rid = uuid.uuid4().hex[:12]
         with self._lock:
@@ -70,6 +60,8 @@ class ControlComm:
         if ent is None:
             raise KeyError(req_id)
         if not ent["event"].wait(timeout):
+            with self._lock:
+                self._pending.pop(req_id, None)
             raise TimeoutError(f"no reply for {req_id} within {timeout}s")
         with self._lock:
             self._pending.pop(req_id, None)
@@ -78,16 +70,28 @@ class ControlComm:
     def on_event(self, cb: Callable[[dict], None]) -> None:
         self._events.append(cb)
 
-    # --- handler: runs on ipykernel's control thread when the relay sends comm_msg on CONTROL ---
-    def _on_msg(self, msg: dict) -> None:
+    def dispatch(self, content: dict) -> None:
+        """content = {req_id?, kind?, data?} as posted by the browser (via relay) or sent by the widget model."""
         self.thread_seen.add(threading.current_thread().name)
-        data = msg.get("content", {}).get("data", {}) or {}
-        rid = data.get("req_id")
+        rid = content.get("req_id")
         if rid and rid in self._pending:
             ent = self._pending[rid]
-            ent["data"] = data.get("data")
+            ent["data"] = content.get("data")
             ent["event"].set()
-        elif data.get("kind") == "event":
+        elif content.get("kind") == "event":
             for cb in self._events:
-                try: cb(data)
+                try: cb(content)
                 except Exception: pass
+
+
+# backwards-compatible name used by probe #1 (mechanism test with a bare comm)
+class ControlComm(ControlBridge):
+    TARGET = "ggblab-control"
+    def __init__(self) -> None:
+        super().__init__()
+        from comm import create_comm
+        self.comm = create_comm(target_name=self.TARGET, data={"role": "reply-channel"})
+        self.comm.on_msg(lambda msg: self.dispatch(msg.get("content", {}).get("data", {}) or {}))
+    @property
+    def comm_id(self) -> str:
+        return self.comm.comm_id

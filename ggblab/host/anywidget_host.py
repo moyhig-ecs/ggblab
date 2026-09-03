@@ -9,7 +9,7 @@ import json, pathlib
 from typing import Callable, Optional
 import anywidget, traitlets
 from .base import Request, Eval, XmlIn, XmlOut, Listen, Delete, Value
-from .control import ControlComm, kernel_id
+from .control import ControlBridge, kernel_id
 
 ESM = r"""
 const GGB_SCRIPT = "https://www.geogebra.org/apps/deployggb.js";
@@ -49,21 +49,30 @@ export default {
     await loadScript();
     const id = "ggb-" + Math.random().toString(36).slice(2);
     const div = document.createElement("div"); div.id = id; el.appendChild(div);
+    // Declared before inject(): appletOnLoad may fire synchronously when the codebase is already loaded (TDZ otherwise).
+    const queue = [];                                     // C2: never block the shell; the host queues until ready
+    async function serve(req) {
+      try { await reply(model, {req_id: req.req_id, data: handle(el.__api, req)}); }
+      catch (e) { await reply(model, {req_id: req.req_id, data: {error: String(e)}}); }
+    }
+    model.on("change:request", () => {
+      const raw = model.get("request"); if (!raw) return;
+      const req = JSON.parse(raw);
+      if (el.__api) serve(req); else queue.push(req);
+    });
     const params = Object.assign({appName: "suite", width: 800, height: 600, showToolBar: true, showAlgebraInput: true, showMenuBar: false,
       appletOnLoad: (api) => {
-        api.registerUpdateListener((label) => reply(model, {kind: "event", data: {type: "update", label}}));
-        api.registerAddListener((label) => reply(model, {kind: "event", data: {type: "add", label}}));
-        model.set("ready", true); model.save_changes();
-        el.__api = api;
+        try {
+          api.registerUpdateListener((label) => reply(model, {kind: "event", data: {type: "update", label}}));
+          api.registerAddListener((label) => reply(model, {kind: "event", data: {type: "add", label}}));
+          el.__api = api;
+          model.set("ready", true); model.save_changes();
+          while (queue.length) serve(queue.shift());     // requests that arrived before the applet was ready
+        } catch (e) { console.error("ggblab appletOnLoad failed", e); reply(model, {kind: "event", data: {type: "error", error: String(e)}}); }
       }}, JSON.parse(model.get("params") || "{}"));
-    new window.GGBApplet(params, true).inject(id);
-    model.on("change:request", async () => {
-      const raw = model.get("request"); if (!raw) return;
-      const req = JSON.parse(raw); const api = el.__api;
-      if (!api) { await reply(model, {req_id: req.req_id, data: {error: "applet not ready"}}); return; }
-      try { await reply(model, {req_id: req.req_id, data: handle(api, req)}); }
-      catch (e) { await reply(model, {req_id: req.req_id, data: {error: String(e)}}); }
-    });
+    // Pass the element, not its id: deployggb's inject(id) does document.getElementById(id) and silently gives up
+    // ("possibly bug on ajax loading?") when the output node is not attached to the document yet (kernel restart + run-all).
+    new window.GGBApplet(params, true).inject(div);
   }
 };
 """
@@ -72,12 +81,29 @@ export default {
 class GeoGebraWidget(anywidget.AnyWidget):
     _esm = ESM
     request = traitlets.Unicode("").tag(sync=True)      # kernel -> applet (JSON: {req_id, kind, ...})
-    last_reply = traitlets.Unicode("").tag(sync=True)   # reactive hosts only
+    last_reply = traitlets.Unicode("").tag(sync=True)   # reactive hosts (no relay): reply via model sync
     ready = traitlets.Bool(False).tag(sync=True)
     kernel_id = traitlets.Unicode("").tag(sync=True)
-    comm_id = traitlets.Unicode("").tag(sync=True)
+    comm_id = traitlets.Unicode("").tag(sync=True)      # = this widget's own comm (model_id): open on both sides
     relay_path = traitlets.Unicode("/ggblab/reply").tag(sync=True)
     params = traitlets.Unicode("{}").tag(sync=True)
+
+    def __init__(self, bridge: ControlBridge, **kw):
+        super().__init__(**kw)
+        self.bridge = bridge
+        self.comm_id = self.model_id                     # widget comm id -> JS posts it to the relay
+        self.on_msg(self._on_custom)                      # relay -> control thread -> here
+        self.observe(self._on_last_reply, names=["last_reply"])
+
+    def _on_custom(self, widget, content, buffers):
+        if isinstance(content, dict):
+            self.bridge.dispatch(content)
+
+    def _on_last_reply(self, change):
+        try:
+            self.bridge.dispatch(json.loads(change["new"] or "{}"))
+        except Exception:
+            pass
 
 
 def _to_json(req: Request, req_id: str) -> str:
@@ -98,22 +124,19 @@ def _to_json(req: Request, req_id: str) -> str:
 class GeoGebra:
     """Stage-0 façade over the anywidget host (satisfies eg3/eg9 semantics: command / listen / xml)."""
     def __init__(self, relay: bool = True, **params):
-        self.ctl = ControlComm() if relay else None
-        self.widget = GeoGebraWidget(kernel_id=kernel_id() or "", comm_id=self.ctl.comm_id if self.ctl else "",
-                                     relay_path="/ggblab/reply" if relay else "", params=json.dumps(params))
-        if self.ctl:
-            self.ctl.on_event(lambda d: [cb(d) for cb in self._listeners])
         self._listeners: list[Callable[[dict], None]] = []
+        self.ctl = ControlBridge()
+        self.widget = GeoGebraWidget(self.ctl, kernel_id=kernel_id() or "", relay_path="/ggblab/reply" if relay else "",
+                                     params=json.dumps(params))
+        self.ctl.on_event(lambda d: [cb(d) for cb in self._listeners])
 
     def _ipython_display_(self):
         from IPython.display import display
         display(self.widget)
 
     def _send(self, req: Request, timeout: float = 10.0):
-        rid = self.ctl.new_request() if self.ctl else "reactive"
+        rid = self.ctl.new_request()
         self.widget.request = _to_json(req, rid)
-        if not self.ctl:
-            return None
         return self.ctl.wait(rid, timeout)
 
     def command(self, *cmds: str, timeout: float = 10.0):
