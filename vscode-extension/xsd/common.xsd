@@ -85,6 +85,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 					<xs:element minOccurs="0" name="textAlign" type="stringVal"/>
 					<xs:element minOccurs="0" name="levelOfDetailQuality" type="boolVal"/>
 					<xs:element minOccurs="0" name="strokeCoords" type="stringVal"/>
+					<xs:element minOccurs="0" name="strokeBezierCoords" type="stringVal"/>
 					<xs:element minOccurs="0" name="tempUserInput">
 						<xs:complexType>
 							<xs:attribute name="display" type="xs:string"/>
@@ -242,6 +243,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 							<xs:attribute name="ev" type="nonNegInt"/>
 						</xs:complexType>
 					</xs:element>
+					<xs:element minOccurs="0" name="simplifyCoefficients" type="boolVal"/>
 					<xs:element minOccurs="0" name="slider" type="slider"/>
 					<xs:element minOccurs="0" name="slopeTriangleSize" type="intVal"/>
 					<xs:element minOccurs="0" name="spreadsheetTrace" type="spreadsheetTrace"/>
@@ -371,6 +373,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 		<xs:restriction base="xs:string">
 			<xs:pattern value="Infinity|-Infinity"/>
 		</xs:restriction>
+	</xs:simpleType>
+	<!-- geoDouble: xs:double + Infinity/-Infinity (GeoGebra writes Java-literal Infinity in matrix attrs etc) -->
+	<xs:simpleType name="geoDouble">
+		<xs:union memberTypes="xs:double specialDouble"/>
 	</xs:simpleType>
 	<xs:complexType name="doubleVal">
 		<xs:attribute name="val" type="xs:double" use="required"/>
@@ -535,16 +541,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 		<xs:attribute name="z2" type="xs:double"/>
 	</xs:complexType>
 	<xs:complexType name="matrix">
-		<xs:attribute name="A0" type="xs:double" use="required"/>
-		<xs:attribute name="A1" type="xs:double" use="required"/>
-		<xs:attribute name="A2" type="xs:double" use="required"/>
-		<xs:attribute name="A3" type="xs:double" use="required"/>
-		<xs:attribute name="A4" type="xs:double" use="required"/>
-		<xs:attribute name="A5" type="xs:double" use="required"/>
-		<xs:attribute name="A6" type="xs:double"/>
-		<xs:attribute name="A7" type="xs:double"/>
-		<xs:attribute name="A8" type="xs:double"/>
-		<xs:attribute name="A9" type="xs:double"/>
+		<xs:attribute name="A0" type="geoDouble" use="required"/>
+		<xs:attribute name="A1" type="geoDouble" use="required"/>
+		<xs:attribute name="A2" type="geoDouble" use="required"/>
+		<xs:attribute name="A3" type="geoDouble" use="required"/>
+		<xs:attribute name="A4" type="geoDouble" use="required"/>
+		<xs:attribute name="A5" type="geoDouble" use="required"/>
+		<xs:attribute name="A6" type="geoDouble"/>
+		<xs:attribute name="A7" type="geoDouble"/>
+		<xs:attribute name="A8" type="geoDouble"/>
+		<xs:attribute name="A9" type="geoDouble"/>
 	</xs:complexType>
 	<xs:simpleType name="data">
 		<xs:restriction base="xs:string">
@@ -692,7 +698,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 	</xs:simpleType>
 	<xs:simpleType name="pointStyles">
 		<xs:annotation>
-			<xs:documentation>Meanings of values: -1=use global default, 0=full dot, 1=cross, 2=empty dot, 3=plus sign, 4=full diamond, 5=empty diamond,
+			<xs:documentation>Meanings of values: -1=use global default, 0=full dot, 1=cross, 2=empty dot, 3=plus sign, 4=full diamond, 5=empty diamond, 
 	6=triangle north, 7=triangle south, 8=triangle east, 9=triangle west, 10=dot without outline.
 	</xs:documentation>
 		</xs:annotation>

@@ -1,3 +1,10 @@
 [submodule "julia/GeoGebra.jl"]
 	path = julia/GeoGebra.jl
 	url = https://github.com/moyhig-ecs/GeoGebra.jl.git
+[submodule "binder"]
+	path = binder
+	url = https://github.com/moyhig-ecs/binder-ggblab.git
+[submodule "gh-pages"]
+	path = gh-pages
+	url = git@github.com:moyhig-ecs/moyhig-ecs.github.io.git
+	branch = gh-pages

@@ -157,3 +157,8 @@ dmypy.json
 
 # Yarn cache
 .yarn/
+
+# 2026-09-03 working-tree litter (jupyter-ai chats, scratch notebooks, binder backups)
+*.chat
+Untitled*.ipynb
+binder_backup_*/
