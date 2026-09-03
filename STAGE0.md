@@ -26,3 +26,11 @@ PYTHONPATH=$PWD jupyter lab --config=jupyter_server_config.py
 ```
 PYTHONPATH=$PWD JUPYTER_CONFIG_DIR=$PWD/probes/lab_config jupyter lab --config=probes/lab_config/jupyter_server_config.py --ServerApp.port=8899 --IdentityProvider.token=stage0token
 ```
+
+## Julia (IJulia 1.34.4 / Julia 1.12.5) headless 検証 (2026-09-03 夕)
+- `probes/stage0_julia_control_roundtrip.py`: IJulia kernel を jupyter_client で起動し、cell 内で `Comm("ggblab_control", ...)` を開いて `take!(ch)` で待つ (shell は busy)。1.5 s 後に外部から comm_msg を送る。
+  - control socket → `GOT|control|on_requests_task=false|after=1.59s`(cell が塞いでいる間に届く・requests task ではない task = control task で on_msg 実行)
+  - shell socket(負の統制)→ `GOT|TIMEOUT|...|after=8.02s`(cell が終わるまで届かない)
+- IJulia は control と requests の両 socket を同じ `handlers` 辞書で dispatch するので、ipykernel と違い `wire_control_handlers` 相当の細工は不要。
+- 制約: Julia の task は協調型。cell 側の待ちは `take!` / `wait` / `sleep` のように yield するものに限る(busy loop は control task を飢えさせる)。
+- 未解決(browser 側): kernel が開いた comm の target を JupyterLab が知らないと `Exception opening new comm` → comm_close される(Python でも同じ)。Python は ipywidgets の comm に相乗りして回避したが、Julia には相乗り先が無い → comm 設計を続けるなら target を登録する labextension が要る。comm 無し設計(server 拡張の郵便箱)ならこの問題自体が消える。
