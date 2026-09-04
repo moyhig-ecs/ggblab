@@ -35,3 +35,20 @@ PYTHONPATH=$PWD JUPYTER_CONFIG_DIR=$PWD/probes/lab_config jupyter lab --config=p
 - 制約: Julia の task は協調型。cell 側の待ちは `take!` / `wait` / `sleep` のように yield するものに限る(busy loop は control task を飢えさせる)。
 - 未解決(browser 側): kernel が開いた comm の target を JupyterLab が知らないと `Exception opening new comm` → comm_close される(Python でも同じ)。Python は ipywidgets の comm に相乗りして回避したが、Julia には相乗り先が無い → comm 設計を続けるなら target を登録する labextension が要る。comm 無し設計(server 拡張の郵便箱)ならこの問題自体が消える。
 - browser フル構成 8898・同 page で再 Restart & Run All (2 回目の inject): `LABELS ['A', 'B', 'c'] after 0.09 s` / `XML_LEN 4925 | has Circle: True`。
+
+# replay / stage 0 v2 — 先生裁定 (2026-09-03 夕): ipywidgets 不依存・フロント側ポーリング・Comm は kernel 内部の宛先札のみ
+- 裁定: ipywidgets は当てにしない / jupyter_ai v3 は使う (`@claude` で確認)・server-documents は当面アドホック / フロント側でポーリング / Comm 無しは余裕ができたら実装して JupyterHub on K8s 越えを検証。
+- 経路 (browser↔server は素の HTTP だけ・kernel↔server は localhost・server→kernel は control socket の ZMQ):
+```
+kernel: g.command() → POST <server>/ggblab/send {mount, request}      (urllib・server token・list_running_servers で自分の server を特定)
+browser: GET <base>/ggblab/poll?mount=…&wait=25 (long-poll) → handle(api, req) → POST <base>/ggblab/reply {kernel_id, comm_id, req_id, data}
+server: reply → km.client().control_channel.send(comm_msg{comm_id=phantom, data})  → kernel control thread → phantom comm on_msg → Event → cell 復帰
+```
+- **phantom comm** = `Comm(target, primary=False)` を comm_manager に登録するだけ (comm_open を publish しない)。frontend は存在を知らないので拒否も comm_close も起きない。headless 検証: Python 1.51 s / IJulia 1.58 s (`probes/stage0_phantom_comm.py`)。
+- **mount** = trusted な text/html 出力 (div + inline script)。deployggb を読み `inject(el)`、poll loop は無限 (mount id 別・25 s long-poll・失敗時 1 s 待ち)。applet 準備前の request は queue。
+- 検証:
+  - headless `probes/stage0_mailbox_roundtrip.py`: poll → `[{kind: eval, commands: [A=(1,2)], req_id}]` / reply 202 / kernel `GOT … after 0.01 s | threads ['Control']`、kernel は 3 台の server から自分の server を正しく選ぶ。
+  - browser 最小構成 8899: `LABELS ['A','B','c'] after 0.29 s` / `XML_LEN 4925 | has Circle: True`、JS 例外 0。
+  - browser **フル構成 8898 (jupyter_server_documents 有効・全拡張既定)**: `LABELS ['A','B','c'] after 0.28 s` / `XML_LEN 4925 | has Circle: True`。server-documents の output processor が動いていても影響なし (我々の経路は kernel websocket を通らないため)。→ **当面のアドホック対応は不要**。
+- 試験 server 2 台 (どちらも worktree 直下・token stage0token): 最小構成 `--ServerApp.port=8899 --MCPExtensionApp.mcp_port=3002` + `JUPYTER_CONFIG_DIR=probes/lab_config`、フル構成 `--ServerApp.port=8898 --MCPExtensionApp.mcp_port=3003` + `probes/.runtime_full/jupyter_server_config.py` (= relay のみ追加)。jupyter_server_mcp が port 3001 を取り合うので 2 台目以降は mcp_port をずらす。
+- 残: eg9 listener (event) の browser 検証 / JupyterHub on K8s 越え (comm 無し版と同時に) / marimo adapter (anywidget 版を残置) / Julia host (段階 4・phantom comm は IJulia でも成立)。
