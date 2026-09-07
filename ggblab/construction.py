@@ -5,7 +5,9 @@ A Construction is an ordered sequence of statements.  Heads (C3, one clause per 
                 the set is CLOSED: a name outside HEADS is `UnknownHead` at parse time (closed-world gate).
   * FreePoint — `O=(0,0)` / `A=(1,2,3)`   (free object; the drag handle of the semantic axis)
   * FreeNumber— `k=2`                      (free scalar)
-  * Definition— `G="(A+B+C)/3"`, `s=d1+d2`, `S={{1,k},{0,1}}`, `l_t="{Intersect(c,th)}"`  (expression kept verbatim)
+  * Definition— `G="(A+B+C)/3"`, `s=d1+d2`, `S={{1,k},{0,1}}`, `l_t="{Intersect(c,th)}"`  (expression kept verbatim;
+                the surface `"…"` is Julia's escape hatch for expressions outside the 28 heads — it is NOT sent to the applet:
+                stage 2 gate #1 showed the current route strips it on all 55 quoted lines, so `render` strips it too)
   * Directive — `:const :new`, `:api getVersion()`  (host-side words, not part of the construction)
 Arguments are Ref(:A) / Ident(A) / Num / Tup / Str / Raw / nested Command (nesting is discouraged by the
 textbook discipline and is reported, not rejected).  Everything here is pure (effects live in host adapters, C1).
@@ -96,7 +98,7 @@ def render_arg(a: Arg) -> str:
         case Ident(name=n):   return n
         case Num(text=t):     return t
         case Tup(items=it):   return "(" + ", ".join(render_arg(x) for x in it) + ")"
-        case Str(text=t):     return '"' + t + '"'
+        case Str(text=t):     return t                       # the surface quotes are the escape hatch of `@ggb`, not GeoGebra text syntax (stage 2 gate #1)
         case Raw(text=t):     return t
         case Command():       return render_call(a)
         case _:               assert_never(a)
@@ -111,8 +113,7 @@ def render(s: Statement) -> str | None:
         case FreePoint(label=l, coords=c): return f"{l} = {render_arg(c)}"
         case FreeNumber(label=l, value=v): return f"{l} = {v.text}"
         case Definition(label=l, expr=e, quoted=q):
-            body = f'"{e}"' if q else e
-            return (f"{l} = " if l else "") + body
+            return (f"{l} = " if l else "") + e            # quoted or not, the current route sends the expression bare (stage 2 gate #1: 55 lines)
         case Directive():               return None
         case _:                         assert_never(s)
 

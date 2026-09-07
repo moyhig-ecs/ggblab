@@ -44,7 +44,8 @@ def test_definitions_and_free_number():
     assert parse_statement('S = {{1, k}, {0, 1}}') == Definition("S", "{{1, k}, {0, 1}}", False)
     assert parse_statement('T_1=l_t(1)') == Definition("T_1", "l_t(1)", False)       # lowercase call = expression, not a head
     assert parse_statement('k = 2') == FreeNumber("k", Num("2"))
-    assert render(Definition("G", "(A+B)/2", True)) == 'G = "(A+B)/2"'
+    assert render(Definition("G", "(A+B)/2", True)) == "G = (A+B)/2"          # stage 2 gate #1: the current route strips the surface quotes
+    assert render(Command("Point", (Str("xOyPlane"),), "P")) == "P = Point(xOyPlane)"   # Str args are rendered bare for the same reason
 
 def test_directive_renders_to_none():
     d = parse_statement(":api getVersion()"); assert d == Directive((":api", "getVersion()")) and render(d) is None

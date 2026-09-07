@@ -1,0 +1,509 @@
+{
+ "branch": "v2",
+ "commits": [
+  "b8901c1",
+  "d5c2023",
+  "9e9687b",
+  "2a2066e",
+  "264b028",
+  "fa861a4",
+  "f18811b",
+  "e3a70cf",
+  "6cc98df"
+ ],
+ "steps": [
+  {
+   "i": 0,
+   "commit": "b8901c1",
+   "subject": "replay stage 0: host interface (5 verbs), control-channel comm, jupyter_server r",
+   "nodes": 11,
+   "edges": 8,
+   "added_nodes": [
+    "examples/eg1_fileio.ipynb",
+    "examples/eg2_offline.ipynb",
+    "examples/eg3_applet.ipynb",
+    "examples/eg9_listner.ipynb",
+    "ggblab/__init__.py",
+    "ggblab/host/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "ggblab/host/base.py",
+    "ggblab/host/control.py",
+    "ggblab/host/relay.py",
+    "probes/stage0_control_roundtrip.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 8,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "examples/eg1_fileio.ipynb"
+   ],
+   "anchors": {
+    "api": 16,
+    "jup": 41
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 1,
+   "commit": "d5c2023",
+   "subject": "stage 0: wire comm_* handlers into ipykernel's control_handlers (C0-A verified h",
+   "nodes": 12,
+   "edges": 8,
+   "added_nodes": [
+    "probes/diag_control.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "examples/eg1_fileio.ipynb"
+   ],
+   "anchors": {
+    "api": 16,
+    "jup": 63
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/host/control.py",
+    "probes/stage0_control_roundtrip.py"
+   ]
+  },
+  {
+   "i": 2,
+   "commit": "9e9687b",
+   "subject": "stage 0: headless probe #2 = jupyter_server + relay extension + control socket r",
+   "nodes": 13,
+   "edges": 8,
+   "added_nodes": [
+    "probes/stage0_relay_roundtrip.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "examples/eg1_fileio.ipynb"
+   ],
+   "anchors": {
+    "api": 16,
+    "jup": 69
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 3,
+   "commit": "2a2066e",
+   "subject": "stage 0: browser round trip PASS (JupyterLab + anywidget + relay -> control sock",
+   "nodes": 14,
+   "edges": 9,
+   "added_nodes": [
+    "examples/stage0_browser_test.ipynb"
+   ],
+   "removed_nodes": [],
+   "added_edges": 1,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "examples/eg1_fileio.ipynb"
+   ],
+   "anchors": {
+    "api": 16,
+    "jup": 61
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "ggblab/host/control.py",
+    "ggblab/host/relay.py",
+    "probes/stage0_relay_roundtrip.py"
+   ]
+  },
+  {
+   "i": 4,
+   "commit": "264b028",
+   "subject": "stage 0: Julia headless probe = IJulia comm_msg on the control socket reaches on",
+   "nodes": 15,
+   "edges": 9,
+   "added_nodes": [
+    "probes/stage0_julia_control_roundtrip.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "examples/eg1_fileio.ipynb"
+   ],
+   "anchors": {
+    "api": 16,
+    "jup": 70
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 5,
+   "commit": "fa861a4",
+   "subject": "stage 0 v2 (teacher's ruling: no ipywidgets, frontend polls): phantom comm (prim",
+   "nodes": 18,
+   "edges": 11,
+   "added_nodes": [
+    "ggblab/host/html_host.py",
+    "probes/stage0_mailbox_roundtrip.py",
+    "probes/stage0_phantom_comm.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 3,
+   "removed_edges": [
+    [
+     "ggblab/__init__.py",
+     "ggblab/host/anywidget_host.py"
+    ]
+   ],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
+   ],
+   "anchors": {
+    "api": 31,
+    "jup": 114
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": false,
+   "modified_nodes": [
+    "examples/stage0_browser_test.ipynb",
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "ggblab/host/base.py",
+    "ggblab/host/control.py",
+    "ggblab/host/relay.py"
+   ]
+  },
+  {
+   "i": 6,
+   "commit": "f18811b",
+   "subject": "STAGE0.md: stage 0 v2 section (phantom comm + mailbox + HTML mount; measurements",
+   "nodes": 18,
+   "edges": 11,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
+   ],
+   "anchors": {
+    "api": 31,
+    "jup": 114
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 7,
+   "commit": "e3a70cf",
+   "subject": "STAGE0.md: move the full-config second-run line under the v2 section",
+   "nodes": 18,
+   "edges": 11,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
+   ],
+   "anchors": {
+    "api": 31,
+    "jup": 114
+   },
+   "heads": null,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 8,
+   "commit": "6cc98df",
+   "subject": "stage 1: Construction type (28 heads, teacher-confirmed 2026-09-04) + typed cons",
+   "nodes": 23,
+   "edges": 18,
+   "added_nodes": [
+    "examples/eg6_parse.ipynb",
+    "ggblab/construction.py",
+    "ggblab/parse.py",
+    "probes/stage1_closed_world.py",
+    "tests/test_construction.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 7,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
+   ],
+   "anchors": {
+    "api": 31,
+    "jup": 114
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  }
+ ],
+ "M2": {
+  "heads": {
+   "first": "6cc98df",
+   "n_states": 1,
+   "size": 28,
+   "members": [
+    "Angle",
+    "AngleBisector",
+    "ApplyMatrix",
+    "Circle",
+    "ClosestPoint",
+    "Cone",
+    "Determinant",
+    "Distance",
+    "Ellipse",
+    "Intersect",
+    "IntersectConic",
+    "Length",
+    "Line",
+    "Locus",
+    "Midpoint",
+    "PerpendicularBisector",
+    "PerpendicularLine",
+    "PerpendicularPlane",
+    "Plane",
+    "Point",
+    "Polar",
+    "Polygon",
+    "Reflect",
+    "Segment",
+    "Slider",
+    "Sphere",
+    "TriangleCenter",
+    "Vector"
+   ]
+  },
+  "verbs": {
+   "first": "b8901c1",
+   "n_states": 1,
+   "size": 6,
+   "members": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ]
+  },
+  "pass": true
+ },
+ "M3": {
+  "host_birth_max": 5,
+  "construction_birth_min": 8,
+  "pass": true
+ },
+ "births": {
+  "examples/eg1_fileio.ipynb": [
+   0,
+   "b8901c1"
+  ],
+  "ggblab/__init__.py": [
+   0,
+   "b8901c1"
+  ],
+  "examples/eg2_offline.ipynb": [
+   0,
+   "b8901c1"
+  ],
+  "examples/eg3_applet.ipynb": [
+   0,
+   "b8901c1"
+  ],
+  "examples/eg9_listner.ipynb": [
+   0,
+   "b8901c1"
+  ],
+  "ggblab/host/control.py": [
+   0,
+   "b8901c1"
+  ],
+  "ggblab/host/anywidget_host.py": [
+   0,
+   "b8901c1"
+  ],
+  "ggblab/host/__init__.py": [
+   0,
+   "b8901c1"
+  ],
+  "ggblab/host/base.py": [
+   0,
+   "b8901c1"
+  ],
+  "ggblab/host/relay.py": [
+   0,
+   "b8901c1"
+  ],
+  "probes/stage0_control_roundtrip.py": [
+   0,
+   "b8901c1"
+  ],
+  "probes/diag_control.py": [
+   1,
+   "d5c2023"
+  ],
+  "probes/stage0_relay_roundtrip.py": [
+   2,
+   "9e9687b"
+  ],
+  "examples/stage0_browser_test.ipynb": [
+   3,
+   "2a2066e"
+  ],
+  "probes/stage0_julia_control_roundtrip.py": [
+   4,
+   "264b028"
+  ],
+  "ggblab/host/html_host.py": [
+   5,
+   "fa861a4"
+  ],
+  "probes/stage0_mailbox_roundtrip.py": [
+   5,
+   "fa861a4"
+  ],
+  "probes/stage0_phantom_comm.py": [
+   5,
+   "fa861a4"
+  ],
+  "examples/eg6_parse.ipynb": [
+   8,
+   "6cc98df"
+  ],
+  "ggblab/construction.py": [
+   8,
+   "6cc98df"
+  ],
+  "ggblab/parse.py": [
+   8,
+   "6cc98df"
+  ],
+  "probes/stage1_closed_world.py": [
+   8,
+   "6cc98df"
+  ],
+  "tests/test_construction.py": [
+   8,
+   "6cc98df"
+  ]
+ },
+ "positive_control": {
+  "removed_edges": [
+   [
+    "ggblab/parse.py",
+    "ggblab/construction.py"
+   ]
+  ],
+  "heads_after": 27,
+  "M1_fails": true,
+  "M2_fails": true,
+  "pass": true
+ },
+ "verdict": "FAIL"
+}
