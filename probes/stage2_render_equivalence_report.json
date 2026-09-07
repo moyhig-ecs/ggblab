@@ -6,8 +6,9 @@
  "macro_file": "/Users/manabu/work/ggblab/julia/GeoGebra.jl/src/ggb_macros.jl",
  "classes": {
   "directive": 54,
-  "exact": 718,
+  "exact": 635,
   "paren": 4,
+  "label": 83,
   "ws": 4,
   "dynamic": 20,
   "quote": 1,
@@ -143,11 +144,11 @@
    "line": 2,
    "body": "s_BC = Segment(:B, :C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "s_BC = Segment(B, C)"
    ],
-   "v2": "s_BC = Segment(B, C)",
+   "v2": "s_{BC} = Segment(B, C)",
    "err": ""
   },
   {
@@ -169,11 +170,11 @@
    "line": 1,
    "body": "PerpendicularLine(:M, :s_BC)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "PerpendicularLine(M, s_BC)"
    ],
-   "v2": "PerpendicularLine(M, s_BC)",
+   "v2": "PerpendicularLine(M, s_{BC})",
    "err": ""
   },
   {
@@ -208,11 +209,11 @@
    "line": 2,
    "body": "s_BC2 = Segment(:B2, :C2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "s_BC2 = Segment(B2, C2)"
    ],
-   "v2": "s_BC2 = Segment(B2, C2)",
+   "v2": "s_{BC2} = Segment(B2, C2)",
    "err": ""
   },
   {
@@ -234,11 +235,11 @@
    "line": 4,
    "body": "PerpendicularLine(:M2, :s_BC2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "PerpendicularLine(M2, s_BC2)"
    ],
-   "v2": "PerpendicularLine(M2, s_BC2)",
+   "v2": "PerpendicularLine(M2, s_{BC2})",
    "err": ""
   },
   {
@@ -312,11 +313,11 @@
    "line": 0,
    "body": "l_BC = PerpendicularBisector(:B, :C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_BC = PerpendicularBisector(B, C)"
    ],
-   "v2": "l_BC = PerpendicularBisector(B, C)",
+   "v2": "l_{BC} = PerpendicularBisector(B, C)",
    "err": ""
   },
   {
@@ -325,11 +326,11 @@
    "line": 1,
    "body": "l_CA = PerpendicularBisector(:C, :A)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_CA = PerpendicularBisector(C, A)"
    ],
-   "v2": "l_CA = PerpendicularBisector(C, A)",
+   "v2": "l_{CA} = PerpendicularBisector(C, A)",
    "err": ""
   },
   {
@@ -338,11 +339,11 @@
    "line": 2,
    "body": "l_AB = PerpendicularBisector(:A, :B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_AB = PerpendicularBisector(A, B)"
    ],
-   "v2": "l_AB = PerpendicularBisector(A, B)",
+   "v2": "l_{AB} = PerpendicularBisector(A, B)",
    "err": ""
   },
   {
@@ -351,11 +352,11 @@
    "line": 0,
    "body": "O = Intersect(:l_BC, :l_CA)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "O = Intersect(l_BC, l_CA)"
    ],
-   "v2": "O = Intersect(l_BC, l_CA)",
+   "v2": "O = Intersect(l_{BC}, l_{CA})",
    "err": ""
   },
   {
@@ -521,11 +522,11 @@
    "line": 0,
    "body": "G_balance = TriangleCenter(:A, :B, :C, 2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "G_balance = TriangleCenter(A, B, C, 2)"
    ],
-   "v2": "G_balance = TriangleCenter(A, B, C, 2)",
+   "v2": "G_{balance} = TriangleCenter(A, B, C, 2)",
    "err": ""
   },
   {
@@ -536,7 +537,7 @@
    "kind": "definition",
    "class": "dynamic",
    "sent": [],
-   "v2": "G_bary = (A + B + C) / 3",
+   "v2": "G_{bary} = (A + B + C) / 3",
    "err": "UndefVarError: `A` not defined in `Main`\nSuggestion: check for spelling errors or missing imports."
   },
   {
@@ -547,7 +548,7 @@
    "kind": "command",
    "class": "dynamic",
    "sent": [],
-   "v2": "G_medians = Intersect(Segment(A, M_a), Segment(B, M_b))",
+   "v2": "G_{medians} = Intersect(Segment(A, M_a), Segment(B, M_b))",
    "err": "UndefVarError: `Segment` not defined in `Main`\nSuggestion: check for spelling errors or missing imports."
   },
   {
@@ -673,11 +674,11 @@
    "line": 2,
    "body": "s_BC = Segment(:B, :C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "s_BC = Segment(B, C)"
    ],
-   "v2": "s_BC = Segment(B, C)",
+   "v2": "s_{BC} = Segment(B, C)",
    "err": ""
   },
   {
@@ -699,11 +700,11 @@
    "line": 1,
    "body": "PerpendicularLine(:M, :s_BC)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "PerpendicularLine(M, s_BC)"
    ],
-   "v2": "PerpendicularLine(M, s_BC)",
+   "v2": "PerpendicularLine(M, s_{BC})",
    "err": ""
   },
   {
@@ -738,11 +739,11 @@
    "line": 2,
    "body": "s_BC2 = Segment(:B2, :C2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "s_BC2 = Segment(B2, C2)"
    ],
-   "v2": "s_BC2 = Segment(B2, C2)",
+   "v2": "s_{BC2} = Segment(B2, C2)",
    "err": ""
   },
   {
@@ -764,11 +765,11 @@
    "line": 4,
    "body": "PerpendicularLine(:M2, :s_BC2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "PerpendicularLine(M2, s_BC2)"
    ],
-   "v2": "PerpendicularLine(M2, s_BC2)",
+   "v2": "PerpendicularLine(M2, s_{BC2})",
    "err": ""
   },
   {
@@ -842,11 +843,11 @@
    "line": 0,
    "body": "l_BC = PerpendicularBisector(:B, :C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_BC = PerpendicularBisector(B, C)"
    ],
-   "v2": "l_BC = PerpendicularBisector(B, C)",
+   "v2": "l_{BC} = PerpendicularBisector(B, C)",
    "err": ""
   },
   {
@@ -855,11 +856,11 @@
    "line": 1,
    "body": "l_CA = PerpendicularBisector(:C, :A)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_CA = PerpendicularBisector(C, A)"
    ],
-   "v2": "l_CA = PerpendicularBisector(C, A)",
+   "v2": "l_{CA} = PerpendicularBisector(C, A)",
    "err": ""
   },
   {
@@ -868,11 +869,11 @@
    "line": 2,
    "body": "l_AB = PerpendicularBisector(:A, :B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_AB = PerpendicularBisector(A, B)"
    ],
-   "v2": "l_AB = PerpendicularBisector(A, B)",
+   "v2": "l_{AB} = PerpendicularBisector(A, B)",
    "err": ""
   },
   {
@@ -881,11 +882,11 @@
    "line": 0,
    "body": "O = Intersect(:l_BC, :l_CA)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "O = Intersect(l_BC, l_CA)"
    ],
-   "v2": "O = Intersect(l_BC, l_CA)",
+   "v2": "O = Intersect(l_{BC}, l_{CA})",
    "err": ""
   },
   {
@@ -1063,11 +1064,11 @@
    "line": 0,
    "body": "G_balance = TriangleCenter(:A, :B, :C, 2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "G_balance = TriangleCenter(A, B, C, 2)"
    ],
-   "v2": "G_balance = TriangleCenter(A, B, C, 2)",
+   "v2": "G_{balance} = TriangleCenter(A, B, C, 2)",
    "err": ""
   },
   {
@@ -1310,11 +1311,11 @@
    "line": 3,
    "body": "s_DE = Segment(:D, :E)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "s_DE = Segment(D, E)"
    ],
-   "v2": "s_DE = Segment(D, E)",
+   "v2": "s_{DE} = Segment(D, E)",
    "err": ""
   },
   {
@@ -1661,11 +1662,11 @@
    "line": 0,
    "body": "I_tc  = TriangleCenter(:A, :B, :C, 1)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_tc = TriangleCenter(A, B, C, 1)"
    ],
-   "v2": "I_tc = TriangleCenter(A, B, C, 1)",
+   "v2": "I_{tc} = TriangleCenter(A, B, C, 1)",
    "err": ""
   },
   {
@@ -1674,11 +1675,11 @@
    "line": 1,
    "body": "I_int = Intersect(:wa, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_int = Intersect(wa, wb)"
    ],
-   "v2": "I_int = Intersect(wa, wb)",
+   "v2": "I_{int} = Intersect(wa, wb)",
    "err": ""
   },
   {
@@ -1739,11 +1740,11 @@
    "line": 6,
    "body": "I_byS = ApplyMatrix(:S, :I_tc)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_byS = ApplyMatrix(S, I_tc)"
    ],
-   "v2": "I_byS = ApplyMatrix(S, I_tc)",
+   "v2": "I_{byS} = ApplyMatrix(S, I_{tc})",
    "err": ""
   },
   {
@@ -1752,11 +1753,11 @@
    "line": 0,
    "body": "G_orig = TriangleCenter(:A, :B, :C, 2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "G_orig = TriangleCenter(A, B, C, 2)"
    ],
-   "v2": "G_orig = TriangleCenter(A, B, C, 2)",
+   "v2": "G_{orig} = TriangleCenter(A, B, C, 2)",
    "err": ""
   },
   {
@@ -1778,11 +1779,11 @@
    "line": 2,
    "body": "G_byS  = ApplyMatrix(:S, :G_orig)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "G_byS = ApplyMatrix(S, G_orig)"
    ],
-   "v2": "G_byS = ApplyMatrix(S, G_orig)",
+   "v2": "G_{byS} = ApplyMatrix(S, G_{orig})",
    "err": ""
   },
   {
@@ -1830,11 +1831,11 @@
    "line": 0,
    "body": "c_AB = Line(:A, :B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "c_AB = Line(A, B)"
    ],
-   "v2": "c_AB = Line(A, B)",
+   "v2": "c_{AB} = Line(A, B)",
    "err": ""
   },
   {
@@ -1843,11 +1844,11 @@
    "line": 1,
    "body": "r = Distance(:I, :c_AB)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "r = Distance(I, c_AB)"
    ],
-   "v2": "r = Distance(I, c_AB)",
+   "v2": "r = Distance(I, c_{AB})",
    "err": ""
   },
   {
@@ -2010,11 +2011,11 @@
    "line": 0,
    "body": "I_tc  = TriangleCenter(:A, :B, :C, 1)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_tc = TriangleCenter(A, B, C, 1)"
    ],
-   "v2": "I_tc = TriangleCenter(A, B, C, 1)",
+   "v2": "I_{tc} = TriangleCenter(A, B, C, 1)",
    "err": ""
   },
   {
@@ -2075,11 +2076,11 @@
    "line": 0,
    "body": "I_byS = ApplyMatrix(:S, :I_tc)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_byS = ApplyMatrix(S, I_tc)"
    ],
-   "v2": "I_byS = ApplyMatrix(S, I_tc)",
+   "v2": "I_{byS} = ApplyMatrix(S, I_{tc})",
    "err": ""
   },
   {
@@ -2088,11 +2089,11 @@
    "line": 0,
    "body": "G_orig = TriangleCenter(:A, :B, :C, 2)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "G_orig = TriangleCenter(A, B, C, 2)"
    ],
-   "v2": "G_orig = TriangleCenter(A, B, C, 2)",
+   "v2": "G_{orig} = TriangleCenter(A, B, C, 2)",
    "err": ""
   },
   {
@@ -2114,11 +2115,11 @@
    "line": 2,
    "body": "G_byS  = ApplyMatrix(:S, :G_orig)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "G_byS = ApplyMatrix(S, G_orig)"
    ],
-   "v2": "G_byS = ApplyMatrix(S, G_orig)",
+   "v2": "G_{byS} = ApplyMatrix(S, G_{orig})",
    "err": ""
   },
   {
@@ -2166,11 +2167,11 @@
    "line": 0,
    "body": "c_AB = Line(:A, :B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "c_AB = Line(A, B)"
    ],
-   "v2": "c_AB = Line(A, B)",
+   "v2": "c_{AB} = Line(A, B)",
    "err": ""
   },
   {
@@ -2179,11 +2180,11 @@
    "line": 1,
    "body": "r = Distance(:I, :c_AB)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "r = Distance(I, c_AB)"
    ],
-   "v2": "r = Distance(I, c_AB)",
+   "v2": "r = Distance(I, c_{AB})",
    "err": ""
   },
   {
@@ -2270,11 +2271,11 @@
    "line": 0,
    "body": "a_BC = Line(:B, :C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "a_BC = Line(B, C)"
    ],
-   "v2": "a_BC = Line(B, C)",
+   "v2": "a_{BC} = Line(B, C)",
    "err": ""
   },
   {
@@ -2283,11 +2284,11 @@
    "line": 1,
    "body": "b_CA = Line(:C, :A)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "b_CA = Line(C, A)"
    ],
-   "v2": "b_CA = Line(C, A)",
+   "v2": "b_{CA} = Line(C, A)",
    "err": ""
   },
   {
@@ -2296,11 +2297,11 @@
    "line": 2,
    "body": "c_AB = Line(:A, :B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "c_AB = Line(A, B)"
    ],
-   "v2": "c_AB = Line(A, B)",
+   "v2": "c_{AB} = Line(A, B)",
    "err": ""
   },
   {
@@ -2309,11 +2310,11 @@
    "line": 0,
    "body": "ha = PerpendicularLine(:A, :a_BC)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "ha = PerpendicularLine(A, a_BC)"
    ],
-   "v2": "ha = PerpendicularLine(A, a_BC)",
+   "v2": "ha = PerpendicularLine(A, a_{BC})",
    "err": ""
   },
   {
@@ -2322,11 +2323,11 @@
    "line": 1,
    "body": "hb = PerpendicularLine(:B, :b_CA)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "hb = PerpendicularLine(B, b_CA)"
    ],
-   "v2": "hb = PerpendicularLine(B, b_CA)",
+   "v2": "hb = PerpendicularLine(B, b_{CA})",
    "err": ""
   },
   {
@@ -2335,11 +2336,11 @@
    "line": 2,
    "body": "hc = PerpendicularLine(:C, :c_AB)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "hc = PerpendicularLine(C, c_AB)"
    ],
-   "v2": "hc = PerpendicularLine(C, c_AB)",
+   "v2": "hc = PerpendicularLine(C, c_{AB})",
    "err": ""
   },
   {
@@ -2660,11 +2661,11 @@
    "line": 0,
    "body": "wa_ext = PerpendicularLine(:A, :wa)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wa_ext = PerpendicularLine(A, wa)"
    ],
-   "v2": "wa_ext = PerpendicularLine(A, wa)",
+   "v2": "wa_{ext} = PerpendicularLine(A, wa)",
    "err": ""
   },
   {
@@ -2673,11 +2674,11 @@
    "line": 1,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -2686,11 +2687,11 @@
    "line": 2,
    "body": "wc_ext = PerpendicularLine(:C, :wc)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wc_ext = PerpendicularLine(C, wc)"
    ],
-   "v2": "wc_ext = PerpendicularLine(C, wc)",
+   "v2": "wc_{ext} = PerpendicularLine(C, wc)",
    "err": ""
   },
   {
@@ -2712,11 +2713,11 @@
    "line": 1,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -2725,11 +2726,11 @@
    "line": 2,
    "body": "Ib = Intersect(:wb, :wc_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ib = Intersect(wb, wc_ext)"
    ],
-   "v2": "Ib = Intersect(wb, wc_ext)",
+   "v2": "Ib = Intersect(wb, wc_{ext})",
    "err": ""
   },
   {
@@ -2738,11 +2739,11 @@
    "line": 3,
    "body": "Ic = Intersect(:wc, :wa_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ic = Intersect(wc, wa_ext)"
    ],
-   "v2": "Ic = Intersect(wc, wa_ext)",
+   "v2": "Ic = Intersect(wc, wa_{ext})",
    "err": ""
   },
   {
@@ -3583,11 +3584,11 @@
    "line": 0,
    "body": "a_BC = Line(:B, :C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "a_BC = Line(B, C)"
    ],
-   "v2": "a_BC = Line(B, C)",
+   "v2": "a_{BC} = Line(B, C)",
    "err": ""
   },
   {
@@ -3596,11 +3597,11 @@
    "line": 1,
    "body": "b_CA = Line(:C, :A)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "b_CA = Line(C, A)"
    ],
-   "v2": "b_CA = Line(C, A)",
+   "v2": "b_{CA} = Line(C, A)",
    "err": ""
   },
   {
@@ -3609,11 +3610,11 @@
    "line": 2,
    "body": "c_AB = Line(:A, :B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "c_AB = Line(A, B)"
    ],
-   "v2": "c_AB = Line(A, B)",
+   "v2": "c_{AB} = Line(A, B)",
    "err": ""
   },
   {
@@ -3622,11 +3623,11 @@
    "line": 0,
    "body": "ha = PerpendicularLine(:A, :a_BC)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "ha = PerpendicularLine(A, a_BC)"
    ],
-   "v2": "ha = PerpendicularLine(A, a_BC)",
+   "v2": "ha = PerpendicularLine(A, a_{BC})",
    "err": ""
   },
   {
@@ -3635,11 +3636,11 @@
    "line": 1,
    "body": "hb = PerpendicularLine(:B, :b_CA)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "hb = PerpendicularLine(B, b_CA)"
    ],
-   "v2": "hb = PerpendicularLine(B, b_CA)",
+   "v2": "hb = PerpendicularLine(B, b_{CA})",
    "err": ""
   },
   {
@@ -3648,11 +3649,11 @@
    "line": 2,
    "body": "hc = PerpendicularLine(:C, :c_AB)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "hc = PerpendicularLine(C, c_AB)"
    ],
-   "v2": "hc = PerpendicularLine(C, c_AB)",
+   "v2": "hc = PerpendicularLine(C, c_{AB})",
    "err": ""
   },
   {
@@ -3778,11 +3779,11 @@
    "line": 1,
    "body": "d_HrP = Distance(:Hr, :P)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "d_HrP = Distance(Hr, P)"
    ],
-   "v2": "d_HrP = Distance(Hr, P)",
+   "v2": "d_{HrP} = Distance(Hr, P)",
    "err": ""
   },
   {
@@ -3973,11 +3974,11 @@
    "line": 0,
    "body": "wa_ext = PerpendicularLine(:A, :wa)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wa_ext = PerpendicularLine(A, wa)"
    ],
-   "v2": "wa_ext = PerpendicularLine(A, wa)",
+   "v2": "wa_{ext} = PerpendicularLine(A, wa)",
    "err": ""
   },
   {
@@ -3986,11 +3987,11 @@
    "line": 1,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -3999,11 +4000,11 @@
    "line": 2,
    "body": "wc_ext = PerpendicularLine(:C, :wc)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wc_ext = PerpendicularLine(C, wc)"
    ],
-   "v2": "wc_ext = PerpendicularLine(C, wc)",
+   "v2": "wc_{ext} = PerpendicularLine(C, wc)",
    "err": ""
   },
   {
@@ -4025,11 +4026,11 @@
    "line": 1,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -4038,11 +4039,11 @@
    "line": 2,
    "body": "Ib = Intersect(:wb, :wc_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ib = Intersect(wb, wc_ext)"
    ],
-   "v2": "Ib = Intersect(wb, wc_ext)",
+   "v2": "Ib = Intersect(wb, wc_{ext})",
    "err": ""
   },
   {
@@ -4051,11 +4052,11 @@
    "line": 3,
    "body": "Ic = Intersect(:wc, :wa_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ic = Intersect(wc, wa_ext)"
    ],
-   "v2": "Ic = Intersect(wc, wa_ext)",
+   "v2": "Ic = Intersect(wc, wa_{ext})",
    "err": ""
   },
   {
@@ -4923,11 +4924,11 @@
    "line": 0,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -4949,11 +4950,11 @@
    "line": 2,
    "body": "wc_ext = PerpendicularLine(:C, :wc)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wc_ext = PerpendicularLine(C, wc)"
    ],
-   "v2": "wc_ext = PerpendicularLine(C, wc)",
+   "v2": "wc_{ext} = PerpendicularLine(C, wc)",
    "err": ""
   },
   {
@@ -4962,11 +4963,11 @@
    "line": 3,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -5183,11 +5184,11 @@
    "line": 8,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -5196,11 +5197,11 @@
    "line": 9,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -5313,11 +5314,11 @@
    "line": 8,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -5326,11 +5327,11 @@
    "line": 9,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -5573,11 +5574,11 @@
    "line": 8,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -5586,11 +5587,11 @@
    "line": 9,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -5807,11 +5808,11 @@
    "line": 0,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -5833,11 +5834,11 @@
    "line": 2,
    "body": "wc_ext = PerpendicularLine(:C, :wc)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wc_ext = PerpendicularLine(C, wc)"
    ],
-   "v2": "wc_ext = PerpendicularLine(C, wc)",
+   "v2": "wc_{ext} = PerpendicularLine(C, wc)",
    "err": ""
   },
   {
@@ -5846,11 +5847,11 @@
    "line": 3,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -6067,11 +6068,11 @@
    "line": 3,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -6080,11 +6081,11 @@
    "line": 4,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -6327,11 +6328,11 @@
    "line": 8,
    "body": "wb_ext = PerpendicularLine(:B, :wb)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "wb_ext = PerpendicularLine(B, wb)"
    ],
-   "v2": "wb_ext = PerpendicularLine(B, wb)",
+   "v2": "wb_{ext} = PerpendicularLine(B, wb)",
    "err": ""
   },
   {
@@ -6340,11 +6341,11 @@
    "line": 9,
    "body": "Ia = Intersect(:wa, :wb_ext)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "Ia = Intersect(wa, wb_ext)"
    ],
-   "v2": "Ia = Intersect(wa, wb_ext)",
+   "v2": "Ia = Intersect(wa, wb_{ext})",
    "err": ""
   },
   {
@@ -8596,11 +8597,11 @@
    "line": 0,
    "body": "l_sec=Line(:P, (0, 1))",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_sec = Line(P, (0, 1))"
    ],
-   "v2": "l_sec = Line(P, (0, 1))",
+   "v2": "l_{sec} = Line(P, (0, 1))",
    "err": ""
   },
   {
@@ -8609,11 +8610,11 @@
    "line": 1,
    "body": "l_far=Line((4, 3), (0, 3))",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "l_far = Line((4, 3), (0, 3))"
    ],
-   "v2": "l_far = Line((4, 3), (0, 3))",
+   "v2": "l_{far} = Line((4, 3), (0, 3))",
    "err": ""
   },
   {
@@ -8869,11 +8870,11 @@
    "line": 2,
    "body": "w_Bx=PerpendicularLine(:B, :w_B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "w_Bx = PerpendicularLine(B, w_B)"
    ],
-   "v2": "w_Bx = PerpendicularLine(B, w_B)",
+   "v2": "w_{Bx} = PerpendicularLine(B, w_B)",
    "err": ""
   },
   {
@@ -8882,11 +8883,11 @@
    "line": 3,
    "body": "w_Cx=PerpendicularLine(:C, :w_C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "w_Cx = PerpendicularLine(C, w_C)"
    ],
-   "v2": "w_Cx = PerpendicularLine(C, w_C)",
+   "v2": "w_{Cx} = PerpendicularLine(C, w_C)",
    "err": ""
   },
   {
@@ -8895,11 +8896,11 @@
    "line": 4,
    "body": "I_A=Intersect(:w_Bx, :w_Cx)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_A = Intersect(w_Bx, w_Cx)"
    ],
-   "v2": "I_A = Intersect(w_Bx, w_Cx)",
+   "v2": "I_A = Intersect(w_{Bx}, w_{Cx})",
    "err": ""
   },
   {
@@ -8908,11 +8909,11 @@
    "line": 5,
    "body": "gap=Distance(:I_ref, :I_A)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "gap = Distance(I_ref, I_A)"
    ],
-   "v2": "gap = Distance(I_ref, I_A)",
+   "v2": "gap = Distance(I_{ref}, I_A)",
    "err": ""
   },
   {
@@ -10165,11 +10166,11 @@
    "line": 2,
    "body": "w_Bx=PerpendicularLine(:B, :w_B)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "w_Bx = PerpendicularLine(B, w_B)"
    ],
-   "v2": "w_Bx = PerpendicularLine(B, w_B)",
+   "v2": "w_{Bx} = PerpendicularLine(B, w_B)",
    "err": ""
   },
   {
@@ -10178,11 +10179,11 @@
    "line": 3,
    "body": "w_Cx=PerpendicularLine(:C, :w_C)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "w_Cx = PerpendicularLine(C, w_C)"
    ],
-   "v2": "w_Cx = PerpendicularLine(C, w_C)",
+   "v2": "w_{Cx} = PerpendicularLine(C, w_C)",
    "err": ""
   },
   {
@@ -10191,11 +10192,11 @@
    "line": 4,
    "body": "I_A=Intersect(:w_Bx, :w_Cx)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "I_A = Intersect(w_Bx, w_Cx)"
    ],
-   "v2": "I_A = Intersect(w_Bx, w_Cx)",
+   "v2": "I_A = Intersect(w_{Bx}, w_{Cx})",
    "err": ""
   },
   {
@@ -10204,11 +10205,11 @@
    "line": 5,
    "body": "gap=Distance(:I_ref, :I_A)",
    "kind": "command",
-   "class": "exact",
+   "class": "label",
    "sent": [
     "gap = Distance(I_ref, I_A)"
    ],
-   "v2": "gap = Distance(I_ref, I_A)",
+   "v2": "gap = Distance(I_{ref}, I_A)",
    "err": ""
   },
   {

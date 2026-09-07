@@ -9,7 +9,10 @@
   "fa861a4",
   "f18811b",
   "e3a70cf",
-  "6cc98df"
+  "6cc98df",
+  "cb2df78",
+  "0ac8688",
+  "1657468"
  ],
  "steps": [
   {
@@ -341,12 +344,136 @@
    ],
    "M1": true,
    "modified_nodes": []
+  },
+  {
+   "i": 9,
+   "commit": "cb2df78",
+   "subject": "stage 2 gate #1 + adapter + C3 instrument: v1 @ggb macro run verbatim with a rec",
+   "nodes": 29,
+   "edges": 25,
+   "added_nodes": [
+    "ggblab/adapter.py",
+    "probes/stage2/current_route_render.jl",
+    "probes/stage2/expr_to_cmd_string_v1.jl",
+    "probes/stage2_render_equivalence.py",
+    "probes/stage_codegraph_v2.py",
+    "tests/test_adapter.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 7,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/host/base.py",
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py"
+   ],
+   "anchors": {
+    "api": 69,
+    "jup": 125
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/construction.py",
+    "tests/test_construction.py"
+   ]
+  },
+  {
+   "i": 10,
+   "commit": "0ac8688",
+   "subject": "stage 2 gate #2: browser XML gate — current route (v1 1.8.1 labextension + comm,",
+   "nodes": 31,
+   "edges": 28,
+   "added_nodes": [
+    "examples/stage2_xml_gate_v2.ipynb",
+    "probes/stage2_xml_gate.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 3,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/host/base.py",
+    "ggblab/__init__.py",
+    "ggblab/adapter.py"
+   ],
+   "anchors": {
+    "api": 74,
+    "jup": 126
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 11,
+   "commit": "1657468",
+   "subject": "stage 2 rulings (teacher 2026-09-07): respect the GeoGebra API → Verb New = newC",
+   "nodes": 31,
+   "edges": 28,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/host/base.py",
+    "ggblab/__init__.py",
+    "ggblab/adapter.py"
+   ],
+   "anchors": {
+    "api": 85,
+    "jup": 126
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/adapter.py",
+    "ggblab/construction.py",
+    "ggblab/host/anywidget_host.py",
+    "ggblab/host/base.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py",
+    "probes/stage2_render_equivalence.py",
+    "probes/stage_codegraph_v2.py",
+    "tests/test_adapter.py",
+    "tests/test_construction.py"
+   ]
   }
  ],
  "M2": {
   "heads": {
    "first": "6cc98df",
    "n_states": 1,
+   "states": [
+    [
+     "6cc98df",
+     28
+    ]
+   ],
    "size": 28,
    "members": [
     "Angle",
@@ -377,20 +504,33 @@
     "Sphere",
     "TriangleCenter",
     "Vector"
-   ]
+   ],
+   "legal": true
   },
   "verbs": {
    "first": "b8901c1",
-   "n_states": 1,
-   "size": 6,
+   "n_states": 2,
+   "states": [
+    [
+     "b8901c1",
+     6
+    ],
+    [
+     "1657468",
+     7
+    ]
+   ],
+   "size": 7,
    "members": [
     "DELETE",
     "EVAL",
     "LISTEN",
+    "NEW",
     "VALUE",
     "XML_IN",
     "XML_OUT"
-   ]
+   ],
+   "legal": true
   },
   "pass": true
  },
@@ -476,11 +616,11 @@
    8,
    "6cc98df"
   ],
-  "ggblab/construction.py": [
+  "ggblab/parse.py": [
    8,
    "6cc98df"
   ],
-  "ggblab/parse.py": [
+  "ggblab/construction.py": [
    8,
    "6cc98df"
   ],
@@ -491,6 +631,38 @@
   "tests/test_construction.py": [
    8,
    "6cc98df"
+  ],
+  "ggblab/adapter.py": [
+   9,
+   "cb2df78"
+  ],
+  "probes/stage2/current_route_render.jl": [
+   9,
+   "cb2df78"
+  ],
+  "probes/stage2/expr_to_cmd_string_v1.jl": [
+   9,
+   "cb2df78"
+  ],
+  "probes/stage2_render_equivalence.py": [
+   9,
+   "cb2df78"
+  ],
+  "probes/stage_codegraph_v2.py": [
+   9,
+   "cb2df78"
+  ],
+  "tests/test_adapter.py": [
+   9,
+   "cb2df78"
+  ],
+  "examples/stage2_xml_gate_v2.ipynb": [
+   10,
+   "0ac8688"
+  ],
+  "probes/stage2_xml_gate.py": [
+   10,
+   "0ac8688"
   ]
  },
  "positive_control": {

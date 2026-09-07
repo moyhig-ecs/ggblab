@@ -2,3 +2,7 @@
 .ipynb_checkpoints/
 __pycache__/
 probes/.runtime_*/
+
+# runtime dirs created by the stage-2 test server (JUPYTER_CONFIG_DIR=probes/lab_config)
+probes/lab_config/lab/
+probes/lab_config/migrated
