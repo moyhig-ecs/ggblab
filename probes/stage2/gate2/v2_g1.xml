@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<geogebra format="5.0" version="5.4.920.0" app="suite" subApp="graphing" platform="w" id="253a8962-34fe-44f5-8d14-8e4d6cc3afef" xsi:noNamespaceSchemaLocation="https://www.geogebra.org/apps/xsd/ggb.xsd" xmlns="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<geogebra format="5.0" version="5.4.920.0" app="suite" subApp="graphing" platform="w" id="54f5cdd8-b250-43e0-8206-17eea751d74d" xsi:noNamespaceSchemaLocation="https://www.geogebra.org/apps/xsd/ggb.xsd" xmlns="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <gui>
 	<window width="798" height="600"/>
 	<perspectives>
@@ -142,9 +142,9 @@
 </element>
 <command name="LineBisector">
 	<input a0="B" a1="C"/>
-	<output a0="l_BC"/>
+	<output a0="l_{BC}"/>
 </command>
-<element type="line" label="l_BC">
+<element type="line" label="l_{BC}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -155,9 +155,9 @@
 </element>
 <command name="LineBisector">
 	<input a0="C" a1="A"/>
-	<output a0="l_CA"/>
+	<output a0="l_{CA}"/>
 </command>
-<element type="line" label="l_CA">
+<element type="line" label="l_{CA}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -168,9 +168,9 @@
 </element>
 <command name="LineBisector">
 	<input a0="A" a1="B"/>
-	<output a0="l_AB"/>
+	<output a0="l_{AB}"/>
 </command>
-<element type="line" label="l_AB">
+<element type="line" label="l_{AB}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -180,7 +180,7 @@
 	<coords x="3" y="-1" z="0"/>
 </element>
 <command name="Intersect">
-	<input a0="l_BC" a1="l_CA"/>
+	<input a0="l_{BC}" a1="l_{CA}"/>
 	<output a0="O"/>
 </command>
 <element type="point" label="O">
@@ -205,6 +205,19 @@
 	<eqnStyle style="specific"/>
 	<eigenvectors x0="1" y0="0" z0="1" x1="0" y1="1" z1="1"/>
 	<matrix A0="1" A1="1" A2="-2.5000000000000004" A3="0" A4="-0.25" A5="-0.75"/>
+</element>
+<command name="TriangleCenter">
+	<input a0="A" a1="B" a2="C" a3="3"/>
+	<output a0="D"/>
+</command>
+<element type="point" label="D">
+	<show object="true" label="true"/>
+	<objColor r="110" g="109" b="115" alpha="0"/>
+	<layer val="0"/>
+	<labelMode val="0"/>
+	<pointSize val="5"/>
+	<pointStyle val="0"/>
+	<coords x="0.25" y="0.75" z="1"/>
 </element>
 </construction>
 </geogebra>

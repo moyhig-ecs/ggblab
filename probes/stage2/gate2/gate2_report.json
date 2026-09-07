@@ -2,18 +2,20 @@
  "rows": [
   {
    "group": 0,
+   "partner_v1": 0,
    "lines": 15,
    "classes": {
     "exact": 11,
-    "paren": 2,
-    "ws": 2
+    "ws": 2,
+    "paren": 2
    },
    "elements_v1": 15,
    "elements_v2": 15,
    "byte_equal": false,
+   "equal_modulo_canonical_labels": false,
    "md5_v1": "5e8b25b2",
-   "md5_v2": "293a17f6",
-   "diff_lines": 4,
+   "md5_v2": "a9dd7817",
+   "diff_lines_after_label_canon": 4,
    "diff_only_in_expression_text": true,
    "diff": [
     "@@ -66 +66 @@",
@@ -27,34 +29,38 @@
   },
   {
    "group": 1,
+   "partner_v1": 3,
    "lines": 10,
    "classes": {
     "exact": 10
    },
-   "elements_v1": 12,
-   "elements_v2": 12,
-   "byte_equal": true,
-   "md5_v1": "33ab8903",
-   "md5_v2": "33ab8903",
-   "diff_lines": 0,
+   "elements_v1": 13,
+   "elements_v2": 13,
+   "byte_equal": false,
+   "equal_modulo_canonical_labels": true,
+   "md5_v1": "3c4267ab",
+   "md5_v2": "d44be22d",
+   "diff_lines_after_label_canon": 0,
    "diff_only_in_expression_text": false,
    "diff": [],
    "pass": true
   },
   {
    "group": 2,
+   "partner_v1": 0,
    "lines": 15,
    "classes": {
     "exact": 11,
-    "paren": 2,
-    "ws": 2
+    "ws": 2,
+    "paren": 2
    },
    "elements_v1": 15,
    "elements_v2": 15,
    "byte_equal": false,
+   "equal_modulo_canonical_labels": false,
    "md5_v1": "5e8b25b2",
-   "md5_v2": "293a17f6",
-   "diff_lines": 4,
+   "md5_v2": "a9dd7817",
+   "diff_lines_after_label_canon": 4,
    "diff_only_in_expression_text": true,
    "diff": [
     "@@ -66 +66 @@",
@@ -68,16 +74,18 @@
   },
   {
    "group": 3,
+   "partner_v1": 3,
    "lines": 10,
    "classes": {
     "exact": 10
    },
    "elements_v1": 13,
    "elements_v2": 13,
-   "byte_equal": true,
+   "byte_equal": false,
+   "equal_modulo_canonical_labels": true,
    "md5_v1": "3c4267ab",
-   "md5_v2": "3c4267ab",
-   "diff_lines": 0,
+   "md5_v2": "d44be22d",
+   "diff_lines_after_label_canon": 0,
    "diff_only_in_expression_text": false,
    "diff": [],
    "pass": true

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<geogebra format="5.0" version="5.4.920.0" app="suite" subApp="graphing" platform="w" id="f5b83794-b55f-4d73-95be-498384724645" xsi:noNamespaceSchemaLocation="https://www.geogebra.org/apps/xsd/ggb.xsd" xmlns="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<geogebra format="5.0" version="5.4.920.0" app="suite" subApp="graphing" platform="w" id="ca2774e0-1bd4-4c16-9269-26f7b1a7fc4c" xsi:noNamespaceSchemaLocation="https://www.geogebra.org/apps/xsd/ggb.xsd" xmlns="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <gui>
 	<window width="798" height="600"/>
 	<perspectives>
@@ -142,9 +142,9 @@
 </element>
 <command name="LineBisector">
 	<input a0="B" a1="C"/>
-	<output a0="l_BC"/>
+	<output a0="l_{BC}"/>
 </command>
-<element type="line" label="l_BC">
+<element type="line" label="l_{BC}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -155,9 +155,9 @@
 </element>
 <command name="LineBisector">
 	<input a0="C" a1="A"/>
-	<output a0="l_CA"/>
+	<output a0="l_{CA}"/>
 </command>
-<element type="line" label="l_CA">
+<element type="line" label="l_{CA}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -168,9 +168,9 @@
 </element>
 <command name="LineBisector">
 	<input a0="A" a1="B"/>
-	<output a0="l_AB"/>
+	<output a0="l_{AB}"/>
 </command>
-<element type="line" label="l_AB">
+<element type="line" label="l_{AB}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -180,7 +180,7 @@
 	<coords x="3" y="-1" z="0"/>
 </element>
 <command name="Intersect">
-	<input a0="l_BC" a1="l_CA"/>
+	<input a0="l_{BC}" a1="l_{CA}"/>
 	<output a0="O"/>
 </command>
 <element type="point" label="O">

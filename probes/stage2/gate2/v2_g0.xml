@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<geogebra format="5.0" version="5.4.920.0" app="suite" subApp="graphing" platform="w" id="b8118692-d9df-4291-b253-46439c035b71" xsi:noNamespaceSchemaLocation="https://www.geogebra.org/apps/xsd/ggb.xsd" xmlns="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<geogebra format="5.0" version="5.4.920.0" app="suite" subApp="graphing" platform="w" id="1ae728c0-75b7-4dad-928d-d3b99b48ae41" xsi:noNamespaceSchemaLocation="https://www.geogebra.org/apps/xsd/ggb.xsd" xmlns="" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <gui>
 	<window width="798" height="600"/>
 	<perspectives>
@@ -142,9 +142,9 @@
 </element>
 <command name="Segment">
 	<input a0="B" a1="C"/>
-	<output a0="s_BC"/>
+	<output a0="s_{BC}"/>
 </command>
-<element type="segment" label="s_BC">
+<element type="segment" label="s_{BC}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -171,7 +171,7 @@
 	<coords x="0.30901699437494745" y="0" z="1"/>
 </element>
 <command name="OrthogonalLine">
-	<input a0="M" a1="s_BC"/>
+	<input a0="M" a1="s_{BC}"/>
 	<output a0="g"/>
 </command>
 <element type="line" label="g">
@@ -207,9 +207,9 @@
 </element>
 <command name="Segment">
 	<input a0="B2" a1="C2"/>
-	<output a0="s_BC2"/>
+	<output a0="s_{BC2}"/>
 </command>
-<element type="segment" label="s_BC2">
+<element type="segment" label="s_{BC2}">
 	<show object="true" label="true"/>
 	<objColor r="0" g="0" b="0" alpha="0"/>
 	<layer val="0"/>
@@ -236,7 +236,7 @@
 	<coords x="0.6830127018922194" y="0.18301270189221933" z="1"/>
 </element>
 <command name="OrthogonalLine">
-	<input a0="M2" a1="s_BC2"/>
+	<input a0="M2" a1="s_{BC2}"/>
 	<output a0="h"/>
 </command>
 <element type="line" label="h">

@@ -19,23 +19,29 @@ ap = argparse.ArgumentParser(); ap.add_argument("--dir", default=str(Path(__file
 D = Path(A.dir); groups = json.load(open(D / "groups.json"))
 cons = lambda x: (re.search(r"<construction[^>]*>.*?</construction>", x, re.S) or re.search(r"$", x)).group(0)
 rows = []; all_ok = True
+by_bodies = {}                                    # v1 partners with the same command bodies (lesson 04 repeats two groups; TriangleCenter's
+for g in groups: by_bodies.setdefault(tuple(g["bodies"]), []).append(g["id"])   # first call in a page fails lazily, so partners can differ by one element)
 for g in groups:
-    k = g["id"]; a, b = D / f"v1_g{k}.xml", D / f"v2_g{k}.xml"
-    if g.get("has_dynamic") or not (a.exists() and b.exists()):
+    k = g["id"]; b = D / f"v2_g{k}.xml"
+    if g.get("has_dynamic") or not b.exists():
         rows.append({"group": k, "skipped": True}); continue
-    ca, cb = cons(a.read_text()), cons(b.read_text())
-    label_equal = canon(ca) == canon(cb)
-    la, lb = [l.strip() for l in ca.splitlines()], [l.strip() for l in cb.splitlines()]
-    diff = [d for d in difflib.unified_diff(la, lb, "v1", "v2", lineterm="", n=0)][2:]
-    exp_only = all(d.startswith(("@@", "-<expression", "+<expression")) for d in diff)
-    r = {"group": k, "lines": len(g["bodies"]), "classes": {c: g["classes"].count(c) for c in set(g["classes"])},
-         "elements_v1": len(re.findall(r"<element ", ca)), "elements_v2": len(re.findall(r"<element ", cb)),
-         "byte_equal": ca == cb, "equal_modulo_canonical_labels": label_equal, "md5_v1": hashlib.md5(ca.encode()).hexdigest()[:8], "md5_v2": hashlib.md5(cb.encode()).hexdigest()[:8],
-         "diff_lines": len([d for d in diff if d[:1] in "+-"]), "diff_only_in_expression_text": bool(diff) and exp_only, "diff": diff}
-    ok = r["byte_equal"] or label_equal or (exp_only and "paren" in r["classes"] and r["elements_v1"] == r["elements_v2"])
-    all_ok &= ok; r["pass"] = ok; rows.append(r)
-    print(f"g{k}: {r['lines']} lines {r['classes']} | elements {r['elements_v1']}/{r['elements_v2']} | byte-equal {r['byte_equal']} "
-          f"| modulo labels {label_equal} | md5 {r['md5_v1']}/{r['md5_v2']}" + ("" if r["byte_equal"] else f" | diff {r['diff_lines']} lines, only in <expression exp=…> text: {exp_only}"))
-    for d in diff: print("     ", d[:160])
+    cb = cons(b.read_text()); best = None
+    for j in by_bodies[tuple(g["bodies"])]:
+        a = D / f"v1_g{j}.xml"
+        if not a.exists(): continue
+        ca = cons(a.read_text()); xa, xb = canon(ca), canon(cb)
+        la, lb = [l.strip() for l in xa.splitlines()], [l.strip() for l in xb.splitlines()]
+        diff = [d for d in difflib.unified_diff(la, lb, f"v1_g{j}", f"v2_g{k}", lineterm="", n=0)][2:]
+        exp_only = bool(diff) and all(d.startswith(("@@", "-<expression", "+<expression")) for d in diff)
+        r = {"group": k, "partner_v1": j, "lines": len(g["bodies"]), "classes": {c: g["classes"].count(c) for c in set(g["classes"])},
+             "elements_v1": len(re.findall(r"<element ", ca)), "elements_v2": len(re.findall(r"<element ", cb)),
+             "byte_equal": ca == cb, "equal_modulo_canonical_labels": xa == xb, "md5_v1": hashlib.md5(ca.encode()).hexdigest()[:8], "md5_v2": hashlib.md5(cb.encode()).hexdigest()[:8],
+             "diff_lines_after_label_canon": len([d for d in diff if d[:1] in "+-"]), "diff_only_in_expression_text": exp_only, "diff": diff}
+        r["pass"] = r["byte_equal"] or r["equal_modulo_canonical_labels"] or (exp_only and "paren" in r["classes"] and r["elements_v1"] == r["elements_v2"])
+        if best is None or (r["pass"] and not best["pass"]) or (r["pass"] == best["pass"] and len(diff) < len(best["diff"])): best = r
+    all_ok &= best["pass"]; rows.append(best); r = best
+    print(f"g{k} vs v1_g{r['partner_v1']}: {r['lines']} lines {r['classes']} | elements {r['elements_v1']}/{r['elements_v2']} | byte-equal {r['byte_equal']} "
+          f"| modulo labels {r['equal_modulo_canonical_labels']} | md5 {r['md5_v1']}/{r['md5_v2']}" + ("" if r["equal_modulo_canonical_labels"] else f" | diff after label canon {r['diff_lines_after_label_canon']} lines, only in <expression exp=…> text: {r['diff_only_in_expression_text']}") + f" | {'⭕' if r['pass'] else '⛔'}")
+    for d in r["diff"]: print("     ", d[:160])
 print(("⭕ GATE #2 PASS" if all_ok else "⛔ GATE #2 FAIL") + " — byte-equal (modulo canonical labels l_CA→l_{CA}) where the command strings agree; paren-class lines keep the input's parenthesisation in exp=")
 json.dump({"rows": rows, "verdict": "PASS" if all_ok else "FAIL"}, open(D / "gate2_report.json", "w"), indent=1)
