@@ -40,3 +40,8 @@ gate #1(headless)= 命令文字列の同型実行検定、gate #2(browser)= getX
 
 ### gate #2 再走(括弧付き label を送る版・09-07 夜)
 v2 route を新 kernel で再走(`groups.json` の v2 文字列を現 render で再生成: 4 群とも 4 行が `s_{BC}` / `l_{BC}` 等に変化)。XML の label は `l_{BC}` / `l_{CA}` / `l_{AB}` / `s_{BC}` / `s_{BC2}` で保存。現行経路との比較は **canonical label を法として**(gate script を canon 後の diff + 同じ命令列の v1 相手との照合に更新): g1・g3 = v1_g3 と法一致(要素 13/13)、g0・g2 = paren 級 2 点の `exp=` だけ → **PASS**。TriangleCenter の初回失敗は今回 v2 で出ず(browser が module を cache 済)= 非決定的な applet 側の性質として記録。
+
+## 先生裁定(09-07 夜・第二便)
+- **3 = A 案**: C1 を「host 動詞 = GeoGebra Apps API の閉じた部分集合(書 4 / 読 2 / 購読 1 = 7)・追加は C3 の allow-list に裁定付きで登記」に書き換え(lancedb-rag の CONVENTIONS C1/C7・本 repo の base.py / __init__ docstring)。「五動詞」の語は捨てる。
+- **2/4 = 別枠(根深い)**: 「Julia の macro の brace の扱いは、関数の引数として渡すことを前提に考え直さないと駄目」(先生)。段階 2 の v2 側は影響なし(v2 の parser は文字列を読む)。材料 = lancedb-rag `conversations/2026-09-07/MEMO_ggblab_julia_macro_braces_20260907.md`。段階 4(Julia)の設計に持ち越す。
+

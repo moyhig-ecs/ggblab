@@ -1,11 +1,12 @@
-"""C1 — the frozen host interface: the closed subset of the GeoGebra Apps API that hosts implement (+ mount).
+"""C1 (teacher's ruling 2026-09-07, option A) — the host interface is a CLOSED SUBSET of the GeoGebra Apps API (+ mount).
 
-Each Verb kind is exactly one API method (teacher 2026-09-07: "respect the GeoGebra API"); the surface words of the
-Julia macro / Python magic (`:const :new`, `:api f()`) are a separate matter.  Heads (C3): every request from the kernel
-to the applet is one of the kinds below; a host adapter must handle all of them (`assert_never`).  Adding a kind is an
-interface change: the C3 instrument (probes/stage_codegraph_v2.py, M2) records it against its allow-list.
-  eval → evalCommandGetLabels   xml_in → setXML   xml_out → getXML   listen → register*Listener
-  delete → deleteObject         value → getValue  new → newConstruction (stage 2, 2026-09-07)
+Each Verb kind names exactly one API method.  Currently seven:
+  writes (4)        eval → evalCommandGetLabels   new → newConstruction   delete → deleteObject   xml_in → setXML
+  reads (2)         xml_out → getXML              value → getValue
+  subscription (1)  listen → register*Listener (wired once at mount; events arrive asynchronously, never on the shell channel: C2)
+Adding a kind is an interface change and is recorded by the code-graph instrument (probes/stage_codegraph_v2.py, M2)
+against a teacher-ruled allow-list.  Arbitrary API calls (`:api f()`) are NOT a verb — the surface words of the Julia
+macro / Python magic are a separate matter.  Heads (C3): a host adapter must handle every kind (`assert_never`).
 """
 from __future__ import annotations
 from dataclasses import dataclass
