@@ -1,7 +1,11 @@
-"""C1 — the frozen host interface: five verbs (+ mount). Adapters implement exactly these.
+"""C1 — the frozen host interface: the closed subset of the GeoGebra Apps API that hosts implement (+ mount).
 
-Heads (C3): every request from the kernel to the applet is one of the Verb kinds below; a host adapter
-must handle all of them (exhaustiveness is checked with `assert_never` in the adapters).
+Each Verb kind is exactly one API method (teacher 2026-09-07: "respect the GeoGebra API"); the surface words of the
+Julia macro / Python magic (`:const :new`, `:api f()`) are a separate matter.  Heads (C3): every request from the kernel
+to the applet is one of the kinds below; a host adapter must handle all of them (`assert_never`).  Adding a kind is an
+interface change: the C3 instrument (probes/stage_codegraph_v2.py, M2) records it against its allow-list.
+  eval → evalCommandGetLabels   xml_in → setXML   xml_out → getXML   listen → register*Listener
+  delete → deleteObject         value → getValue  new → newConstruction (stage 2, 2026-09-07)
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -16,6 +20,7 @@ class Verb(str, Enum):
     LISTEN = "listen"      # (un)register object update listener
     DELETE = "delete"      # delete object by label
     VALUE = "value"        # numeric / string value of an object
+    NEW = "new"            # newConstruction(): empty the construction (stage 2 adapter: `:const :new`)
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,12 @@ class Value:
     kind: Literal["value"] = "value"
 
 
-Request = Union[Eval, XmlIn, XmlOut, Listen, Delete, Value]
+@dataclass(frozen=True)
+class New:
+    kind: Literal["new"] = "new"
+
+
+Request = Union[Eval, XmlIn, XmlOut, Listen, Delete, Value, New]
 
 
 class Host(Protocol):
@@ -78,6 +88,7 @@ def to_json(req: Request, req_id: str) -> dict:
         case Listen(enable=e):   d = {"kind": "listen", "enable": e}
         case Delete(label=l):    d = {"kind": "delete", "label": l}
         case Value(label=l):     d = {"kind": "value", "label": l}
+        case New():              d = {"kind": "new"}
         case _:
             from typing import assert_never
             assert_never(req)

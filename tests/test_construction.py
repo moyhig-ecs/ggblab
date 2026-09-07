@@ -1,5 +1,5 @@
 import pytest
-from ggblab.construction import (HEADS, Command, Construction, Definition, Directive, FreeNumber, FreePoint, Ident, Num, Ref,
+from ggblab.construction import (HEADS, Command, Construction, Definition, Directive, FreeNumber, FreePoint, Num, Ref,
                                  Str, Tup, arity_ok, references, render, signature)
 from ggblab.parse import UnknownHead, ParseError, parse_cell, parse_statement, split_top, strip_comment
 
@@ -31,7 +31,7 @@ def test_arguments():
     assert isinstance(s, Command) and s.label == "sph1" and s.args == (Ref("C1"), Num("0.6260"))
     s = parse_statement('apex=Point("{0, 0, 0}")'); assert s.args == (Str("{0, 0, 0}"),)
     s = parse_statement('nrm=Vector((0.4, 0, 1))'); assert s.args == (Tup((Num("0.4"), Num("0"), Num("1"))),)
-    s = parse_statement('M_a = Midpoint(B, C)'); assert s.args == (Ident("B"), Ident("C"))
+    s = parse_statement('M_a = Midpoint(B, C)'); assert s.args == (Ref("B"), Ref("C"))
     assert references(s) == ("B", "C")
 
 def test_nested_command_is_parsed_and_visible():
@@ -66,3 +66,14 @@ def test_helpers():
     assert strip_comment('s="d1 # d2"') == 's="d1 # d2"'
     assert split_top('(0,0,2.5), :nrm, "a,b"') == ["(0,0,2.5)", ":nrm", '"a,b"']
     assert parse_cell("%%ggb\nA = (1, 2)\nCircle(A, 1)\n", dialect="python").to_ggb() == ("A = (1, 2)", "Circle(A, 1)")
+
+def test_canonical_label_follows_geogebra_identity():
+    from ggblab.construction import canonical_label
+    assert canonical_label("l_CA") == "l_{CA}" == canonical_label("l_{CA}")
+    assert canonical_label("A_12") == "A_{12}" and canonical_label("G_s") == "G_{s}" == canonical_label("G_{s}")
+    assert canonical_label("l_{C}A") == "l_{C}A" and canonical_label("xyPlane") == "xyPlane"
+
+def test_dependencies_use_canonical_identity_but_render_keeps_surface():
+    c = parse_cell("@ggb l_CA = Line(:A, :B)\n@ggb O = Intersect(l_{CA}, :m)")
+    assert c.dependencies() == (("l_{CA}", "O"),)
+    assert c.to_ggb() == ("l_CA = Line(A, B)", "O = Intersect(l_{CA}, m)")

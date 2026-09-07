@@ -5,9 +5,9 @@ batched into one `Eval` (the JS host evaluates them in order with evalCommandGet
 the host-side action the current route performs for it (stage 2 gate #1 recorded them verbatim from the v1 macro):
     :const :new   → newConstruction()        :const :undo → deleteObject(last label)
     :api f(args)  → applet API call f(args)  (not a construction statement; passed through for the host)
-`HostWord` is deliberately NOT a Verb: the frozen interface (host/base.py) has no `new` / `api` kind — whether to add
-one or to express `:const :new` as `XmlIn(<empty construction>)` is the author's decision (STAGE2.md).  `apply` therefore
-raises UnsupportedHostWord for anything the host cannot do, instead of guessing.
+Teacher 2026-09-07: respect the GeoGebra API → `newConstruction()` became the Verb `New` (host.new_construction());
+`:api f(args)` (arbitrary API calls) and the surface words of the Julia macro / Python magic are a separate matter, so
+`apply` still raises UnsupportedHostWord for them instead of guessing.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -63,9 +63,7 @@ def apply(host, c: Construction, timeout: float = 10.0) -> list:
             case Eval(commands=cmds):
                 out.append(host.command(*cmds, timeout=timeout))
             case HostWord(action="newConstruction"):
-                fn = getattr(host, "new_construction", None)
-                if fn is None: raise UnsupportedHostWord(":const :new needs a host verb (decision pending: `new` kind vs XmlIn of an empty construction)")
-                out.append(fn(timeout=timeout))
+                out.append(host.new_construction(timeout=timeout))
             case HostWord(action="undo"):
                 labels = c.labels()
                 if not labels: raise UnsupportedHostWord(":const :undo with no labelled statement before it")

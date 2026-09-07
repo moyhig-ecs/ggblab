@@ -9,10 +9,14 @@ A Construction is an ordered sequence of statements.  Heads (C3, one clause per 
                 the surface `"…"` is Julia's escape hatch for expressions outside the 28 heads — it is NOT sent to the applet:
                 stage 2 gate #1 showed the current route strips it on all 55 quoted lines, so `render` strips it too)
   * Directive — `:const :new`, `:api getVersion()`  (host-side words, not part of the construction)
-Arguments are Ref(:A) / Ident(A) / Num / Tup / Str / Raw / nested Command (nesting is discouraged by the
-textbook discipline and is reported, not rejected).  Everything here is pure (effects live in host adapters, C1).
+Arguments are Ref (a label reference, written `:A` in the Julia flavour or bare `A` — teacher 2026-09-07: bare identifiers
+are normalised to label references, they never name a host-language variable) / Num / Tup / Str / Raw / nested Command
+(nesting is discouraged by the textbook discipline and is reported, not rejected).  Label identity follows GeoGebra 5.4
+(measured 2026-09-07 through the API: `l_CA` ≡ `l_{CA}`, `A_12` ≡ `A_{12}`, `G_{s}` ≡ `G_s`, but `l_{C}A` ≠ `l_CA`):
+`canonical_label` gives the braced form for identity (DAG), while the wire keeps the surface form (gate #2 byte equality).  Everything here is pure (effects live in host adapters, C1).
 """
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 from typing import Literal, Union, get_args, assert_never
 
@@ -27,14 +31,16 @@ assert len(HEADS) == 28 and len(set(HEADS)) == 28
 
 
 # ── arguments ──────────────────────────────────────────────────────────────────────────────────────
-@dataclass(frozen=True)
-class Ref:
-    """`:A` — symbol reference in the Julia flavour of `@ggb` (the only sanctioned way to name an object)."""
-    name: str
+_SUB = re.compile(r"^([A-Za-z][A-Za-z0-9']*)_(?:\{([^{}]*)\}|([A-Za-z0-9]+))(.*)$")
+
+def canonical_label(s: str) -> str:
+    """GeoGebra label identity: `l_CA` and `l_{CA}` name the same object → `l_{CA}`; `l_{C}A` stays `l_{C}A`."""
+    m = _SUB.match(s)
+    return f"{m.group(1)}_{{{m.group(2) if m.group(2) is not None else m.group(3)}}}{m.group(4)}" if m else s
 
 @dataclass(frozen=True)
-class Ident:
-    """`A` — bare identifier (SymPy-symbol style or a Julia variable); resolved by the host, kept as written."""
+class Ref:
+    """A label reference: `:A` (Julia flavour) or bare `A`. `name` is the surface form; identity = canonical_label(name)."""
     name: str
 
 @dataclass(frozen=True)
@@ -53,7 +59,7 @@ class Str:
 class Raw:
     text: str            # anything else, verbatim (e.g. `2*Tc - O2`, `{{1, k}, {0, 1}}`)
 
-Arg = Union[Ref, Ident, Num, Tup, Str, Raw, "Command"]
+Arg = Union[Ref, Num, Tup, Str, Raw, "Command"]
 
 
 # ── statements ─────────────────────────────────────────────────────────────────────────────────────
@@ -95,7 +101,6 @@ Statement = Union[Directive, FreePoint, FreeNumber, Definition, Command]
 def render_arg(a: Arg) -> str:
     match a:
         case Ref(name=n):     return n
-        case Ident(name=n):   return n
         case Num(text=t):     return t
         case Tup(items=it):   return "(" + ", ".join(render_arg(x) for x in it) + ")"
         case Str(text=t):     return t                       # the surface quotes are the escape hatch of `@ggb`, not GeoGebra text syntax (stage 2 gate #1)
@@ -166,7 +171,7 @@ def arity_ok(c: Command) -> bool:
 def references(a: Arg | Statement) -> tuple[str, ...]:
     """Names an argument/statement refers to (Ref and Ident), in order of appearance."""
     match a:
-        case Ref(name=n) | Ident(name=n): return (n,)
+        case Ref(name=n):                  return (n,)
         case Num() | Str() | Raw():        return ()
         case Tup(items=it):                return tuple(x for i in it for x in references(i))
         case Command(args=ar):             return tuple(x for i in ar for x in references(i))
@@ -201,13 +206,16 @@ class Construction:
         return tuple(t for s in self.statements if (t := render(s)) is not None)
 
     def dependencies(self) -> tuple[tuple[str, str], ...]:
-        """Edges (referenced label → defined label) among labels defined in this construction (the DAG of C4)."""
-        defined = set(self.labels()); edges: list[tuple[str, str]] = []
+        """Edges (referenced label → defined label) among labels defined in this construction (the DAG of C4), in
+        canonical label form (so `l_CA` and `l_{CA}` are one node)."""
+        defined = {canonical_label(l) for l in self.labels()}; edges: list[tuple[str, str]] = []
         for s in self.statements:
             l = getattr(s, "label", None)
             if not l: continue
+            cl = canonical_label(l)
             for r in references(s):
-                if r in defined and r != l and (r, l) not in edges: edges.append((r, l))
+                cr = canonical_label(r)
+                if cr in defined and cr != cl and (cr, cl) not in edges: edges.append((cr, cl))
         return tuple(edges)
 
     def heads(self) -> dict[str, int]:

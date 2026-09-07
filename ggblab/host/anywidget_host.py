@@ -8,7 +8,7 @@ from __future__ import annotations
 import json, pathlib
 from typing import Callable, Optional
 import anywidget, traitlets
-from .base import Request, Eval, XmlIn, XmlOut, Listen, Delete, Value
+from .base import Request, Eval, XmlIn, XmlOut, Listen, Delete, Value, New
 from .control import ControlBridge, kernel_id
 
 ESM = r"""
@@ -40,6 +40,7 @@ function handle(api, req) {                    // C3: one clause per head; unkno
     case "xml_out": return api.getXML();
     case "delete": api.deleteObject(req.label); return true;
     case "value":  return api.getValue(req.label);
+    case "new":    api.newConstruction(); return true;
     case "listen": return true;                // listener wiring is done once at mount (see below)
     default: throw new Error("unhandled request kind: " + req.kind);
   }
@@ -139,5 +140,7 @@ class GeoGebra:
         return self._send(Delete(label), timeout)
     def value(self, label: str, timeout: float = 10.0):
         return self._send(Value(label), timeout)
+    def new_construction(self, timeout: float = 10.0):
+        return self._send(New(), timeout)
     def listen(self, cb: Callable[[dict], None]) -> None:
         self._listeners.append(cb)

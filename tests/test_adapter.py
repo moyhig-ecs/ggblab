@@ -22,12 +22,13 @@ class FakeHost:
     def __init__(self): self.sent = []
     def command(self, *cmds, timeout=10.0): self.sent.append(("eval", cmds)); return [["lbl"] for _ in cmds]
     def delete(self, label, timeout=10.0): self.sent.append(("delete", label)); return True
+    def new_construction(self, timeout=10.0): self.sent.append(("new",)); return True
 
-def test_apply_stops_at_unsupported_host_word():
+def test_apply_new_then_eval_then_stops_at_api():
     h = FakeHost()
     with pytest.raises(UnsupportedHostWord):
-        apply(h, parse_cell(CELL))                     # :const :new has no verb yet → raised before anything is sent
-    assert h.sent == []
+        apply(h, parse_cell(CELL))                     # :const :new → New verb; :api f() is still not a verb → raised after the batch
+    assert h.sent == [("new",), ("eval", ("O = (0, 0)", "Circle(O, 1)", "P = (1, 0)", "Q = (-1, 0)", "Segment(P, Q)"))]
 
 def test_apply_sends_one_eval_per_batch():
     h = FakeHost()

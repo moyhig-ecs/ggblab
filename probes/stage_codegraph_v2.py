@@ -101,12 +101,24 @@ for i, c in enumerate(commits):
     H = G.graph["hash"]; st["modified_nodes"] = sorted(f for f in N if prev and f in prev[3] and prev[3][f] != H[f])
     steps.append(st); prev = (N, E, iface, H)
 # M2: interface invariance from first appearance
+ALLOWED = {  # interface states in the order they may appear; a change is legal only if it is on this list (teacher-ruled)
+    "verbs": [["DELETE", "EVAL", "LISTEN", "VALUE", "XML_IN", "XML_OUT"],                     # stage 0 (C1 "five verbs" + value)
+              ["DELETE", "EVAL", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"]],             # stage 2, 2026-09-07: respect the GeoGebra API → newConstruction
+    "heads": [sorted(["Angle","AngleBisector","ApplyMatrix","Circle","ClosestPoint","Cone","Determinant","Distance","Ellipse","Intersect","IntersectConic",
+                      "Length","Line","Locus","Midpoint","Plane","Point","Polar","Polygon","PerpendicularBisector","PerpendicularLine","PerpendicularPlane",
+                      "Reflect","Segment","Slider","Sphere","TriangleCenter","Vector"])]}
 def invariant(key):
     seen = [ (s["commit"], build(commits[s["i"]])[1][key]) for s in steps ]
-    vals = [v for _, v in seen if v is not None]
-    return {"first": next((c for c, v in seen if v is not None), None), "n_states": len({tuple(v) for v in vals}), "size": (len(vals[-1]) if vals else None), "members": vals[-1] if vals else None}
+    states, first = [], None
+    for c, v in seen:
+        if v is None: continue
+        first = first or c
+        if not states or states[-1][1] != v: states.append((c, v))
+    legal = [v for _, v in states] == ALLOWED[key][:len(states)]
+    return {"first": first, "n_states": len(states), "states": [(c, len(v)) for c, v in states], "size": (len(states[-1][1]) if states else None),
+            "members": states[-1][1] if states else None, "legal": legal}
 M2 = {"heads": invariant("heads"), "verbs": invariant("verbs")}
-M2["pass"] = M2["heads"]["n_states"] == 1 and M2["heads"]["size"] == 28 and M2["verbs"]["n_states"] == 1
+M2["pass"] = M2["heads"]["legal"] and M2["heads"]["size"] == 28 and M2["verbs"]["legal"]
 # M3: host modules born no later than construction modules
 host_b = [births[f][0] for f in births if LANE(f) == "host"]; cons_b = [births[f][0] for f in births if LANE(f) == "construction"]
 M3 = {"host_birth_max": max(host_b) if host_b else None, "construction_birth_min": min(cons_b) if cons_b else None,
@@ -130,7 +142,7 @@ for s in steps:
 mods = [(s['commit'], s['modified_nodes']) for s in steps if s['modified_nodes']]
 print(f"  M0 edits of existing modules (recorded): " + ("; ".join(f"{c}: {', '.join(m)}" for c, m in mods) if mods else "none"))
 print(f"  {'⭕' if M1_all else '⛔'} M1 monotone (additions only) at every step" + ("" if M1_all else f"  removals at {[s['commit'] for s in steps if not s['M1']]}: {[s['removed_edges'] or s['removed_nodes'] for s in steps if not s['M1']]}"))
-print(f"  {'⭕' if M2['pass'] else '⛔'} M2 interface invariant: HEADS {M2['heads']['size']} (states {M2['heads']['n_states']}, since {M2['heads']['first']}) / Verb {M2['verbs']['size']} {M2['verbs']['members']} (states {M2['verbs']['n_states']}, since {M2['verbs']['first']})")
+print(f"  {'⭕' if M2['pass'] else '⛔'} M2 interface: HEADS {M2['heads']['size']} (states {M2['heads']['states']}) / Verb {M2['verbs']['size']} {M2['verbs']['members']} (states {M2['verbs']['states']}; every change on the allow-list: {M2['verbs']['legal']})")
 print(f"  {'⭕' if M3['pass'] else '⛔'} M3 birth order: host modules born ≤ step {M3['host_birth_max']}, construction modules ≥ step {M3['construction_birth_min']}")
 print(f"  {'⭕' if ctrl['pass'] else '⛔'} positive control: dropped import → removed edges {ctrl['removed_edges']}; dropped head → HEADS {ctrl['heads_after']}")
 verdict = M1_all and M2["pass"] and M3["pass"] and ctrl["pass"]

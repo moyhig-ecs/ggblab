@@ -17,7 +17,7 @@ import argparse, collections, glob, json, re, subprocess, sys, tempfile, time
 from pathlib import Path
 HERE = Path(__file__).resolve().parent; sys.path.insert(0, str(HERE.parent))
 from ggblab.parse import ggb_lines, parse_statement, ParseError
-from ggblab.construction import Command, Definition, Directive, render, render_call, render_arg, Ref, Ident, Num, Tup, Str, Raw
+from ggblab.construction import Command, Definition, Directive, render, render_call, render_arg, Ref, Num, Tup, Str, Raw
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--fixture", default="/Users/manabu/work/ggblab/textbook-2026"); ap.add_argument("--chapters", default="4-13")

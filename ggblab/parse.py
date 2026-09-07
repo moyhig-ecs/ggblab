@@ -6,7 +6,7 @@ Pure functions only.
 """
 from __future__ import annotations
 import re
-from .construction import (Arg, Command, Construction, Definition, Directive, FreeNumber, FreePoint, HEADS, Ident, Num,
+from .construction import (Arg, Command, Construction, Definition, Directive, FreeNumber, FreePoint, HEADS, Num,
                            Raw, Ref, Statement, Str, Tup)
 
 class ParseError(ValueError):
@@ -62,7 +62,7 @@ def parse_arg(text: str, heads: tuple[str, ...] = HEADS) -> Arg:
     if m and m.group(1)[0].isupper() and _balanced(m.group(2)):
         if m.group(1) not in heads: raise UnknownHead(m.group(1), text)
         return Command(m.group(1), tuple(parse_arg(x, heads) for x in split_top(m.group(2))))   # nested (reported by the gate)
-    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_'{}]*", t): return Ident(t)
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_'{}]*", t): return Ref(t)        # bare identifier = label reference (teacher 09-07)
     return Raw(t)
 
 def _balanced(s: str) -> bool:
