@@ -25,7 +25,9 @@ gate #1(headless)= 命令文字列の同型実行検定、gate #2(browser)= getX
 3. C1 の「五動詞」と base.py の Verb 6 個(VALUE 込み)の食い違い: 文書を 6 に直すか VALUE を外すか。
 4. 現行経路の `G_{s}` 欠陥: 教材側を直す(`G_s` に)か放置か。
 
-## gate #2(browser・未実施)
-- v2 経路: 試験 server 8899(STAGE0.md 末尾の一行)+ `examples/eg6_parse.ipynb` 系の cell(`apply(g, parse_cell(L04 cell))` → `g.xml()`)。
-- 現行経路: v1 1.8.1(py314 に install 済・labextension 有効)の通常 JupyterLab で同じ命令列(gate #1 の v1 側の文字列)を `%%ggb` で送り `getXML`。
-- 述語: `<construction>` 要素の byte 一致(view 設定は applet param 依存なので全文一致は求めない)。ws / paren / num の 12 行は両経路に各自の文字列を与えて XML が一致することを確かめる(意味的同値の実証)。applet param は v1 = `appName suite, showToolBar, showZoomButtons, showAlgebraInput, showMenuBar, autoHeight, allowUpscale false, scaleContainerClass lm-Panel, algebraInputPosition top`(`src/shared/createApplet.ts` / `components/widget.tsx`)。deployggb は v1 = cdn.geogebra.org・v2 = www.geogebra.org(同一 file か要確認)。
+## gate #2 — browser: getXML の `<construction>` byte 一致(`probes/stage2_xml_gate.py`・2026-09-07 夕)
+- 現行経路 = v1 1.8.1(py314 に install 済・labextension)を **通常の JupyterLab**(port 8890・config = `probes/stage2/gate2/v1lab_config/`)で: `GeoGebra().init()` → comm が立つまで待つ(`getVersion` を 1 s 毎に再試行)→ 群ごとに `newConstruction` → `command(v1 側の文字列)` → `function('getXML')`(driver = `probes/stage2/gate2/stage2_xml_gate_v1.ipynb`)。
+- v2 経路 = 試験 server 8899 + `examples/stage2_xml_gate_v2.ipynb`: 群ごとに新しい applet(`GeoGebra(**v1 と同じ param)`)→ `command(*v2 側の文字列)` → `xml()`。deployggb は両者 cdn.geogebra.org(applet 5.4.920.0・app suite/graphing)。
+- 対象 = lesson 04 の 4 群 50 行(gate #1 の級: exact 42 / ws 4 / paren 4・dynamic なし)。各経路に**各自の文字列**を与える(exact 行は輸送の検定、ws/paren 行は意味的同値の検定)。Playwright MCP で両 lab を駆動。
+- **結果**: g1・g3(10 行ずつ・exact のみ)= `<construction>` **byte 一致**(md5 33ab8903 / 3c4267ab・要素 12 / 13)。g0・g2(15 行・ws 2 + paren 2 を含む)= 要素 15/15、差分は paren 級 2 点 B・C の `<expression exp="…">` の括弧だけ(`cos(((2 * pi)) / 5)` vs `cos((2 * pi / 5))` = 入力の括弧が applet の式文字列に残る・ws 級 B2/C2 は applet が正規化して一致)。→ **PASS**(述語: 文字列が同じ行は byte 一致・paren 行は `exp=` の文字だけ)。報告 = `probes/stage2/gate2/gate2_report.json`・XML 8 本同梱。
+- 副産物 2(両経路で同一に再現 = applet の性質): ① **`TriangleCenter(A, B, C, 3)` は新しい page での初回呼び出しが失敗**(v2: `Discrete commands not loaded yet`・v1: `Handler execution failed`)→ 同じ page の 2 回目(g3)は成功。lesson 04 の該当 cell は初回に落ちうる。② v1 の `init()` は applet と comm が立つ前に返る(今回 ~17 s)→ 直後の `function()` は `No active Comm`。待ちが要る。server-documents 有効の初回も同じ症状だったが待ち無しなので切り分け未了。

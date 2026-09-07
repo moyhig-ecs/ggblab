@@ -1,0 +1,87 @@
+{
+ "rows": [
+  {
+   "group": 0,
+   "lines": 15,
+   "classes": {
+    "exact": 11,
+    "paren": 2,
+    "ws": 2
+   },
+   "elements_v1": 15,
+   "elements_v2": 15,
+   "byte_equal": false,
+   "md5_v1": "5e8b25b2",
+   "md5_v2": "293a17f6",
+   "diff_lines": 4,
+   "diff_only_in_expression_text": true,
+   "diff": [
+    "@@ -66 +66 @@",
+    "-<expression label=\"B\" exp=\"(cos(((2 * pi)) / 5), sin(((2 * pi)) / 5))\" type=\"point\"/>",
+    "+<expression label=\"B\" exp=\"(cos((2 * pi / 5)), sin((2 * pi / 5)))\" type=\"point\"/>",
+    "@@ -77 +77 @@",
+    "-<expression label=\"C\" exp=\"(cos(((-2 * pi)) / 5), sin(((-2 * pi)) / 5))\" type=\"point\"/>",
+    "+<expression label=\"C\" exp=\"(cos((-2 * pi / 5)), sin((-2 * pi / 5)))\" type=\"point\"/>"
+   ],
+   "pass": true
+  },
+  {
+   "group": 1,
+   "lines": 10,
+   "classes": {
+    "exact": 10
+   },
+   "elements_v1": 12,
+   "elements_v2": 12,
+   "byte_equal": true,
+   "md5_v1": "33ab8903",
+   "md5_v2": "33ab8903",
+   "diff_lines": 0,
+   "diff_only_in_expression_text": false,
+   "diff": [],
+   "pass": true
+  },
+  {
+   "group": 2,
+   "lines": 15,
+   "classes": {
+    "exact": 11,
+    "paren": 2,
+    "ws": 2
+   },
+   "elements_v1": 15,
+   "elements_v2": 15,
+   "byte_equal": false,
+   "md5_v1": "5e8b25b2",
+   "md5_v2": "293a17f6",
+   "diff_lines": 4,
+   "diff_only_in_expression_text": true,
+   "diff": [
+    "@@ -66 +66 @@",
+    "-<expression label=\"B\" exp=\"(cos(((2 * pi)) / 5), sin(((2 * pi)) / 5))\" type=\"point\"/>",
+    "+<expression label=\"B\" exp=\"(cos((2 * pi / 5)), sin((2 * pi / 5)))\" type=\"point\"/>",
+    "@@ -77 +77 @@",
+    "-<expression label=\"C\" exp=\"(cos(((-2 * pi)) / 5), sin(((-2 * pi)) / 5))\" type=\"point\"/>",
+    "+<expression label=\"C\" exp=\"(cos((-2 * pi / 5)), sin((-2 * pi / 5)))\" type=\"point\"/>"
+   ],
+   "pass": true
+  },
+  {
+   "group": 3,
+   "lines": 10,
+   "classes": {
+    "exact": 10
+   },
+   "elements_v1": 13,
+   "elements_v2": 13,
+   "byte_equal": true,
+   "md5_v1": "3c4267ab",
+   "md5_v2": "3c4267ab",
+   "diff_lines": 0,
+   "diff_only_in_expression_text": false,
+   "diff": [],
+   "pass": true
+  }
+ ],
+ "verdict": "PASS"
+}
