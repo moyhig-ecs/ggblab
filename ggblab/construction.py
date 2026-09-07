@@ -13,7 +13,10 @@ Arguments are Ref (a label reference, written `:A` in the Julia flavour or bare 
 are normalised to label references, they never name a host-language variable) / Num / Tup / Str / Raw / nested Command
 (nesting is discouraged by the textbook discipline and is reported, not rejected).  Label identity follows GeoGebra 5.4
 (measured 2026-09-07 through the API: `l_CA` ≡ `l_{CA}`, `A_12` ≡ `A_{12}`, `G_{s}` ≡ `G_s`, but `l_{C}A` ≠ `l_CA`):
-`canonical_label` gives the braced form for identity (DAG), while the wire keeps the surface form (gate #2 byte equality).  Everything here is pure (effects live in host adapters, C1).
+`canonical_label` (always braced) is the identity used by the dependency DAG; `wire_label` is what `render` sends —
+teacher 2026-09-07, from the algebra view: GeoGebra DISPLAYS an unbraced multi-character subscript as one character
+(`l_CA` → l_C A, `A_12` → A_1 2; screenshot probes/stage2/gate2/), so those labels are sent braced (`l_{CA}`), a
+deliberate deviation from the current route that the gates record as the class `label`; everything else is sent as written.  Everything here is pure (effects live in host adapters, C1).
 """
 from __future__ import annotations
 import re
@@ -34,9 +37,17 @@ assert len(HEADS) == 28 and len(set(HEADS)) == 28
 _SUB = re.compile(r"^([A-Za-z][A-Za-z0-9']*)_(?:\{([^{}]*)\}|([A-Za-z0-9]+))(.*)$")
 
 def canonical_label(s: str) -> str:
-    """GeoGebra label identity: `l_CA` and `l_{CA}` name the same object → `l_{CA}`; `l_{C}A` stays `l_{C}A`."""
+    """GeoGebra label IDENTITY (always braced): `l_CA` and `l_{CA}` name the same object → `l_{CA}`; `G_s` → `G_{s}`; `l_{C}A` stays."""
     m = _SUB.match(s)
     return f"{m.group(1)}_{{{m.group(2) if m.group(2) is not None else m.group(3)}}}{m.group(4)}" if m else s
+
+def wire_label(s: str) -> str:
+    """The form sent to the applet: the surface form, except that an UNBRACED subscript of two or more characters is
+    braced (`l_CA` → `l_{CA}`), because GeoGebra displays `l_CA` as l_C A (teacher 2026-09-07).  Single-character
+    subscripts (`M_a`, `A_b`) and already-braced labels (`G_{s}`) are sent as written — the minimal deviation from the
+    current route."""
+    m = _SUB.match(s)
+    return f"{m.group(1)}_{{{m.group(3)}}}{m.group(4)}" if m and m.group(2) is None and len(m.group(3)) >= 2 else s
 
 @dataclass(frozen=True)
 class Ref:
@@ -100,7 +111,7 @@ Statement = Union[Directive, FreePoint, FreeNumber, Definition, Command]
 # ── rendering (Construction → GeoGebra command strings) ────────────────────────────────────────────
 def render_arg(a: Arg) -> str:
     match a:
-        case Ref(name=n):     return n
+        case Ref(name=n):     return wire_label(n)
         case Num(text=t):     return t
         case Tup(items=it):   return "(" + ", ".join(render_arg(x) for x in it) + ")"
         case Str(text=t):     return t                       # the surface quotes are the escape hatch of `@ggb`, not GeoGebra text syntax (stage 2 gate #1)
@@ -114,11 +125,11 @@ def render_call(c: Command) -> str:
 def render(s: Statement) -> str | None:
     """GeoGebra command text for one statement; None for directives (they are host words, C1)."""
     match s:
-        case Command(label=l):          return (f"{l} = " if l else "") + render_call(s)
-        case FreePoint(label=l, coords=c): return f"{l} = {render_arg(c)}"
-        case FreeNumber(label=l, value=v): return f"{l} = {v.text}"
+        case Command(label=l):          return (f"{wire_label(l)} = " if l else "") + render_call(s)
+        case FreePoint(label=l, coords=c): return f"{wire_label(l)} = {render_arg(c)}"
+        case FreeNumber(label=l, value=v): return f"{wire_label(l)} = {v.text}"
         case Definition(label=l, expr=e, quoted=q):
-            return (f"{l} = " if l else "") + e            # quoted or not, the current route sends the expression bare (stage 2 gate #1: 55 lines)
+            return (f"{wire_label(l)} = " if l else "") + e   # quoted or not, the current route sends the expression bare (gate #1: 55 lines); expression text is verbatim
         case Directive():               return None
         case _:                         assert_never(s)
 

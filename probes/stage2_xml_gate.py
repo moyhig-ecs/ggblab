@@ -9,8 +9,12 @@ view/app state and the applet id, not the construction).  Inputs: probes/stage2/
 over the lesson-04 groups of the render gate (probes/stage2/gate2/groups.json: each route gets ITS OWN strings, so
 ws / paren / num-class lines test semantic equality, exact-class lines test the transport).
 usage: python probes/stage2_xml_gate.py [--dir probes/stage2/gate2]"""
-import argparse, difflib, hashlib, json, re
+import argparse, difflib, hashlib, json, re, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ggblab.construction import canonical_label
+LABEL_RE = re.compile(r"[A-Za-z][A-Za-z0-9']*_(?:\{[^{}]*\}|[A-Za-z0-9]+)")
+canon = lambda x: LABEL_RE.sub(lambda m: canonical_label(m.group(0)), x)   # teacher 09-07: v2 sends l_{CA} for l_CA
 ap = argparse.ArgumentParser(); ap.add_argument("--dir", default=str(Path(__file__).resolve().parent / "stage2" / "gate2")); A = ap.parse_args()
 D = Path(A.dir); groups = json.load(open(D / "groups.json"))
 cons = lambda x: (re.search(r"<construction[^>]*>.*?</construction>", x, re.S) or re.search(r"$", x)).group(0)
@@ -20,17 +24,18 @@ for g in groups:
     if g.get("has_dynamic") or not (a.exists() and b.exists()):
         rows.append({"group": k, "skipped": True}); continue
     ca, cb = cons(a.read_text()), cons(b.read_text())
+    label_equal = canon(ca) == canon(cb)
     la, lb = [l.strip() for l in ca.splitlines()], [l.strip() for l in cb.splitlines()]
     diff = [d for d in difflib.unified_diff(la, lb, "v1", "v2", lineterm="", n=0)][2:]
     exp_only = all(d.startswith(("@@", "-<expression", "+<expression")) for d in diff)
     r = {"group": k, "lines": len(g["bodies"]), "classes": {c: g["classes"].count(c) for c in set(g["classes"])},
          "elements_v1": len(re.findall(r"<element ", ca)), "elements_v2": len(re.findall(r"<element ", cb)),
-         "byte_equal": ca == cb, "md5_v1": hashlib.md5(ca.encode()).hexdigest()[:8], "md5_v2": hashlib.md5(cb.encode()).hexdigest()[:8],
+         "byte_equal": ca == cb, "equal_modulo_canonical_labels": label_equal, "md5_v1": hashlib.md5(ca.encode()).hexdigest()[:8], "md5_v2": hashlib.md5(cb.encode()).hexdigest()[:8],
          "diff_lines": len([d for d in diff if d[:1] in "+-"]), "diff_only_in_expression_text": bool(diff) and exp_only, "diff": diff}
-    ok = r["byte_equal"] or (exp_only and "paren" in r["classes"] and r["elements_v1"] == r["elements_v2"])
+    ok = r["byte_equal"] or label_equal or (exp_only and "paren" in r["classes"] and r["elements_v1"] == r["elements_v2"])
     all_ok &= ok; r["pass"] = ok; rows.append(r)
     print(f"g{k}: {r['lines']} lines {r['classes']} | elements {r['elements_v1']}/{r['elements_v2']} | byte-equal {r['byte_equal']} "
-          f"| md5 {r['md5_v1']}/{r['md5_v2']}" + ("" if r["byte_equal"] else f" | diff {r['diff_lines']} lines, only in <expression exp=…> text: {exp_only}"))
+          f"| modulo labels {label_equal} | md5 {r['md5_v1']}/{r['md5_v2']}" + ("" if r["byte_equal"] else f" | diff {r['diff_lines']} lines, only in <expression exp=…> text: {exp_only}"))
     for d in diff: print("     ", d[:160])
-print(("⭕ GATE #2 PASS" if all_ok else "⛔ GATE #2 FAIL") + " — byte-equal where the command strings are byte-equal (exact / ws); paren-class lines keep the input's parenthesisation in exp=")
+print(("⭕ GATE #2 PASS" if all_ok else "⛔ GATE #2 FAIL") + " — byte-equal (modulo canonical labels l_CA→l_{CA}) where the command strings agree; paren-class lines keep the input's parenthesisation in exp=")
 json.dump({"rows": rows, "verdict": "PASS" if all_ok else "FAIL"}, open(D / "gate2_report.json", "w"), indent=1)

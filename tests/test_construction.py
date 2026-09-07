@@ -73,7 +73,10 @@ def test_canonical_label_follows_geogebra_identity():
     assert canonical_label("A_12") == "A_{12}" and canonical_label("G_s") == "G_{s}" == canonical_label("G_{s}")
     assert canonical_label("l_{C}A") == "l_{C}A" and canonical_label("xyPlane") == "xyPlane"
 
-def test_dependencies_use_canonical_identity_but_render_keeps_surface():
-    c = parse_cell("@ggb l_CA = Line(:A, :B)\n@ggb O = Intersect(l_{CA}, :m)")
+def test_labels_and_refs_are_sent_in_canonical_form():
+    c = parse_cell("@ggb l_CA = Line(:A, :B)\n@ggb O = Intersect(l_{CA}, :m)\n@ggb s_BC2 = Segment(B2, :C2)")
     assert c.dependencies() == (("l_{CA}", "O"),)
-    assert c.to_ggb() == ("l_CA = Line(A, B)", "O = Intersect(l_{CA}, m)")
+    assert c.to_ggb() == ("l_{CA} = Line(A, B)", "O = Intersect(l_{CA}, m)", "s_{BC2} = Segment(B2, C2)")
+    assert c.labels() == ("l_CA", "O", "s_BC2")           # surface labels are still available for reports
+    from ggblab.construction import wire_label
+    assert wire_label("M_a") == "M_a" and wire_label("G_{s}") == "G_{s}" and wire_label("A_12") == "A_{12}" and wire_label("l_{C}A") == "l_{C}A"
