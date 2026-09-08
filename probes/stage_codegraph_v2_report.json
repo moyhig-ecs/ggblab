@@ -12,7 +12,12 @@
   "6cc98df",
   "cb2df78",
   "0ac8688",
-  "1657468"
+  "1657468",
+  "9950259",
+  "111de7f",
+  "bd78d5e",
+  "482f54a",
+  "e74e8b7"
  ],
  "steps": [
   {
@@ -220,8 +225,8 @@
    ],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -258,8 +263,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -289,8 +294,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -326,8 +331,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -462,6 +467,188 @@
     "tests/test_adapter.py",
     "tests/test_construction.py"
    ]
+  },
+  {
+   "i": 12,
+   "commit": "9950259",
+   "subject": "stage 2 ruling 2 (teacher 2026-09-07): labels with an unbraced multi-character s",
+   "nodes": 32,
+   "edges": 34,
+   "added_nodes": [
+    "examples/stage2_new_verb.ipynb"
+   ],
+   "removed_nodes": [],
+   "added_edges": 6,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/stage2_new_verb.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 85,
+    "jup": 127
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/construction.py",
+    "probes/stage2_render_equivalence.py",
+    "probes/stage2_xml_gate.py",
+    "tests/test_construction.py"
+   ]
+  },
+  {
+   "i": 13,
+   "commit": "111de7f",
+   "subject": "stage 2: rulings recorded + gate #2 re-run with braced labels (v2 stores l_{CA};",
+   "nodes": 32,
+   "edges": 34,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/stage2_new_verb.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 85,
+    "jup": 127
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "examples/stage2_new_verb.ipynb",
+    "probes/stage2_xml_gate.py"
+   ]
+  },
+  {
+   "i": 14,
+   "commit": "bd78d5e",
+   "subject": "C1 option A (teacher 2026-09-07): host verbs = a closed subset of the GeoGebra A",
+   "nodes": 32,
+   "edges": 34,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/stage2_new_verb.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 85,
+    "jup": 127
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/__init__.py",
+    "ggblab/host/base.py"
+   ]
+  },
+  {
+   "i": 15,
+   "commit": "482f54a",
+   "subject": "stage 2: gate re-run outputs after wire_label (render equivalence exact 635 / la",
+   "nodes": 32,
+   "edges": 34,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/stage2_new_verb.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 85,
+    "jup": 127
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "examples/stage2_xml_gate_v2.ipynb"
+   ]
+  },
+  {
+   "i": 16,
+   "commit": "e74e8b7",
+   "subject": "stage 1 acceptance: ggblab_extra data-in (from_xml / from_ggb_file; v1 decode+bu",
+   "nodes": 38,
+   "edges": 41,
+   "added_nodes": [
+    "examples/eg4_errors.ipynb",
+    "examples/eg5_construction.ipynb",
+    "ggblab/schema.py",
+    "ggblab/xml_errata.py",
+    "probes/stage1_dataframe_parity.py",
+    "tests/test_construction_io.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 7,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/eg4_errors.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 98,
+    "jup": 129
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
   }
  ],
  "M2": {
@@ -560,11 +747,11 @@
    0,
    "b8901c1"
   ],
-  "ggblab/host/control.py": [
+  "ggblab/host/anywidget_host.py": [
    0,
    "b8901c1"
   ],
-  "ggblab/host/anywidget_host.py": [
+  "ggblab/host/control.py": [
    0,
    "b8901c1"
   ],
@@ -616,11 +803,11 @@
    8,
    "6cc98df"
   ],
-  "ggblab/parse.py": [
+  "ggblab/construction.py": [
    8,
    "6cc98df"
   ],
-  "ggblab/construction.py": [
+  "ggblab/parse.py": [
    8,
    "6cc98df"
   ],
@@ -663,6 +850,34 @@
   "probes/stage2_xml_gate.py": [
    10,
    "0ac8688"
+  ],
+  "examples/stage2_new_verb.ipynb": [
+   12,
+   "9950259"
+  ],
+  "examples/eg4_errors.ipynb": [
+   16,
+   "e74e8b7"
+  ],
+  "examples/eg5_construction.ipynb": [
+   16,
+   "e74e8b7"
+  ],
+  "ggblab/schema.py": [
+   16,
+   "e74e8b7"
+  ],
+  "ggblab/xml_errata.py": [
+   16,
+   "e74e8b7"
+  ],
+  "probes/stage1_dataframe_parity.py": [
+   16,
+   "e74e8b7"
+  ],
+  "tests/test_construction_io.py": [
+   16,
+   "e74e8b7"
   ]
  },
  "positive_control": {
