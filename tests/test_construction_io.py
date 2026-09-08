@@ -48,3 +48,16 @@ def test_ggb_and_applet_xml_agree_modulo_sequence():
 def test_negative_control_detects_a_changed_label():
     xml = read_ggb(GGB).replace('label="poly1"', 'label="polyX"', 1)
     assert not ConstructionIO.from_xml(xml).equals(ConstructionIO.from_ggb_file(GGB))
+
+
+def test_type_is_the_xml_class_and_closed_under_eltype():
+    """Teacher 2026-09-08: Type = XML class (GeoClass.xmlName); the runtime kind is a separate, host-read column."""
+    df = ConstructionIO.from_ggb_file(GGB)
+    assert ConstructionIO.unknown_types(df) == []
+    assert set(df["Type"].to_list()) >= {"conic", "polygon", "point"}        # never "circle" / "triangle" here
+    assert "circle" not in df["Type"].to_list() and "triangle" not in df["Type"].to_list()
+    kinds = {"c_1": "circle", "t1": "triangle"}                                 # what getObjectType would answer (captured 2026-09-08)
+    dk = ConstructionIO.with_kind(df, kinds)
+    assert dk.filter(pl.col("Name") == "c_1")["Kind"].item() == "circle" and dk.filter(pl.col("Name") == "t1")["Type"].item() == "polygon"
+    assert dk["Kind"].null_count() == df.height - 2
+    assert ConstructionIO.unknown_types(pl.DataFrame({"Type": ["conic", "circle"]})) == ["circle"]   # negative control: an API kind is not an XML class

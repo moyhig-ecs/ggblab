@@ -28,6 +28,15 @@ class ggb_schema:
         return self.schema.decode(xml)
 
 
+def eltype_pattern() -> str:
+    """The XSD's closed set of `<element type=…>` values (simpleType elType, a regex pattern, not an enumeration)."""
+    import re
+    m = re.search(r'name="elType".*?<xs:pattern\s+value="([^"]+)"', schema_text(), re.S)
+    if not m:
+        raise RuntimeError("elType pattern not found in common.xsd")
+    return m.group(1)
+
+
 _SCHEMA: ggb_schema | None = None
 
 

@@ -15,7 +15,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Union
 import polars as pl
 import polars.selectors as cs
 
-from ggblab.schema import get_schema
+from ggblab.schema import get_schema, eltype_pattern
 from ggblab.xml_errata import apply_xml_errata, construction_xml, normalize_exponent
 
 
@@ -140,6 +140,22 @@ class ConstructionIO:
                 norm_df = norm_df.with_columns(
                     cs.by_name(_bcol, require_all=False).replace_strict({"false": False, "true": True}, return_dtype=pl.Boolean).fill_null(False))
         return norm_df
+
+    # ---- Type discipline (teacher's ruling 2026-09-08): `Type` is the XML class (static, schema-enumerated, GeoClass.xmlName);
+    # the runtime kind (getObjectType: circle / triangle / …, which can change under drag) is NOT derived here — when it is
+    # needed it is read from the host and joined as a separate column with `with_kind`.
+    @staticmethod
+    def unknown_types(df: pl.DataFrame) -> list:
+        """Type values outside the XSD's elType pattern (closed world; expected empty)."""
+        rx = re.compile("^(?:" + eltype_pattern() + ")$")
+        return sorted({t for t in df["Type"].to_list() if t is None or not rx.match(t)})
+
+    @staticmethod
+    def with_kind(df: pl.DataFrame, kinds: Mapping[str, str]) -> pl.DataFrame:
+        """Join a runtime kind per label (e.g. {"c_1": "circle", "t1": "triangle"}, obtained by the caller from the host)
+        as the column `Kind`; labels not in `kinds` get null. Pure: no host access here."""
+        k = pl.DataFrame({"Name": list(kinds.keys()), "Kind": list(kinds.values())}, schema={"Name": pl.String, "Kind": pl.String})
+        return df.join(k, on="Name", how="left")
 
     # ---- data-in entry points ----
     @staticmethod
