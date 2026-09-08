@@ -1,0 +1,230 @@
+{
+ "Type": {
+  "null_vs_empty": 0,
+  "genuine": 12,
+  "genuine_pairs": [
+   [
+    "c_1",
+    "conic",
+    "circle"
+   ],
+   [
+    "c_{5}",
+    "conic",
+    "circle"
+   ],
+   [
+    "t1",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "t2",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "t3",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "t4",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "t5",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "t6",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "d_3",
+    "conic",
+    "circle"
+   ],
+   [
+    "q1",
+    "polygon",
+    "quadrilateral"
+   ],
+   [
+    "t7",
+    "polygon",
+    "triangle"
+   ],
+   [
+    "t8",
+    "polygon",
+    "triangle"
+   ]
+  ]
+ },
+ "Command": {
+  "null_vs_empty": 2,
+  "genuine": 19,
+  "genuine_pairs": [
+   [
+    "proj_{u}w",
+    "((w * u)) / ((u * u))",
+    "(w u) / (u u)"
+   ],
+   [
+    "proj_{v}w",
+    "((w * v)) / ((v * v))",
+    "(w v) / (v v)"
+   ],
+   [
+    "Γ'_{uu}",
+    "(-(((proj_{u}w * cos(θ)) - proj_{v}w) / (sin(θ))^(2)))",
+    "-((proj_{u}w cos(θ) - proj_{v}w) / sin²(θ))"
+   ],
+   [
+    "Γ_{uu}",
+    "(proj_{u}w - (proj_{v}w * cos(θ))) / (sin(θ))^(2)",
+    "(proj_{u}w - proj_{v}w cos(θ)) / sin²(θ)"
+   ],
+   [
+    "u_1",
+    "Translate(Vector((((u * w)) / ((u * u)) * u)), C)",
+    "Translate((u w) / (u u) u, C)"
+   ],
+   [
+    "v_1",
+    "Translate(Vector((((w * v)) / ((v * v)) * v)), P')",
+    "Translate((w v) / (v v) v, P')"
+   ],
+   [
+    "text1",
+    "\"1.  Thales's  theorem: right  triangle  inscribed  in  a  circle\"",
+    ""
+   ],
+   [
+    "text3",
+    "\"3.  Pythagorean  theorem\"",
+    ""
+   ],
+   [
+    "text3_{1}",
+    "\"$\\|a\\| = \\|b\\| \\cos(\\gamma)+ \\|c\\| \\cos(\\beta)$\n$\\|b\\| = \\|c\\| \\cos(\\alpha) + \\|a\\| \\cos(\\gamma)$\n$\\|c\\| = \\|a\\| \\cos(\\beta) + \\|b\\| \\cos(\\alpha)$\"",
+    ""
+   ],
+   [
+    "text5",
+    "\"5.  Projection\"",
+    ""
+   ],
+   [
+    "w'",
+    "Translate(Vector((Γ_{uu} * u) + (Γ'_{uu} * v)), C)",
+    "Translate(Γ_{uu} u + Γ'_{uu} v, C)"
+   ],
+   [
+    "text4",
+    "\"4.  Orthocenter  and  Law  of  cosines\"",
+    ""
+   ],
+   [
+    "text3_{2}",
+    "\"$\\|a\\|^2 = \\|b\\|^2 + \\|c\\|^2 - 2 \\|b\\|\\|c\\| \\cos(\\alpha)$\n$\\|b\\|^2 = \\|c\\|^2 + \\|a\\|^2 - 2 \\|c\\|\\|a\\| \\cos(\\beta)$\n$\\|c\\|^2 = \\|a\\|^2 + \\|b\\|^2 - 2 \\|a\\|\\|b\\| \\cos(\\gamma)$\"",
+    ""
+   ],
+   [
+    "text5_{1}",
+    "\"$\\|b\\| \\cos(\\theta) = \\frac{\\vec{b}\\cdot\\vec{a}}{\\vec{a}\\cdot\\vec{a}}$\"",
+    ""
+   ],
+   [
+    "g_2",
+    "Distance[P, O'] / Distance[C, O']",
+    "Distance(P, O') / Distance(C, O')"
+   ],
+   [
+    "g_1",
+    "Distance[A, O'] / Distance[P, O']",
+    "Distance(A, O') / Distance(P, O')"
+   ],
+   [
+    "g_3",
+    "((Area[t5] * g_2) * g_2)",
+    "Area(t5) g_2 g_2"
+   ],
+   [
+    "text2",
+    "\"2.  Geometric  mean\"",
+    ""
+   ],
+   [
+    "text5_{3}",
+    "\"$proj_{\\vec{a}}\\ \\vec{b} = \\frac{\\vec{b}\\cdot\\vec{a}}{\\vec{a}\\cdot\\vec{a}}\\ \\vec{a}$\"",
+    ""
+   ]
+  ]
+ },
+ "Caption": {
+  "null_vs_empty": 154,
+  "genuine": 0,
+  "genuine_pairs": []
+ },
+ "Layer": {
+  "null_vs_empty": 0,
+  "genuine": 10,
+  "genuine_pairs": [
+   [
+    "proj_{u}w",
+    0,
+    8
+   ],
+   [
+    "proj_{v}w",
+    0,
+    8
+   ],
+   [
+    "b",
+    0,
+    8
+   ],
+   [
+    "c",
+    0,
+    8
+   ],
+   [
+    "Γ'_{uu}",
+    0,
+    8
+   ],
+   [
+    "Γ_{uu}",
+    0,
+    8
+   ],
+   [
+    "a",
+    0,
+    8
+   ],
+   [
+    "g_2",
+    0,
+    8
+   ],
+   [
+    "g_1",
+    0,
+    8
+   ],
+   [
+    "g_3",
+    0,
+    8
+   ]
+  ]
+ }
+}

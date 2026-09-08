@@ -1,0 +1,217 @@
+{
+ "ggb": "/Users/manabu/work/ggblab-replay/examples/2025_13_01.ggb",
+ "v2_file_rows": 170,
+ "positive_control": {
+  "Segment_from_Polygon_edge": "Segment(C, A, poly1)",
+  "ok": true
+ },
+ "negative_control": {
+  "mismatch_detected": true
+ },
+ "v1_file_json": "/Users/manabu/work/ggblab-extra/examples/2025_13_01.json",
+ "C_file_vs_A": {
+  "rows_a": 170,
+  "rows_b": 170,
+  "common": 170,
+  "only_a": 0,
+  "only_b": 0,
+  "columns": {
+   "Type": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Command": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Caption": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Layer": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "ShowObject": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "ShowLabel": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Auxiliary": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Value": {
+    "mismatch": 0,
+    "examples": []
+   }
+  }
+ },
+ "C_xml_vs_C_file": {
+  "rows_a": 170,
+  "rows_b": 170,
+  "common": 170,
+  "only_a": 0,
+  "only_b": 0,
+  "columns": {
+   "Type": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Command": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Caption": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Layer": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "ShowObject": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "ShowLabel": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Auxiliary": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Value": {
+    "mismatch": 0,
+    "examples": []
+   }
+  }
+ },
+ "v1_applet_rows": 170,
+ "C_xml_vs_B": {
+  "rows_a": 170,
+  "rows_b": 170,
+  "common": 170,
+  "only_a": 0,
+  "only_b": 0,
+  "columns": {
+   "Type": {
+    "mismatch": 12,
+    "examples": [
+     [
+      "c_1",
+      "conic",
+      "circle"
+     ],
+     [
+      "c_{5}",
+      "conic",
+      "circle"
+     ],
+     [
+      "t1",
+      "polygon",
+      "triangle"
+     ]
+    ]
+   },
+   "Command": {
+    "mismatch": 21,
+    "examples": [
+     [
+      "C",
+      null,
+      ""
+     ],
+     [
+      "A",
+      null,
+      ""
+     ],
+     [
+      "proj_{u}w",
+      "((w * u)) / ((u * u))",
+      "(w u) / (u u)"
+     ]
+    ]
+   },
+   "Caption": {
+    "mismatch": 154,
+    "examples": [
+     [
+      "C",
+      null,
+      ""
+     ],
+     [
+      "A",
+      null,
+      ""
+     ],
+     [
+      "poly1",
+      null,
+      ""
+     ]
+    ]
+   },
+   "Layer": {
+    "mismatch": 10,
+    "examples": [
+     [
+      "proj_{u}w",
+      0,
+      8
+     ],
+     [
+      "proj_{v}w",
+      0,
+      8
+     ],
+     [
+      "b",
+      0,
+      8
+     ]
+    ]
+   },
+   "ShowObject": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "ShowLabel": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Auxiliary": {
+    "mismatch": 0,
+    "examples": []
+   },
+   "Value": {
+    "mismatch": 170,
+    "examples": [
+     [
+      "C",
+      null,
+      "C = (0, 0)"
+     ],
+     [
+      "A",
+      null,
+      "A = (2.2, 0)"
+     ],
+     [
+      "poly1",
+      null,
+      "poly1 = 4.6"
+     ]
+    ]
+   }
+  },
+  "value_note": "Value differs by design (v1 applet path = getValueString; v2 = XML expression/IR; ruling 2026-09-08 ii)"
+ }
+}
