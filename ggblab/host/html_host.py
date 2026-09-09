@@ -84,14 +84,38 @@ JS = r"""
     });
     return window.__ggblabDeploy;
   }
+  function installErrorScraper() {                  // v1 idea (MutationObserver on the dialog) + auto-dismiss (ruling 09-09)
+    // GeoGebra's error modal (suite build): a `.dialogComponent` holding `.dialogTitle` ("Error") + `.dialogContent`.
+    // Selector is GeoGebra-private CSS and may drift across releases: on no match nothing fires (no crash), and the
+    // fallback below still reports *that* an error dialog appeared.
+    if (window.__ggblabErrObs) return;
+    const scrape = (root) => {
+      const dlgs = root.querySelectorAll ? root.querySelectorAll(".dialogComponent, div.dialogMainPanel") : [];
+      dlgs.forEach((raw) => {
+        const d = (raw.closest && raw.closest(".dialogComponent")) || raw;   // one modal = one event (the selector matches nested nodes)
+        if (d.__ggblabSeen) return; d.__ggblabSeen = true;
+        const title = (d.querySelector(".dialogTitle") || {}).textContent || "Error";
+        const content = d.querySelector(".dialogContent");
+        const text = content ? (content.textContent || "").trim() : (d.textContent || "").trim();
+        if (!/error/i.test(title) && !/error/i.test(text)) return;   // not an error modal (e.g. a save dialog): leave it
+        post({kind: "event", data: {type: "error", title: title.trim(), text: text}});
+        const ok = d.querySelector("button");                        // dismiss so the modal never wedges the browser
+        if (ok) ok.click(); else { d.remove && d.remove(); }
+        const glass = document.querySelector(".gwt-PopupPanelGlass"); if (glass && glass.remove) glass.remove();
+      });
+    };
+    const obs = new MutationObserver((muts) => muts.forEach((m) => m.addedNodes.forEach((n) => { try { scrape(n); if (n.nodeType === 1) scrape(document.body); } catch (e) {} })));
+    obs.observe(document.body, {childList: true, subtree: true});
+    window.__ggblabErrObs = obs;
+  }
   pollLoop();
   loadScript().then(() => {
     const params = Object.assign({appName: "suite", width: 800, height: 600, showToolBar: true, showAlgebraInput: true, showMenuBar: false,
       appletOnLoad: (a) => {
         try {
-          try { a.setErrorDialogsActive(false); } catch (e) {}   // 09-09: a bad command otherwise pops a BLOCKING GWT modal inside the applet (browser tab), never in the cell; the kernel only sees null. Suppress the modal; errors are still visible as null + no new label
           a.registerUpdateListener((label) => post({kind: "event", data: {type: "update", label}}));
           a.registerAddListener((label) => post({kind: "event", data: {type: "add", label}}));
+          installErrorScraper();                         // 09-09: GeoGebra reports errors only as a BLOCKING modal in the applet (never in the cell; evalCommandGetLabels just returns null). Scrape the modal text into an error event, then auto-dismiss it.
           api = a; el.__api = a;
           while (queue.length) serve(queue.shift());
         } catch (e) { console.error("ggblab appletOnLoad failed", e); post({kind: "event", data: {type: "error", error: String(e)}}); }
@@ -226,6 +250,12 @@ class GeoGebra:
     def unlisten(self, cb: Callable[[dict], None] | None = None) -> None:
         """v1 `listen(name, False)`: drop one callback (or all)."""
         self._listeners = [] if cb is None else [(c, l) for c, l in self._listeners if c is not cb]
+
+    def errors(self, wait: float = 0.0) -> list[dict]:
+        """Pull the applet's error events (scraped from the GeoGebra modal by the page) since the last pull. Each is
+        {"type":"error","title":...,"text":...}. `null` from `command()` on a bad command is disambiguated here: an
+        error event means it failed; no error event means it was a redefinition (C6/§7). Shares the event cursor."""
+        return [e for e in self.events(wait) if e.get("type") == "error"]
 
     def events(self, wait: float = 0.0) -> list[dict]:
         """Pull the applet events (add / update / error) recorded since the last pull and fan them out to the listeners.
