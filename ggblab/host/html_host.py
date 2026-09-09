@@ -3,17 +3,18 @@
 mount: a trusted text/html output (div + inline script). The script loads deployggb.js, injects the applet into the div,
 and long-polls the mailbox (relay.py) for requests over plain HTTP.
 Stage 3 (2026-09-09): the mailbox address is the DOCUMENT (relay.mount_key: "doc:<notebook path>"), not the object. A page
-keeps one live applet per document (later outputs and re-rendered saved outputs become pointers), one live poller per box
-(lease), and every request carries `reply_to` so an applet mounted by an earlier kernel serves a later kernel's objects. Replies/events are POSTed back; the server injects
-them into the kernel's phantom comm through the control socket (control.py). The kernel talks to the server over
-localhost HTTP with the server's own token. Only HTTP crosses the browser<->server boundary.
+keeps one live applet per document (later outputs and re-rendered saved outputs become pointers) and one live poller per
+box (lease).
+RPC (09-09, ruling (i)): the kernel is an HTTP client of its own server — `POST ggblab/call` parks until the browser's
+reply arrives (`GET ggblab/await` continues in proxy-sized slices); events are pulled with `GET ggblab/events`. No comm,
+no comm target, no control socket: the server is the registry. Only HTTP crosses the browser<->server boundary.
 """
 from __future__ import annotations
-import json, os, uuid, urllib.request
+import json, os, time, uuid, urllib.parse, urllib.request
 from typing import Callable
 from IPython.display import HTML, display
 from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, New, to_json
-from .control import ControlBridge, kernel_id
+from .control import kernel_id
 
 DEPLOY = "https://www.geogebra.org/apps/deployggb.js"
 
@@ -33,14 +34,13 @@ JS = r"""
   }
   window.__ggblabBoxes[M.mount] = {el, dom: M.dom};
   const clientId = (window.__ggblabClient = window.__ggblabClient || Math.random().toString(16).slice(2));
-  let route = {kernel_id: M.kernel_id, comm_id: M.comm_id};   // where replies/events go: updated from each request (reply_to)
   const base = ((document.body && document.body.dataset && document.body.dataset.baseUrl) || "/").replace(/\/$/, "");
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   function xsrf() { const m = document.cookie.match(/(?:^|; )_xsrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : ""; }
-  function post(payload, to) {
+  function post(payload) {                          // reply -> the parked call (req_id); event -> the mount's event log
     return fetch(base + "/ggblab/reply", {method: "POST", credentials: "same-origin",
       headers: {"Content-Type": "application/json", "X-XSRFToken": xsrf()},
-      body: JSON.stringify(Object.assign({}, to || route, payload))});
+      body: JSON.stringify(Object.assign({mount: M.mount}, payload))});
   }
   function handle(api, req) {                       // C3: one clause per head; unknown kind -> explicit error
     switch (req.kind) {
@@ -56,10 +56,8 @@ JS = r"""
   }
   let api = null; const queue = [];                 // C2: requests wait here until the applet is ready
   async function serve(req) {
-    if (req.reply_to && req.reply_to.kernel_id) route = req.reply_to;     // a newer kernel object took the document over
-    const to = req.reply_to || route;
-    try { await post({req_id: req.req_id, data: handle(api, req)}, to); }
-    catch (e) { await post({req_id: req.req_id, data: {error: String(e)}}, to); }
+    try { await post({req_id: req.req_id, data: handle(api, req)}); }
+    catch (e) { await post({req_id: req.req_id, data: {error: String(e)}}); }
   }
   let held = false;
   async function pollLoop() {                       // plain HTTP long-poll; survives proxies, needs no WebSocket
@@ -127,10 +125,11 @@ def find_server(kid: str) -> tuple[str, dict]:
 
 
 class GeoGebra:
-    """Stage-0 façade (command / xml / set_xml / delete / value / listen) over the HTML + mailbox host."""
+    """Stage-0 façade (command / xml / set_xml / delete / value / new_construction / listen / events) over the HTML + mailbox host."""
+    SLICE = 25.0                                                # one parked HTTP request per proxy-sized slice
+
     def __init__(self, mount: str | None = None, doc: str | None = None, **params):
         self._listeners: list[Callable[[dict], None]] = []
-        self.ctl = ControlBridge()
         self.kernel_id = kernel_id() or ""
         self.dom_id = uuid.uuid4().hex[:12]                     # the output element (one per display)
         self.params = params
@@ -140,16 +139,20 @@ class GeoGebra:
             self.path, self.mount_id = doc, mount_key(doc, self.kernel_id, mount)
         else:
             self.path, self.mount_id = self._whoami(mount)      # the mailbox address = the document (stage 3)
-        self.ctl.on_event(lambda d: [cb(d) for cb in self._listeners])
         self._mounted = False
+        try:                                                    # events start from now, not from the box's birth
+            self._event_seq = int(self._http("GET", f"/ggblab/events?mount={self._q(self.mount_id)}&since=latest&wait=0")["next"])
+        except Exception:
+            self._event_seq = 0
+
+    @staticmethod
+    def _q(s: str) -> str:
+        return urllib.parse.quote(s, safe="")
 
     def _whoami(self, name: str | None) -> tuple[str | None, str]:
         """Ask the relay which document owns this kernel; the box key follows relay.mount_key (fallback: kernel id)."""
         try:
-            q = f"/ggblab/whoami?kernel_id={self.kernel_id}" + (f"&name={name}" if name else "")
-            req = urllib.request.Request(self.server_url.rstrip("/") + q, headers=self._headers)
-            with urllib.request.urlopen(req, timeout=3) as r:
-                d = json.loads(r.read().decode())
+            d = self._http("GET", f"/ggblab/whoami?kernel_id={self.kernel_id}" + (f"&name={self._q(name)}" if name else ""), timeout=3)
             if d.get("path"):
                 return d["path"], d["mount"]
         except Exception:
@@ -164,37 +167,61 @@ class GeoGebra:
         self.mount()
 
     def mount(self) -> None:
-        cfg = {"mount": self.mount_id, "dom": self.dom_id, "kernel_id": self.kernel_id, "comm_id": self.ctl.comm_id, "params": self.params, "deploy": DEPLOY}
+        cfg = {"mount": self.mount_id, "dom": self.dom_id, "params": self.params, "deploy": DEPLOY}
         html = (f'<div id="ggb-{self.dom_id}" style="min-height:600px"></div>'
                 f'<script>{JS.replace("__CFG__", json.dumps(cfg))}</script>')
         display(HTML(html))
         self._mounted = True
 
-    def _post(self, path: str, body: dict) -> int:
-        req = urllib.request.Request(self.server_url.rstrip("/") + path, data=json.dumps(body).encode(), method="POST",
+    def _http(self, method: str, path: str, body: dict | None = None, timeout: float = 5.0) -> dict:
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(self.server_url.rstrip("/") + path, data=data, method=method,
                                      headers={**self._headers, "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return r.status
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode() or "{}")
 
-    def _send(self, req: Request, timeout: float = 10.0):
+    def _rpc(self, req: Request, timeout: float = 10.0):
+        """One request, one reply: the server parks our HTTP request until the browser answers (C2: the reply never rides
+        the shell channel; the cell blocks on a socket, not on a message queue). Long waits are sliced for proxies."""
         if not self._mounted:
             self.mount()
-        rid = self.ctl.new_request()
-        body = to_json(req, rid); body["reply_to"] = {"kernel_id": self.kernel_id, "comm_id": self.ctl.comm_id}
-        self._post("/ggblab/send", {"mount": self.mount_id, "request": body})
-        return self.ctl.wait(rid, timeout)
+        rid = uuid.uuid4().hex[:12]
+        body = to_json(req, rid)
+        t0 = time.time()
+        wait = min(timeout, self.SLICE)
+        d = self._http("POST", "/ggblab/call", {"mount": self.mount_id, "request": body, "wait": wait}, timeout=wait + 10)
+        while d.get("status") == "pending":
+            left = timeout - (time.time() - t0)
+            if left <= 0:
+                raise TimeoutError(f"no reply for {rid} within {timeout}s (box {self.mount_id}: is its applet open in a browser?)")
+            wait = min(left, self.SLICE)
+            d = self._http("GET", f"/ggblab/await?req_id={rid}&wait={wait}", timeout=wait + 10)
+        return d.get("data")
 
     def command(self, *cmds: str, timeout: float = 10.0):
-        return self._send(Eval(tuple(cmds)), timeout)
+        return self._rpc(Eval(tuple(cmds)), timeout)
     def xml(self, timeout: float = 10.0) -> str:
-        return self._send(XmlOut(), timeout)
+        return self._rpc(XmlOut(), timeout)
     def set_xml(self, xml: str, timeout: float = 10.0):
-        return self._send(XmlIn(xml), timeout)
+        return self._rpc(XmlIn(xml), timeout)
     def delete(self, label: str, timeout: float = 10.0):
-        return self._send(Delete(label), timeout)
+        return self._rpc(Delete(label), timeout)
     def value(self, label: str, timeout: float = 10.0):
-        return self._send(Value(label), timeout)
+        return self._rpc(Value(label), timeout)
     def new_construction(self, timeout: float = 10.0):
-        return self._send(New(), timeout)
+        return self._rpc(New(), timeout)
+
     def listen(self, cb: Callable[[dict], None]) -> None:
+        """Register a listener; it is called from `events()` (pull-first — ruling (ii) 09-09: a pump is decided at eg9)."""
         self._listeners.append(cb)
+
+    def events(self, wait: float = 0.0) -> list[dict]:
+        """Pull the applet events (add / update / error) recorded since the last pull and fan them out to the listeners."""
+        d = self._http("GET", f"/ggblab/events?mount={self._q(self.mount_id)}&since={self._event_seq}&wait={wait}", timeout=wait + 10)
+        evs = [e["data"] for e in d.get("events", [])]
+        self._event_seq = int(d.get("next", self._event_seq))
+        for e in evs:
+            for cb in self._listeners:
+                try: cb(e)
+                except Exception: pass
+        return evs

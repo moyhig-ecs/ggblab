@@ -1,8 +1,8 @@
 """C1 host adapter #1: anywidget (JupyterLab / marimo / VS Code) — mounts the GeoGebra applet via deployggb.js.
 
 kernel -> applet : `request` trait (JSON) synced through the widget model (iopub side: fires during execution)
-applet -> kernel : fetch(<base_url>ggblab/reply) -> relay.py -> comm_msg on the CONTROL socket (C0-A)
-In marimo the reactive runtime makes the relay unnecessary; `relay_path` may then be "".
+applet -> kernel : reactive hosts only — `last_reply` model sync (marimo). The relay path (C0-A) was retired on 2026-09-09
+(ruling (iii)): this adapter is a MIRROR-READ adapter; the Jupyter host is html_host.py (RPC mailbox).
 """
 from __future__ import annotations
 import json, pathlib
@@ -114,7 +114,7 @@ def _to_json(req: Request, req_id: str) -> str:
 
 class GeoGebra:
     """Stage-0 façade over the anywidget host (satisfies eg3/eg9 semantics: command / listen / xml)."""
-    def __init__(self, relay: bool = True, **params):
+    def __init__(self, relay: bool = False, **params):
         self._listeners: list[Callable[[dict], None]] = []
         self.ctl = ControlBridge()
         self.widget = GeoGebraWidget(self.ctl, kernel_id=kernel_id() or "", relay_path="/ggblab/reply" if relay else "",

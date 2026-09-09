@@ -52,3 +52,6 @@ server: reply → km.client().control_channel.send(comm_msg{comm_id=phantom, dat
 - browser フル構成 8898・同 page で再 Restart & Run All (2 回目の inject): `LABELS ['A', 'B', 'c'] after 0.09 s` / `XML_LEN 4925 | has Circle: True`。
 - 試験 server 2 台 (どちらも worktree 直下・token stage0token): 最小構成 `--ServerApp.port=8899 --MCPExtensionApp.mcp_port=3002` + `JUPYTER_CONFIG_DIR=probes/lab_config`、フル構成 `--ServerApp.port=8898 --MCPExtensionApp.mcp_port=3003` + `probes/.runtime_full/jupyter_server_config.py` (= relay のみ追加)。jupyter_server_mcp が port 3001 を取り合うので 2 台目以降は mcp_port をずらす。
 - 残: eg9 listener (event) の browser 検証 / JupyterHub on K8s 越え (comm 無し版と同時に) / marimo adapter (anywidget 版を残置) / Julia host (段階 4・phantom comm は IJulia でも成立)。
+
+## 09-09 訂正(先生裁定 (i)): C0-A 退役
+- 上の「訂正 A = control channel の comm_msg」と phantom comm(`control.py`)は段階 0–3 の記録。09-09 に kernel を自分の server の HTTP client にする RPC 形(`relay.py`: call / await / reply / events)へ置き換え、comm・comm target・control socket は ggblab から消えた。`probes/stage0_control_roundtrip.py` は退役機構の史料。

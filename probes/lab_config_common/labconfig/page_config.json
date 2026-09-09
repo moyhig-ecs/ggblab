@@ -1,0 +1,17 @@
+{
+  "disabledExtensions": {
+    "@jupyter-ai-contrib/server-documents": true,
+    "@jupyter-ai/acp-client": true,
+    "@jupyter-ai/chat-commands": true,
+    "@jupyter-ai/persona-manager": true,
+    "@jupyter-ai/router": true,
+    "@jupyter/collaboration-extension": true,
+    "@jupyter/docprovider-extension": true,
+    "jupyterlab-chat-extension": true,
+    "@jupyterlab/notebook-extension:cell-executor": false,
+    "@jupyterlab/filebrowser-extension:defaultFileBrowser": false,
+    "@jupyterlab/codemirror-extension:binding": false,
+    "ggblab": true,
+    "jupyterlab-notebook-awareness": true
+  }
+}
