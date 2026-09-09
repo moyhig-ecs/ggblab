@@ -6,3 +6,8 @@ probes/.runtime_*/
 # runtime dirs created by the stage-2 test server (JUPYTER_CONFIG_DIR=probes/lab_config)
 probes/lab_config/lab/
 probes/lab_config/migrated
+
+# probe-lab runtime artifacts
+.jupyter/
+.jupyter_ystore.db
+test.chat
