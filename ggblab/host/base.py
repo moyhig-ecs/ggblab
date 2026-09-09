@@ -1,8 +1,8 @@
 """C1 (teacher's ruling 2026-09-07, option A) — the host interface is a CLOSED SUBSET of the GeoGebra Apps API (+ mount).
 
-Each Verb kind names exactly one API method.  Currently seven:
+Each Verb kind names exactly one API method.  Currently eight:
   writes (4)        eval → evalCommandGetLabels   new → newConstruction   delete → deleteObject   xml_in → setXML
-  reads (2)         xml_out → getXML              value → getValue
+  reads (3)         xml_out → getXML              value → getValue         kind → getObjectType (runtime type; drag-varying — NOT the XML class, C6)
   subscription (1)  listen → register*Listener (wired once at mount; events arrive asynchronously, never on the shell channel: C2)
 Adding a kind is an interface change and is recorded by the code-graph instrument (probes/stage_codegraph_v2.py, M2)
 against a teacher-ruled allow-list.  Arbitrary API calls (`:api f()`) are NOT a verb — the surface words of the Julia
@@ -21,6 +21,7 @@ class Verb(str, Enum):
     LISTEN = "listen"      # (un)register object update listener
     DELETE = "delete"      # delete object by label
     VALUE = "value"        # numeric / string value of an object
+    KIND = "kind"          # getObjectType(label): runtime type (circle/triangle/…); read verb #8 (teacher 2026-09-09; the XML class stays the `Type` column, C6)
     NEW = "new"            # newConstruction(): empty the construction (stage 2 adapter: `:const :new`)
 
 
@@ -60,11 +61,17 @@ class Value:
 
 
 @dataclass(frozen=True)
+class Kind:
+    label: str
+    kind: Literal["kind"] = "kind"
+
+
+@dataclass(frozen=True)
 class New:
     kind: Literal["new"] = "new"
 
 
-Request = Union[Eval, XmlIn, XmlOut, Listen, Delete, Value, New]
+Request = Union[Eval, XmlIn, XmlOut, Listen, Delete, Value, Kind, New]
 
 
 class Host(Protocol):
@@ -89,6 +96,7 @@ def to_json(req: Request, req_id: str) -> dict:
         case Listen(enable=e):   d = {"kind": "listen", "enable": e}
         case Delete(label=l):    d = {"kind": "delete", "label": l}
         case Value(label=l):     d = {"kind": "value", "label": l}
+        case Kind(label=l):      d = {"kind": "kind", "label": l}
         case New():              d = {"kind": "new"}
         case _:
             from typing import assert_never

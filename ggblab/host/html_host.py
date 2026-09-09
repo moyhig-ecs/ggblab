@@ -13,7 +13,7 @@ from __future__ import annotations
 import json, os, time, uuid, urllib.parse, urllib.request
 from typing import Callable
 from IPython.display import HTML, display
-from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, New, to_json
+from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, Kind, New, to_json
 from .control import kernel_id
 
 DEPLOY = "https://www.geogebra.org/apps/deployggb.js"
@@ -49,6 +49,7 @@ JS = r"""
       case "xml_out": return api.getXML();
       case "delete":  api.deleteObject(req.label); return true;
       case "value":   return api.getValue(req.label);
+      case "kind":    return api.getObjectType(req.label);   // runtime type (drag-varying); the XML class stays in the DataFrame Type column
       case "new":     api.newConstruction(); return true;
       case "listen":  return true;                  // listeners are wired once at mount
       default: throw new Error("unhandled request kind: " + req.kind);
@@ -88,6 +89,7 @@ JS = r"""
     const params = Object.assign({appName: "suite", width: 800, height: 600, showToolBar: true, showAlgebraInput: true, showMenuBar: false,
       appletOnLoad: (a) => {
         try {
+          try { a.setErrorDialogsActive(false); } catch (e) {}   // 09-09: a bad command otherwise pops a BLOCKING GWT modal inside the applet (browser tab), never in the cell; the kernel only sees null. Suppress the modal; errors are still visible as null + no new label
           a.registerUpdateListener((label) => post({kind: "event", data: {type: "update", label}}));
           a.registerAddListener((label) => post({kind: "event", data: {type: "add", label}}));
           api = a; el.__api = a;
@@ -210,6 +212,10 @@ class GeoGebra:
         return self._rpc(Value(label), timeout)
     def new_construction(self, timeout: float = 10.0):
         return self._rpc(New(), timeout)
+    def kind(self, label: str, timeout: float = 10.0) -> str:
+        """C1 read verb #8 (getObjectType): the runtime type (circle/triangle/…), which can change under drag. The static
+        XML class stays in the DataFrame `Type` column (C6). Use ConstructionIO.with_kind to join {label: kind} in."""
+        return self._rpc(Kind(label), timeout)
 
     def listen(self, cb: Callable[[dict], None], label: str | None = None) -> None:
         """C1 `listen` (v1 eg9: `listen('a')` = subscribe to one object's updates). The applet's listeners are wired once at

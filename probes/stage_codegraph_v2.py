@@ -103,7 +103,8 @@ for i, c in enumerate(commits):
 # M2: interface invariance from first appearance
 ALLOWED = {  # interface states in the order they may appear; a change is legal only if it is on this list (teacher-ruled)
     "verbs": [["DELETE", "EVAL", "LISTEN", "VALUE", "XML_IN", "XML_OUT"],                     # stage 0 (C1 "five verbs" + value)
-              ["DELETE", "EVAL", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"]],             # stage 2, 2026-09-07: respect the GeoGebra API → newConstruction
+              ["DELETE", "EVAL", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"],             # stage 2, 2026-09-07: respect the GeoGebra API → newConstruct
+              ["DELETE", "EVAL", "KIND", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"]],    # stage 3, 2026-09-09: kind → getObjectType (read verb #8)ion
     "heads": [sorted(["Angle","AngleBisector","ApplyMatrix","Circle","ClosestPoint","Cone","Determinant","Distance","Ellipse","Intersect","IntersectConic",
                       "Length","Line","Locus","Midpoint","Plane","Point","Polar","Polygon","PerpendicularBisector","PerpendicularLine","PerpendicularPlane",
                       "Reflect","Segment","Slider","Sphere","TriangleCenter","Vector"])]}

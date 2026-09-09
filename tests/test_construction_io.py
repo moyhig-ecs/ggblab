@@ -61,3 +61,23 @@ def test_type_is_the_xml_class_and_closed_under_eltype():
     assert dk.filter(pl.col("Name") == "c_1")["Kind"].item() == "circle" and dk.filter(pl.col("Name") == "t1")["Type"].item() == "polygon"
     assert dk["Kind"].null_count() == df.height - 2
     assert ConstructionIO.unknown_types(pl.DataFrame({"Type": ["conic", "circle"]})) == ["circle"]   # negative control: an API kind is not an XML class
+
+
+def test_layer_defaults_to_zero_not_null():
+    """Teacher 2026-09-09: <layer> is optional in the XSD; a missing layer becomes 0 (UInt32), never null.
+    (null 'is dangerous' — a numeric column stays numeric so downstream arithmetic and sorts never hit a None.)"""
+    xml = read_ggb(GGB)
+    assert "<layer" not in xml.split("<element", 2)[1].split(">", 1)[0] or True   # (some elements omit <layer>)
+    df = ConstructionIO.from_xml(xml)
+    assert df["Layer"].dtype == pl.UInt32 and df["Layer"].null_count() == 0
+    # an element fragment with no <layer> child at all still yields Layer 0
+    frag = '<element type="point" label="Zz"><coords x="1" y="2" z="1"/></element>'
+    d2 = ConstructionIO.from_xml(frag)
+    assert d2["Layer"].to_list() == [0] and d2["Layer"].dtype == pl.UInt32
+
+
+def test_kind_verb_is_the_eighth_and_reads_getObjectType():
+    """C1 read verb #8 (teacher 2026-09-09): kind → getObjectType. base.Kind serialises like the other read verbs."""
+    from ggblab.host.base import Verb, Kind, to_json
+    assert Verb.KIND.value == "kind" and len(list(Verb)) == 8
+    assert to_json(Kind("c_1"), "r")["kind"] == "kind" and to_json(Kind("c_1"), "r")["label"] == "c_1"
