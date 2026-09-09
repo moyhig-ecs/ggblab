@@ -211,17 +211,37 @@ class GeoGebra:
     def new_construction(self, timeout: float = 10.0):
         return self._rpc(New(), timeout)
 
-    def listen(self, cb: Callable[[dict], None]) -> None:
-        """Register a listener; it is called from `events()` (pull-first — ruling (ii) 09-09: a pump is decided at eg9)."""
-        self._listeners.append(cb)
+    def listen(self, cb: Callable[[dict], None], label: str | None = None) -> None:
+        """C1 `listen` (v1 eg9: `listen('a')` = subscribe to one object's updates). The applet's listeners are wired once at
+        mount; here a callback is registered, optionally for one label, and it is called from `events()` — pull-first
+        (ruling (ii) 09-09; whether a pump is needed is judged in eg9)."""
+        self._listeners.append((cb, label))
+
+    def unlisten(self, cb: Callable[[dict], None] | None = None) -> None:
+        """v1 `listen(name, False)`: drop one callback (or all)."""
+        self._listeners = [] if cb is None else [(c, l) for c, l in self._listeners if c is not cb]
 
     def events(self, wait: float = 0.0) -> list[dict]:
-        """Pull the applet events (add / update / error) recorded since the last pull and fan them out to the listeners."""
+        """Pull the applet events (add / update / error) recorded since the last pull and fan them out to the listeners.
+        `wait` > 0 parks the request on the server until an event arrives (blocking pull; no thread in the kernel)."""
         d = self._http("GET", f"/ggblab/events?mount={self._q(self.mount_id)}&since={self._event_seq}&wait={wait}", timeout=wait + 10)
         evs = [e["data"] for e in d.get("events", [])]
         self._event_seq = int(d.get("next", self._event_seq))
         for e in evs:
-            for cb in self._listeners:
-                try: cb(e)
-                except Exception: pass
+            for cb, label in self._listeners:
+                if label is None or e.get("label") == label:
+                    try: cb(e)
+                    except Exception: pass
         return evs
+
+    def wait_update(self, label: str, timeout: float = 30.0) -> dict | None:
+        """Block (in the cell) until the applet reports an update/add of `label`, or `timeout` s: the pull-side answer to
+        'react to the user's manipulation' without a background thread. Returns the event, or None on timeout."""
+        t0 = time.time()
+        while True:
+            left = timeout - (time.time() - t0)
+            if left <= 0:
+                return None
+            for e in self.events(wait=min(left, self.SLICE)):
+                if e.get("label") == label and e.get("type") in ("update", "add"):
+                    return e
