@@ -28,7 +28,9 @@
   "928541c",
   "8c071ae",
   "b87bc9f",
-  "1314fd1"
+  "1314fd1",
+  "d7cb008",
+  "51651f9"
  ],
  "steps": [
   {
@@ -1046,6 +1048,83 @@
    ],
    "M1": true,
    "modified_nodes": []
+  },
+  {
+   "i": 28,
+   "commit": "d7cb008",
+   "subject": "stage 2 (algebra) acceptance: eg7 / eg8 replayed on the v2 host; STAGE2 notes; c",
+   "nodes": 45,
+   "edges": 50,
+   "added_nodes": [
+    "examples/eg7_plotting.ipynb",
+    "examples/eg8_widgets.ipynb"
+   ],
+   "removed_nodes": [],
+   "added_edges": 4,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/host/base.py"
+   ],
+   "anchors": {
+    "api": 108,
+    "jup": 97
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 29,
+   "commit": "51651f9",
+   "subject": "stage 3 `%%ggb` magic + stage 4 Julia host: one JavaScript, one mailbox, two ker",
+   "nodes": 50,
+   "edges": 60,
+   "added_nodes": [
+    "examples/julia_host.ipynb",
+    "examples/stage3_magic.ipynb",
+    "ggblab/ipymagic.py",
+    "tests/test_ipymagic.py",
+    "tests/test_julia_host_parity.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 10,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 98
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/host/html_host.py"
+   ]
   }
  ],
  "M2": {
@@ -1300,6 +1379,34 @@
   "tests/test_sympy_datain.py": [
    27,
    "1314fd1"
+  ],
+  "examples/eg7_plotting.ipynb": [
+   28,
+   "d7cb008"
+  ],
+  "examples/eg8_widgets.ipynb": [
+   28,
+   "d7cb008"
+  ],
+  "examples/julia_host.ipynb": [
+   29,
+   "51651f9"
+  ],
+  "examples/stage3_magic.ipynb": [
+   29,
+   "51651f9"
+  ],
+  "ggblab/ipymagic.py": [
+   29,
+   "51651f9"
+  ],
+  "tests/test_ipymagic.py": [
+   29,
+   "51651f9"
+  ],
+  "tests/test_julia_host_parity.py": [
+   29,
+   "51651f9"
   ]
  },
  "positive_control": {
