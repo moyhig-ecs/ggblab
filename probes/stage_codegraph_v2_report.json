@@ -17,7 +17,18 @@
   "111de7f",
   "bd78d5e",
   "482f54a",
-  "e74e8b7"
+  "e74e8b7",
+  "b207212",
+  "bdb1429",
+  "e27dcfd",
+  "1106a52",
+  "7471dbd",
+  "f176c09",
+  "04c0765",
+  "928541c",
+  "8c071ae",
+  "b87bc9f",
+  "1314fd1"
  ],
  "steps": [
   {
@@ -225,8 +236,8 @@
    ],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/html_host.py",
-    "ggblab/host/control.py"
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
    ],
    "anchors": {
     "api": 31,
@@ -263,8 +274,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/html_host.py",
-    "ggblab/host/control.py"
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
    ],
    "anchors": {
     "api": 31,
@@ -294,8 +305,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/html_host.py",
-    "ggblab/host/control.py"
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
    ],
    "anchors": {
     "api": 31,
@@ -331,8 +342,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/html_host.py",
-    "ggblab/host/control.py"
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py"
    ],
    "anchors": {
     "api": 31,
@@ -649,6 +660,392 @@
    ],
    "M1": true,
    "modified_nodes": []
+  },
+  {
+   "i": 17,
+   "commit": "b207212",
+   "subject": "stage 1 acceptance: codegraph instrument report (M2 ⭕ HEADS 28 / Verb 7 unchange",
+   "nodes": 38,
+   "edges": 41,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/eg4_errors.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 98,
+    "jup": 129
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 18,
+   "commit": "bdb1429",
+   "subject": "stage 1: Type = XML class (elType closed set), runtime kind as a separate host-r",
+   "nodes": 38,
+   "edges": 41,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/eg4_errors.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 129
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/schema.py",
+    "tests/test_construction_io.py"
+   ]
+  },
+  {
+   "i": 19,
+   "commit": "e27dcfd",
+   "subject": "stage 3 (pre): MCP measurement materials — minimal MCP client, ydoc lab config, ",
+   "nodes": 38,
+   "edges": 41,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "examples/eg4_errors.ipynb",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 129
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 20,
+   "commit": "1106a52",
+   "subject": "stage 3: mailbox address = document (mount_key doc:<path>|kernel:<id>, whoami, p",
+   "nodes": 39,
+   "edges": 43,
+   "added_nodes": [
+    "tests/test_relay_mount_key.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 2,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "examples/eg4_errors.ipynb"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 131
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/host/html_host.py",
+    "ggblab/host/relay.py"
+   ]
+  },
+  {
+   "i": 21,
+   "commit": "7471dbd",
+   "subject": "RPC mailbox (ruling (i) 09-09): the phantom comm is buried — relay v3 parks POST",
+   "nodes": 40,
+   "edges": 44,
+   "added_nodes": [
+    "tests/test_relay_rpc.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 1,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "examples/eg4_errors.ipynb"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 94
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/__init__.py",
+    "ggblab/host/anywidget_host.py",
+    "ggblab/host/control.py",
+    "ggblab/host/html_host.py",
+    "ggblab/host/relay.py"
+   ]
+  },
+  {
+   "i": 22,
+   "commit": "f176c09",
+   "subject": "ignore probe-lab runtime artifacts (.jupyter/, ystore, test.chat)",
+   "nodes": 40,
+   "edges": 44,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "examples/eg4_errors.ipynb"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 94
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 23,
+   "commit": "04c0765",
+   "subject": "stage 3 notes: RPC measurements + probe-lab launch recipe (page_config for the c",
+   "nodes": 40,
+   "edges": 44,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "examples/eg4_errors.ipynb"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 94
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 24,
+   "commit": "928541c",
+   "subject": "eg9 (v2) + listen: per-label listen(cb,label)/unlisten, blocking wait_update (pu",
+   "nodes": 41,
+   "edges": 45,
+   "added_nodes": [
+    "examples/eg9_listener.ipynb"
+   ],
+   "removed_nodes": [],
+   "added_edges": 1,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "examples/eg4_errors.ipynb"
+   ],
+   "anchors": {
+    "api": 100,
+    "jup": 95
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/host/html_host.py"
+   ]
+  },
+  {
+   "i": 25,
+   "commit": "8c071ae",
+   "subject": "stage 1 rulings (teacher 2026-09-09): kind = read verb #8 (getObjectType, runtim",
+   "nodes": 41,
+   "edges": 46,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 1,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/host/base.py"
+   ],
+   "anchors": {
+    "api": 105,
+    "jup": 95
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/__init__.py",
+    "ggblab/host/base.py",
+    "ggblab/host/html_host.py",
+    "probes/stage_codegraph_v2.py",
+    "tests/test_construction_io.py"
+   ]
+  },
+  {
+   "i": 26,
+   "commit": "b87bc9f",
+   "subject": "error handling: adopt v1's dialog-scrape + auto-dismiss (teacher 2026-09-09). A ",
+   "nodes": 41,
+   "edges": 46,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/host/base.py"
+   ],
+   "anchors": {
+    "api": 106,
+    "jup": 95
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/host/html_host.py"
+   ]
+  },
+  {
+   "i": 27,
+   "commit": "1314fd1",
+   "subject": "stage 2 (algebra, ruling (i)/(ii) 2026-09-07): ggblab_extra.sympy data-in + the ",
+   "nodes": 43,
+   "edges": 46,
+   "added_nodes": [
+    "tests/test_geometry_ir.py",
+    "tests/test_sympy_datain.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/host/base.py"
+   ],
+   "anchors": {
+    "api": 106,
+    "jup": 95
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
   }
  ],
  "M2": {
@@ -696,7 +1093,7 @@
   },
   "verbs": {
    "first": "b8901c1",
-   "n_states": 2,
+   "n_states": 3,
    "states": [
     [
      "b8901c1",
@@ -705,12 +1102,17 @@
     [
      "1657468",
      7
+    ],
+    [
+     "8c071ae",
+     8
     ]
    ],
-   "size": 7,
+   "size": 8,
    "members": [
     "DELETE",
     "EVAL",
+    "KIND",
     "LISTEN",
     "NEW",
     "VALUE",
@@ -803,11 +1205,11 @@
    8,
    "6cc98df"
   ],
-  "ggblab/construction.py": [
+  "ggblab/parse.py": [
    8,
    "6cc98df"
   ],
-  "ggblab/parse.py": [
+  "ggblab/construction.py": [
    8,
    "6cc98df"
   ],
@@ -878,6 +1280,26 @@
   "tests/test_construction_io.py": [
    16,
    "e74e8b7"
+  ],
+  "tests/test_relay_mount_key.py": [
+   20,
+   "1106a52"
+  ],
+  "tests/test_relay_rpc.py": [
+   21,
+   "7471dbd"
+  ],
+  "examples/eg9_listener.ipynb": [
+   24,
+   "928541c"
+  ],
+  "tests/test_geometry_ir.py": [
+   27,
+   "1314fd1"
+  ],
+  "tests/test_sympy_datain.py": [
+   27,
+   "1314fd1"
   ]
  },
  "positive_control": {

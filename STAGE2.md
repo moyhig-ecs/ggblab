@@ -45,3 +45,9 @@ v2 route を新 kernel で再走(`groups.json` の v2 文字列を現 render で
 - **3 = A 案**: C1 を「host 動詞 = GeoGebra Apps API の閉じた部分集合(書 4 / 読 2 / 購読 1 = 7)・追加は C3 の allow-list に裁定付きで登記」に書き換え(lancedb-rag の CONVENTIONS C1/C7・本 repo の base.py / __init__ docstring)。「五動詞」の語は捨てる。
 - **2/4 = 別枠(根深い)**: 「Julia の macro の brace の扱いは、関数の引数として渡すことを前提に考え直さないと駄目」(先生)。段階 2 の v2 側は影響なし(v2 の parser は文字列を読む)。材料 = lancedb-rag `conversations/2026-09-07/MEMO_ggblab_julia_macro_braces_20260907.md`。段階 4(Julia)の設計に持ち越す。
 
+
+## 段階 2「代数」(2026-09-10)— ggblab_extra.sympy の data-in と XML の IR(受入 eg7 / eg8)
+- 裁定 09-07 (i)(ii)(iii) をそのまま適用: `ggblab_extra/sympy/` は v1 逐語 + `utils.py` の host 結合撤去(3D flag は `set_applet_3d_from_xml`)。`geometry_ir.py` = XML の coords / matrix / command を `ElementIR` に(規約は module docstring・R6 較正は `tests/test_geometry_ir.py`)。`sympy/from_ir.py` = 数 → SymPy(点・直線・線分・平面・円・球・3D 円は command から)・`attach_object3d_ir` / `enumerate_plane_members_ir`。`command_edges` = 構成自身の DAG(v1 の ConstructionTreeParser は不要)。
+- eg7(v2): 3 命令一括 `eval` で LineGraph(0.61 s・201 点を XML から読み戻し)。PNG(`getPNGBase64`)は 8 動詞の外 = allow-list(先生)。
+- eg8(v2): xml_in/xml_out(91 行)・DAG 89/195・`HideLayer`/`ShowLayer`(scripting command を `eval` で・新動詞なし)+ applet 上の `Slider` + `wait_update`(一操作一反応)で 3 操作 → 3 反応。計測: `SetValue` → `update:n` 1 件 / `ShowLayer` → 101 event(全 object)/ Apps API `setVisible` → 0 event。落とし穴: 同じ page で二度目の Restart & Run All は mount が二重 inject(page reload で回避・段階 3 の登記候補)。
+- 記録 = lancedb-rag `conversations/2026-09-10/RECORD_ggblab_replay_stage2_algebra_20260910.md`。
