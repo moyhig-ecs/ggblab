@@ -11,6 +11,7 @@ no comm target, no control socket: the server is the registry. Only HTTP crosses
 """
 from __future__ import annotations
 import json, os, time, uuid, urllib.parse, urllib.request
+from pathlib import Path
 from typing import Callable
 from IPython.display import HTML, display
 from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, Kind, New, to_json
@@ -18,112 +19,7 @@ from .control import kernel_id
 
 DEPLOY = "https://www.geogebra.org/apps/deployggb.js"
 
-JS = r"""
-(function () {
-  const M = __CFG__;
-  const el = document.getElementById("ggb-" + M.dom);
-  if (!el || el.__ggblab) return;
-  el.__ggblab = true;
-  // stage 3: one live applet per document. If this page already holds an applet for M.mount (an earlier output, a saved
-  // output re-rendered on reload), this output becomes a pointer to it instead of a second applet + second poller.
-  window.__ggblabBoxes = window.__ggblabBoxes || {};
-  const prev = window.__ggblabBoxes[M.mount];
-  if (prev && prev.el && document.contains(prev.el) && prev.el !== el) {
-    el.style.minHeight = "0"; el.innerHTML = '<div style="font:12px system-ui;color:#666;padding:4px 6px;border-left:3px solid #ccc">ggblab: the applet for this notebook is already mounted above (' + M.mount + ') — <a href="#" onclick="event.preventDefault(); this.closest(\'body\').querySelector(\'#ggb-\' + window.__ggblabBoxes[' + JSON.stringify(M.mount) + '].dom).scrollIntoView({behavior:\'smooth\'})">show</a></div>';
-    return;
-  }
-  window.__ggblabBoxes[M.mount] = {el, dom: M.dom};
-  const clientId = (window.__ggblabClient = window.__ggblabClient || Math.random().toString(16).slice(2));
-  const base = ((document.body && document.body.dataset && document.body.dataset.baseUrl) || "/").replace(/\/$/, "");
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  function xsrf() { const m = document.cookie.match(/(?:^|; )_xsrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : ""; }
-  function post(payload) {                          // reply -> the parked call (req_id); event -> the mount's event log
-    return fetch(base + "/ggblab/reply", {method: "POST", credentials: "same-origin",
-      headers: {"Content-Type": "application/json", "X-XSRFToken": xsrf()},
-      body: JSON.stringify(Object.assign({mount: M.mount}, payload))});
-  }
-  function handle(api, req) {                       // C3: one clause per head; unknown kind -> explicit error
-    switch (req.kind) {
-      case "eval":    return req.commands.map(c => api.evalCommandGetLabels(c));
-      case "xml_in":  api.setXML(req.xml); return true;
-      case "xml_out": return api.getXML();
-      case "delete":  api.deleteObject(req.label); return true;
-      case "value":   return api.getValue(req.label);
-      case "kind":    return api.getObjectType(req.label);   // runtime type (drag-varying); the XML class stays in the DataFrame Type column
-      case "new":     api.newConstruction(); return true;
-      case "listen":  return true;                  // listeners are wired once at mount
-      default: throw new Error("unhandled request kind: " + req.kind);
-    }
-  }
-  let api = null; const queue = [];                 // C2: requests wait here until the applet is ready
-  async function serve(req) {
-    try { await post({req_id: req.req_id, data: handle(api, req)}); }
-    catch (e) { await post({req_id: req.req_id, data: {error: String(e)}}); }
-  }
-  let held = false;
-  async function pollLoop() {                       // plain HTTP long-poll; survives proxies, needs no WebSocket
-    for (;;) {
-      try {
-        const r = await fetch(base + "/ggblab/poll?mount=" + encodeURIComponent(M.mount) + "&wait=25&client=" + clientId + "&lease=40", {credentials: "same-origin", cache: "no-store"});
-        if (r.status === 200) {
-          const j = await r.json();
-          if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(10000); continue; }   // another tab holds it; retry after the lease lapses
-          if (held) { held = false; delete el.dataset.ggblabHeld; }
-          for (const req of (j.requests || [])) { if (api) serve(req); else queue.push(req); }
-        }
-        else await sleep(1000);
-      } catch (e) { await sleep(1000); }
-    }
-  }
-  function loadScript() {
-    if (window.__ggblabDeploy) return window.__ggblabDeploy;
-    window.__ggblabDeploy = new Promise((res, rej) => {
-      if (window.GGBApplet) return res();
-      const s = document.createElement("script"); s.src = M.deploy; s.onload = () => res(); s.onerror = rej;
-      document.head.appendChild(s);
-    });
-    return window.__ggblabDeploy;
-  }
-  function installErrorScraper() {                  // v1 idea (MutationObserver on the dialog) + auto-dismiss (ruling 09-09)
-    // GeoGebra's error modal (suite build): a `.dialogComponent` holding `.dialogTitle` ("Error") + `.dialogContent`.
-    // Selector is GeoGebra-private CSS and may drift across releases: on no match nothing fires (no crash), and the
-    // fallback below still reports *that* an error dialog appeared.
-    if (window.__ggblabErrObs) return;
-    const scrape = (root) => {
-      const dlgs = root.querySelectorAll ? root.querySelectorAll(".dialogComponent, div.dialogMainPanel") : [];
-      dlgs.forEach((raw) => {
-        const d = (raw.closest && raw.closest(".dialogComponent")) || raw;   // one modal = one event (the selector matches nested nodes)
-        if (d.__ggblabSeen) return; d.__ggblabSeen = true;
-        const title = (d.querySelector(".dialogTitle") || {}).textContent || "Error";
-        const content = d.querySelector(".dialogContent");
-        const text = content ? (content.textContent || "").trim() : (d.textContent || "").trim();
-        if (!/error/i.test(title) && !/error/i.test(text)) return;   // not an error modal (e.g. a save dialog): leave it
-        post({kind: "event", data: {type: "error", title: title.trim(), text: text}});
-        const ok = d.querySelector("button");                        // dismiss so the modal never wedges the browser
-        if (ok) ok.click(); else { d.remove && d.remove(); }
-        const glass = document.querySelector(".gwt-PopupPanelGlass"); if (glass && glass.remove) glass.remove();
-      });
-    };
-    const obs = new MutationObserver((muts) => muts.forEach((m) => m.addedNodes.forEach((n) => { try { scrape(n); if (n.nodeType === 1) scrape(document.body); } catch (e) {} })));
-    obs.observe(document.body, {childList: true, subtree: true});
-    window.__ggblabErrObs = obs;
-  }
-  pollLoop();
-  loadScript().then(() => {
-    const params = Object.assign({appName: "suite", width: 800, height: 600, showToolBar: true, showAlgebraInput: true, showMenuBar: false,
-      appletOnLoad: (a) => {
-        try {
-          a.registerUpdateListener((label) => post({kind: "event", data: {type: "update", label}}));
-          a.registerAddListener((label) => post({kind: "event", data: {type: "add", label}}));
-          installErrorScraper();                         // 09-09: GeoGebra reports errors only as a BLOCKING modal in the applet (never in the cell; evalCommandGetLabels just returns null). Scrape the modal text into an error event, then auto-dismiss it.
-          api = a; el.__api = a;
-          while (queue.length) serve(queue.shift());
-        } catch (e) { console.error("ggblab appletOnLoad failed", e); post({kind: "event", data: {type: "error", error: String(e)}}); }
-      }}, M.params || {});
-    new window.GGBApplet(params, true).inject(el);   // element, not id (deployggb gives up silently on a missing id)
-  }).catch(e => console.error("ggblab: deployggb load failed", e));
-})();
-"""
+JS = (Path(__file__).with_name("mount.js")).read_text(encoding="utf-8")   # one JS source for every host language (stage 4: julia/host/html_host.jl reads the same file); __CFG__ is substituted at mount
 
 
 def find_server(kid: str) -> tuple[str, dict]:
@@ -225,6 +121,9 @@ class GeoGebra:
         return d.get("data")
 
     def command(self, *cmds: str, timeout: float = 10.0):
+        """C1 `eval`: one reply entry per command — the label string(s) GeoGebra returned, None when it refused (error modal →
+        `errors()`, or a redefinition), or {"error": …} when the Apps API threw for that command (2026-09-10: e.g. TriangleCenter's
+        lazy "Discrete commands not loaded yet"); the rest of the batch still runs."""
         return self._rpc(Eval(tuple(cmds)), timeout)
     def xml(self, timeout: float = 10.0) -> str:
         return self._rpc(XmlOut(), timeout)
