@@ -32,7 +32,10 @@
   "d7cb008",
   "51651f9",
   "4997181",
-  "0ba28df"
+  "0ba28df",
+  "685193d",
+  "cc247ce",
+  "6094292"
  ],
  "steps": [
   {
@@ -240,8 +243,8 @@
    ],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -278,8 +281,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -309,8 +312,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -346,8 +349,8 @@
    "removed_edges": [],
    "spine_top3": [
     "ggblab/__init__.py",
-    "ggblab/host/control.py",
-    "ggblab/host/html_host.py"
+    "ggblab/host/html_host.py",
+    "ggblab/host/control.py"
    ],
    "anchors": {
     "api": 31,
@@ -1199,6 +1202,111 @@
     "ggblab/parse.py",
     "tests/test_construction.py"
    ]
+  },
+  {
+   "i": 32,
+   "commit": "685193d",
+   "subject": "code-graph instrument report through 0ba28df",
+   "nodes": 52,
+   "edges": 64,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 103,
+    "jup": 100
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 33,
+   "commit": "cc247ce",
+   "subject": "probes/stage3: Julia parser sweeps over every construction line (fixture 1,007 +",
+   "nodes": 52,
+   "edges": 64,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 103,
+    "jup": 100
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 34,
+   "commit": "6094292",
+   "subject": "stage 4, second slice: Julia entry = `ggb\"…\"` string macro delegating to the Pyt",
+   "nodes": 54,
+   "edges": 65,
+   "added_nodes": [
+    "examples/julia_macro.ipynb",
+    "tests/test_julia_macro_parity.py"
+   ],
+   "removed_nodes": [],
+   "added_edges": 1,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 105,
+    "jup": 100
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/parse.py",
+    "tests/test_construction.py"
+   ]
   }
  ],
  "M2": {
@@ -1302,11 +1410,11 @@
    0,
    "b8901c1"
   ],
-  "ggblab/host/control.py": [
+  "ggblab/host/anywidget_host.py": [
    0,
    "b8901c1"
   ],
-  "ggblab/host/anywidget_host.py": [
+  "ggblab/host/control.py": [
    0,
    "b8901c1"
   ],
@@ -1489,6 +1597,14 @@
   "examples/eg11_construction.ipynb": [
    31,
    "0ba28df"
+  ],
+  "examples/julia_macro.ipynb": [
+   34,
+   "6094292"
+  ],
+  "tests/test_julia_macro_parity.py": [
+   34,
+   "6094292"
   ]
  },
  "positive_control": {
