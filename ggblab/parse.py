@@ -17,6 +17,14 @@ class UnknownHead(ParseError):
     def __init__(self, head: str, line: str):
         super().__init__(f"unknown command head {head!r} (closed world of {len(HEADS)} heads)", line); self.head = head
 
+class RelativeReference(ParseError):
+    """v1 magic relative references (`_`, `__`, `_3`) are not labels: a bare identifier is a label reference (teacher 09-07),
+    so `_3` would be sent to GeoGebra literally and fail silently. v2 cells name their objects (`D = L1(1)`) — write the label."""
+    def __init__(self, ref: str, line: str):
+        super().__init__(f"relative reference {ref!r} is v1 magic (write the label)", line); self.ref = ref
+
+_RELREF = re.compile(r"^_+(\d+)?$")
+
 _LABEL = r"[A-Za-z_][A-Za-z0-9_'{}]*"
 _NUM = re.compile(r"^-?\d+(\.\d+)?([eE][-+]?\d+)?$")
 _HEADCALL = re.compile(r"^([A-Za-z][A-Za-z0-9]*)\s*\((.*)\)\s*$", re.S)
@@ -62,6 +70,7 @@ def parse_arg(text: str, heads: tuple[str, ...] = HEADS) -> Arg:
     if m and m.group(1)[0].isupper() and _balanced(m.group(2)):
         if m.group(1) not in heads: raise UnknownHead(m.group(1), text)
         return Command(m.group(1), tuple(parse_arg(x, heads) for x in split_top(m.group(2))))   # nested (reported by the gate)
+    if _RELREF.fullmatch(t): raise RelativeReference(t, text)
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_'{}]*", t): return Ref(t)        # bare identifier = label reference (teacher 09-07)
     return Raw(t)
 
@@ -85,6 +94,9 @@ def parse_statement(body: str, heads: tuple[str, ...] = HEADS) -> Statement:
     if b.startswith(":"): return Directive(tuple(b.split()))
     m = _ASSIGN.match(b)
     label, rhs = (m.group(1), m.group(2).strip()) if m else (None, b)
+    if label and _RELREF.fullmatch(label): raise RelativeReference(label, body)
+    for tok in re.findall(r"(?<![A-Za-z0-9_'{}])(_+\d*)(?![A-Za-z0-9_'{}])", rhs):
+        if _RELREF.fullmatch(tok): raise RelativeReference(tok, body)
     hm = _HEADCALL.match(rhs)
     if hm and hm.group(1)[0].isupper() and _balanced(hm.group(2)):
         if hm.group(1) not in heads: raise UnknownHead(hm.group(1), body)

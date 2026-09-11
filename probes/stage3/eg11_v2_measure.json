@@ -1,0 +1,101 @@
+{
+ "date": "2026-09-11",
+ "lab": "8899 (v2 worktree, examples/eg11_construction.ipynb, Restart & Run All; the loop driven from the browser)",
+ "construction": {
+  "statements": 25,
+  "labels_returned": 30,
+  "heads": {
+   "Circle": 2,
+   "Point": 2,
+   "Line": 1,
+   "PerpendicularLine": 1,
+   "Polygon": 2,
+   "Angle": 3,
+   "Midpoint": 1,
+   "Length": 2
+  },
+  "note": "explicit labels instead of v1 relative references; list labels lowercase (`lst1(1)`) because an uppercase-initial label before `(` reads as a command head in this grammar (`L1(1)` -> UnknownHead); `{Tangent(C, c)}` is a raw list Definition (brace) so Tangent is not seen by the closed world",
+  "errors_pulled": []
+ },
+ "ir_reads_initial": {
+  "B": [
+   "1",
+   "0"
+  ],
+  "C": [
+   "0",
+   "0"
+  ],
+  "D": [
+   "0",
+   "-1"
+  ],
+  "E": [
+   "0",
+   "1"
+  ],
+  "F": [
+   "NaN",
+   "NaN"
+  ],
+  "G": [
+   "NaN",
+   "NaN"
+  ],
+  "Length(lst1)": 2,
+  "Length(lst3)": 1,
+  "kind(lst1)": "list",
+  "note": "D/E come from `D = lst1(1)` (an expression, not a command): the IR shows no command for them; F/G are NaN at the start because C = A makes c2 = Circle(Midpoint(A, C), A) degenerate"
+ },
+ "driver": [
+  [
+   "SetCoords(C, 0.5, 0)",
+   8
+  ],
+  [
+   "SetCoords(C, 2, 0)",
+   8
+  ]
+ ],
+ "loop_log": [
+  [
+   "C",
+   6.6,
+   {
+    "C": [
+     "0.5",
+     "0"
+    ],
+    "D": [
+     "0.5",
+     "-0.8660254037844386"
+    ],
+    "E": [
+     "0.5",
+     "0.8660254037844387"
+    ],
+    "Length(lst1)": 2
+   }
+  ],
+  [
+   "C",
+   8.01,
+   {
+    "C": [
+     "2",
+     "0"
+    ],
+    "D": [
+     "NaN",
+     "NaN"
+    ],
+    "E": [
+     "NaN",
+     "NaN"
+    ],
+    "Length(lst1)": 1
+   }
+  ]
+ ],
+ "retired": "v1 `getValueString(label)` + `ggb.parser.tokenize` (string parsing of GeoGebra's value text) -> v2: name the list members and read them from the XML IR (`element_irs`); the list length is a numeric object (`Length`) read by `value`; nothing is parsed from display strings"
+}

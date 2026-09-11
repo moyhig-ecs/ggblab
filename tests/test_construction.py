@@ -80,3 +80,15 @@ def test_labels_and_refs_are_sent_in_canonical_form():
     assert c.labels() == ("l_CA", "O", "s_BC2")           # surface labels are still available for reports
     from ggblab.construction import wire_label
     assert wire_label("M_a") == "M_a" and wire_label("G_{s}") == "G_{s}" and wire_label("A_12") == "A_{12}" and wire_label("l_{C}A") == "l_{C}A"
+
+
+def test_relative_references_are_rejected():
+    """v1 magic relative references are not labels (guard added 2026-09-11; positive control = eg11/eg12 lines)."""
+    import pytest
+    from ggblab.parse import parse_cell, RelativeReference
+    for line in ("Circle(_1, 1)", "{Intersect(_2, _6)}", "_7(1)", "Polygon(_1, _, __)", "f = IntersectPath(_, a)".replace("IntersectPath", "Intersect")):
+        with pytest.raises(RelativeReference):
+            parse_cell(line, dialect="python")
+    # underscores inside a label are labels, not references
+    c = parse_cell("l_1 = Line(P_h, zAxis)\nA = l1(1)", dialect="python")
+    assert c.labels() == ("l_1", "A")   # note: `L1(1)` (uppercase list label) reads as a command head → UnknownHead (grammar, registered 09-11)

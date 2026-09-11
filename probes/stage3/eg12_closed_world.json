@@ -1,0 +1,71 @@
+{
+ "date": "2026-09-11",
+ "heads": 28,
+ "sources": {
+  "eg12_3d.ipynb": {
+   "cells": 14,
+   "lines": 89,
+   "parsed": 77,
+   "failed": 12
+  },
+  "eg11_slider.ipynb (cmds blocks)": {
+   "cells": 3,
+   "lines": 131,
+   "parsed": 123,
+   "failed": 8
+  }
+ },
+ "outside_closed_world": {
+  "eg12_3d.ipynb": {
+   "SetCoords": {
+    "n": 2,
+    "example": "SetCoords(C_{t}, 0, 0, 3)"
+   },
+   "Cylinder": {
+    "n": 1,
+    "example": "Cylinder(_1, _2, 1)"
+   },
+   "IntersectPath": {
+    "n": 4,
+    "example": "f = IntersectPath(_, a)"
+   },
+   "Element": {
+    "n": 4,
+    "example": "l_{12} = Element(_3, 1)"
+   },
+   "Translate": {
+    "n": 1,
+    "example": "n = Translate(Vector((((u * v)) / ((v * v)) * v)), P_{h})"
+   }
+  },
+  "eg11_slider.ipynb (cmds blocks)": {
+   "Cylinder": {
+    "n": 2,
+    "example": "a = Cylinder(C_{t}, C_{b}, 1)"
+   },
+   "IntersectPath": {
+    "n": 5,
+    "example": "f = IntersectPath(p, a)"
+   },
+   "Translate": {
+    "n": 1,
+    "example": "n = Translate((u v) / (v v) v, P_{h})"
+   }
+  }
+ },
+ "brace_hidden_heads": {
+  "eg12_3d.ipynb": {},
+  "eg11_slider.ipynb (cmds blocks)": {
+   "Tangent": 1
+  }
+ },
+ "relative_refs_lines": {
+  "eg12_3d.ipynb": 17,
+  "eg11_slider.ipynb (cmds blocks)": 21
+ },
+ "note": {
+  "outside": "heads that raise UnknownHead in the 28-head closed world (ruling = teacher): Cylinder / IntersectPath / Element / Translate are construction heads (3D solid, path intersection, list element, transformation); SetCoords is a scripting command, not a construction head",
+  "brace_hidden": "heads that appear inside `{…}` list definitions, which the parser keeps as a raw Definition (brace question, teacher 09-07) — the closed world does not see them",
+  "relative_refs": "v1 magic relative references (_ / __ / _N) parse as bare labels in v2 (bare identifier = label reference, teacher 09-07) and would be sent literally; v2 cells use explicit labels"
+ }
+}

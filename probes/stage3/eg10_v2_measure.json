@@ -1,0 +1,75 @@
+{
+ "date": "2026-09-11",
+ "lab": "8899 (v2 worktree, examples/eg10_slider.ipynb, Restart & Run All, then the loop cell re-run and driven from the browser)",
+ "load": {
+  "ROWS": 91,
+  "xml_in+xml_out_s": 0.85,
+  "sliders_initial": {
+   "k": 4,
+   "n_1": 0
+  },
+  "layers": {
+   "0": 6,
+   "1": 14,
+   "2": 15,
+   "3": 11,
+   "4": 10,
+   "5": 3,
+   "6": 10,
+   "7": 12,
+   "8": 3,
+   "9": 7
+  }
+ },
+ "start": "HideLayer(1..9) + SetValue(k, 0) + SetValue(n_1, 0) by one eval -> visible per layer {0: 6, others 0}; events drained",
+ "driver": [
+  "SetValue(k, 3)",
+  "SetValue(n_1, 2)",
+  "SetValue(n_1, 5)",
+  "SetValue(k, 5)"
+ ],
+ "driver_gap_s": 7,
+ "loop_log": [
+  [
+   "k",
+   5,
+   0.01,
+   "backlog from the first (timed-out) run: SetValue(k, 5) had been fired after the loop ended and was still in the mailbox — the re-run consumed it first (drain before the loop, ruling 09-09, must be repeated when a cell is re-run)"
+  ],
+  [
+   "k",
+   3,
+   31.87,
+   "the driver's SetValue(k, 3) (delay = driver wait 15 s + 1.5 s + the gap of the previous step)"
+  ],
+  [
+   "n_1",
+   2,
+   6.73,
+   "one operation, one reaction"
+  ],
+  [
+   "n_1",
+   5,
+   6.8,
+   "one operation, one reaction"
+  ]
+ ],
+ "reaction_k": "ShowLayer(1..n) / HideLayer(n+1..9) + SetValue(n_1, 0) in one eval; own update:n_1 drained after",
+ "reaction_n_1": "SetVisibleInView(obj, 1, true/false) for the objects of layer k (11 objects in layer 3), one eval",
+ "visibility_probe": {
+  "observation": "SetVisibleInView changes the <show ev=…> bitmask only; <show object=…> (the DataFrame ShowObject column, C6) and api.getVisible() are unchanged. api.setVisible(label, bool) (Apps API; not in the 8-verb allow-list = teacher's item #9) changes <show object=…> and getVisible.",
+  "transitions_q": [
+   "initial ev=4 object=true",
+   "SetVisibleInView(q,1,false) -> ev=5",
+   "SetVisibleInView(q,1,true) -> ev=4",
+   "SetVisibleInView(q,2,false) -> ev=4 (no change)",
+   "SetVisibleInView(q,2,true) -> ev=6",
+   "api.setVisible(q,false) -> object=false ev=6 getVisible=false",
+   "api.setVisible(q,true) -> object=true"
+  ],
+  "reading": "bit 1 of ev is set when the object is hidden in Graphics 1; bit 2 is set when shown in Graphics 2; 4 was the file's default (authored in the 3D-capable suite). The layer-3 objects after step 4: first 5 ev=4 (shown), the other 6 ev=5 (hidden in view 1); ShowObject stayed true for all 11, so the notebook's XML-side count did not move.",
+  "consequence": "a v2 reader of per-object visibility in Graphics 1 must decode ev (bit 1), or the write must go through setVisible (#9). eg8's HideLayer/ShowLayer path changes <show object> (the count moved there)."
+ },
+ "errors_pulled": 0
+}
