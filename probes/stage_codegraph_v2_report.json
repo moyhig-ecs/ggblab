@@ -30,7 +30,9 @@
   "b87bc9f",
   "1314fd1",
   "d7cb008",
-  "51651f9"
+  "51651f9",
+  "4997181",
+  "0ba28df"
  ],
  "steps": [
   {
@@ -1125,6 +1127,78 @@
    "modified_nodes": [
     "ggblab/host/html_host.py"
    ]
+  },
+  {
+   "i": 30,
+   "commit": "4997181",
+   "subject": "code-graph instrument report through 51651f9 (M0: html_host.py reads mount.js; M",
+   "nodes": 50,
+   "edges": 60,
+   "added_nodes": [],
+   "removed_nodes": [],
+   "added_edges": 0,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 99,
+    "jup": 98
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": []
+  },
+  {
+   "i": 31,
+   "commit": "0ba28df",
+   "subject": "stage 3, second slice: eg10 / eg11 replayed on the v2 host (pull-only; tokenizer",
+   "nodes": 52,
+   "edges": 64,
+   "added_nodes": [
+    "examples/eg10_slider.ipynb",
+    "examples/eg11_construction.ipynb"
+   ],
+   "removed_nodes": [],
+   "added_edges": 4,
+   "removed_edges": [],
+   "spine_top3": [
+    "ggblab/__init__.py",
+    "ggblab/host/html_host.py",
+    "ggblab/parse.py"
+   ],
+   "anchors": {
+    "api": 103,
+    "jup": 100
+   },
+   "heads": 28,
+   "verbs": [
+    "DELETE",
+    "EVAL",
+    "KIND",
+    "LISTEN",
+    "NEW",
+    "VALUE",
+    "XML_IN",
+    "XML_OUT"
+   ],
+   "M1": true,
+   "modified_nodes": [
+    "ggblab/parse.py",
+    "tests/test_construction.py"
+   ]
   }
  ],
  "M2": {
@@ -1228,11 +1302,11 @@
    0,
    "b8901c1"
   ],
-  "ggblab/host/anywidget_host.py": [
+  "ggblab/host/control.py": [
    0,
    "b8901c1"
   ],
-  "ggblab/host/control.py": [
+  "ggblab/host/anywidget_host.py": [
    0,
    "b8901c1"
   ],
@@ -1284,11 +1358,11 @@
    8,
    "6cc98df"
   ],
-  "ggblab/parse.py": [
+  "ggblab/construction.py": [
    8,
    "6cc98df"
   ],
-  "ggblab/construction.py": [
+  "ggblab/parse.py": [
    8,
    "6cc98df"
   ],
@@ -1407,6 +1481,14 @@
   "tests/test_julia_host_parity.py": [
    29,
    "51651f9"
+  ],
+  "examples/eg10_slider.ipynb": [
+   31,
+   "0ba28df"
+  ],
+  "examples/eg11_construction.ipynb": [
+   31,
+   "0ba28df"
   ]
  },
  "positive_control": {
