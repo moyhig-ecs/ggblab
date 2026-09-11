@@ -31,26 +31,26 @@ _HEADCALL = re.compile(r"^([A-Za-z][A-Za-z0-9]*)\s*\((.*)\)\s*$", re.S)
 _ASSIGN = re.compile(rf"^({_LABEL})\s*=\s*(.*)$", re.S)
 
 def strip_comment(text: str) -> str:
-    """Remove a trailing `# …` comment that is outside string quotes."""
+    """Remove a trailing `# …` comment that is outside string quotes (only `"` delimits a string: `'` is a prime in labels, C', A'' — 2026-09-11)."""
     out, q = [], None
     for ch in text:
         if q:
             out.append(ch)
             if ch == q: q = None
-        elif ch in '"\'': q = ch; out.append(ch)
+        elif ch == '"': q = ch; out.append(ch)
         elif ch == "#": break
         else: out.append(ch)
     return "".join(out).strip()
 
 def split_top(text: str) -> list[str]:
-    """Split on top-level commas (respecting (), [], {} and quotes)."""
+    """Split on top-level commas (respecting (), [], {} and "…" strings; `'` is a prime, not a quote)."""
     parts, cur, depth, q = [], [], 0, None
     for ch in text:
         if q:
             cur.append(ch)
             if ch == q: q = None
             continue
-        if ch in '"\'': q = ch; cur.append(ch); continue
+        if ch == '"': q = ch; cur.append(ch); continue
         if ch in "([{": depth += 1
         elif ch in ")]}": depth -= 1
         if ch == "," and depth == 0: parts.append("".join(cur).strip()); cur = []
@@ -80,12 +80,19 @@ def _balanced(s: str) -> bool:
         if q:
             if ch == q: q = None
             continue
-        if ch in '"\'': q = ch
+        if ch == '"': q = ch
         elif ch in "([{": depth += 1
         elif ch in ")]}":
             depth -= 1
             if depth < 0: return False
     return depth == 0 and q is None
+
+_REF_IN_EXPR = re.compile(r"(?<![A-Za-z0-9_'{}\"]):([A-Za-z_][A-Za-z0-9_'{}]*)")
+def _deref(expr: str) -> str:
+    """`:label` inside a raw definition (`d = Distance(:A, :C)² + r`, `{Intersect(:c, :p)}`) is the same reference form as in a
+    command argument; GeoGebra has no `:label` syntax, so the colon is dropped (a `label: equation` form keeps its colon because
+    it is followed by a space)."""
+    return _REF_IN_EXPR.sub(r"\1", expr)
 
 def parse_statement(body: str, heads: tuple[str, ...] = HEADS) -> Statement:
     """One `@ggb` body (the text after `@ggb`, comment already stripped)."""
@@ -105,7 +112,7 @@ def parse_statement(body: str, heads: tuple[str, ...] = HEADS) -> Statement:
         return FreePoint(label, Tup(tuple(parse_arg(x, heads) for x in split_top(rhs[1:-1]))))
     if _NUM.fullmatch(rhs) and label: return FreeNumber(label, Num(rhs))
     if len(rhs) >= 2 and rhs[0] == '"' and rhs[-1] == '"': return Definition(label, rhs[1:-1], True)
-    return Definition(label, rhs, False)
+    return Definition(label, _deref(rhs), False)
 
 def ggb_lines(cell: str, dialect: str = "julia") -> list[str]:
     """Statement bodies of a cell. julia: lines `@ggb …`; python (`%%ggb` cell): every non-empty line after the magic."""

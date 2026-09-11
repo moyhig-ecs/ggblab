@@ -92,3 +92,14 @@ def test_relative_references_are_rejected():
     # underscores inside a label are labels, not references
     c = parse_cell("l_1 = Line(P_h, zAxis)\nA = l1(1)", dialect="python")
     assert c.labels() == ("l_1", "A")   # note: `L1(1)` (uppercase list label) reads as a command head → UnknownHead (grammar, registered 09-11)
+
+
+def test_prime_labels_and_colon_refs_in_raw_definitions():
+    """2026-09-11 (found by the Julia string macro replay): `'` is a prime in GeoGebra labels, not a string quote — `Polygon(:A, :C', :A')`
+    is three references; `:label` inside a raw definition is dereferenced like a command argument."""
+    from ggblab.parse import parse_cell, split_top, strip_comment
+    assert split_top(":A, :C', :A'") == [":A", ":C'", ":A'"]
+    assert strip_comment("C' = lst1(1) # first member") == "C' = lst1(1)"
+    c = parse_cell("t1 = Polygon(:A, :C', :A')\nd = Distance(:A, :C)² + r\nlst = {Intersect(:c, :p)}\ns = Text(\"a, b\")".replace("s = Text(\"a, b\")", ""), dialect="python")
+    assert c.to_ggb() == ("t1 = Polygon(A, C', A')", "d = Distance(A, C)² + r", "lst = {Intersect(c, p)}")
+    assert c.statements[0].args[1].name == "C'"
