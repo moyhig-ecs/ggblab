@@ -1,0 +1,54 @@
+{
+ "hub": "https://vioras-jh2500.japaneast.cloudapp.azure.com",
+ "user": "ggblab-probe",
+ "items": {
+  "0_spawn": {
+   "ready": true,
+   "seconds": 30,
+   "url": "/user/ggblab-probe/",
+   "state": {
+    "pending": null,
+    "last_activity": "2026-09-15T06:02:33.946441Z",
+    "started": "2026-09-15T06:02:18.597460Z"
+   }
+  },
+  "1_4_whoami_under_prefix": {
+   "status": 200,
+   "body": {
+    "kernel_id": "probe",
+    "path": null,
+    "mount": "kernel:probe"
+   },
+   "pass": true
+  },
+  "1_root_is_not_relay": {
+   "status": 404
+  },
+  "3_longpoll_55s_via_ingress": {
+   "status": 200,
+   "seconds": 55.05,
+   "body": {
+    "requests": [],
+    "held": false,
+    "lease": 40.0
+   },
+   "pass": true
+  },
+  "5_kernel_find_server_and_inpod_probe": {
+   "stdout": "FIND_SERVER {\"url\": \"http://0.0.0.0:8888/user/ggblab-probe/\", \"auth\": [\"Authorization\"], \"prefix\": \"/user/ggblab-probe/\", \"hub_service_url\": \"http://0.0.0.0:8888/user/ggblab-probe/\"}\nPROBE_RC 0\nPROBE {\"1_base_url\": true, \"2_xsrf\": true, \"6_single_poller\": true}\nPROBE_DETAIL {\"xsrf\": 403, \"handover_s\": 4.08, \"srv\": {\"url\": \"http://jupyter-ggblab-probe:8888/user/ggblab-probe/\", \"base_url\": \"/user/ggblab-probe/\", \"token_set\": true}}\n",
+   "stderr": "",
+   "error": null,
+   "result": null,
+   "status": "done"
+  },
+  "7_julia_ggb_macro": {
+   "stdout": "GGB_MACRO_OK PythonCall.Py Construction(statements=(FreePoint(label='A', coords=Tup(items=(Num(text='1'), Num(text='2'))), kind='free_point'),))\n",
+   "stderr": "",
+   "error": null,
+   "result": null,
+   "status": "done",
+   "kernel": "julia-ggblab-v2",
+   "pass": true
+  }
+ }
+}

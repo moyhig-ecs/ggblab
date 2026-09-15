@@ -1,0 +1,98 @@
+{
+ "url": "http://127.0.0.1:8897",
+ "base": "/user/test/",
+ "items": {
+  "1_base_url": {
+   "whoami_under_base": {
+    "status": 200,
+    "mount": "kernel:probe"
+   },
+   "whoami_at_root": 404,
+   "list_running_servers": {
+    "url": "http://localhost:8897/user/test/",
+    "base_url": "/user/test/",
+    "token_set": true
+   },
+   "pass": true
+  },
+  "2_xsrf": {
+   "login_status": 200,
+   "cookies_set": [
+    "_xsrf",
+    "username-127-0-0-1-8897"
+   ],
+   "xsrf_cookie_path": "/user/test/",
+   "post_cookie_no_header": [
+    403,
+    "<!DOCTYPE HTML>\n<html>\n\n<head>\n\n    <meta charset=\"utf-8\">\n\n    <title>Jupyter Server</title>\n    <link id=\"favicon\" rel=\"shortcut icon\" type=\"image/x-icon\" href=\"/user/test/static/favicon.ico?v=50afa"
+   ],
+   "post_cookie_with_header": [
+    202,
+    {
+     "ok": true,
+     "resolved": false
+    }
+   ],
+   "post_token_header_no_cookie": [
+    202,
+    {
+     "ok": true,
+     "resolved": false
+    }
+   ],
+   "post_unauthenticated": [
+    403,
+    "<!DOCTYPE HTML>\n<html>\n\n<head>\n\n    <meta charset=\"utf-8\">\n\n    <title>Jupyter Server</title>\n    <link id=\"favicon\" rel=\"shortcut icon\" type=\"image/x-icon\" href=\"/user/test/static/favicon.ico?v=50afa"
+   ],
+   "pass": true
+  },
+  "6_single_poller": {
+   "lease_s": 6.0,
+   "A_first": {
+    "requests": [],
+    "held": false,
+    "lease": 6.0
+   },
+   "B_while_A_holds": {
+    "requests": [],
+    "held": true,
+    "lease": 6.0
+   },
+   "A_refresh": {
+    "requests": [],
+    "held": false,
+    "lease": 6.0
+   },
+   "call": {
+    "status": 200,
+    "reply_status": "pending"
+   },
+   "request_seen_by": {
+    "A": [
+     "d5b9fc65fa02"
+    ],
+    "B": []
+   },
+   "reply_first": {
+    "ok": true,
+    "resolved": true
+   },
+   "await_after_reply": {
+    "status": "ok",
+    "req_id": "d5b9fc65fa02",
+    "data": 42
+   },
+   "reply_second": {
+    "ok": true,
+    "resolved": false
+   },
+   "handover_after_A_stops_s": 6.28,
+   "A_after_handover": {
+    "requests": [],
+    "held": true,
+    "lease": 6.0
+   },
+   "pass": true
+  }
+ }
+}

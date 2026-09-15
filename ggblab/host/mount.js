@@ -13,12 +13,19 @@
   }
   window.__ggblabBoxes[M.mount] = {el, dom: M.dom};
   const clientId = (window.__ggblabClient = window.__ggblabClient || Math.random().toString(16).slice(2));
-  const base = ((document.body && document.body.dataset && document.body.dataset.baseUrl) || "/").replace(/\/$/, "");
+  // <base>ggblab/…: under JupyterHub the server lives at /user/<name>/. JupyterLab 4 / Notebook 7 stamp the base URL in the
+  // page config (what PageConfig.getBaseUrl() reads); <body data-base-url> is the older stamp (absent in Lab 4.5: measured 09-15).
+  const pageCfg = (function () { try { const c = document.getElementById("jupyter-config-data"); return c ? JSON.parse(c.textContent) : {}; } catch (e) { return {}; } })();
+  const base = (pageCfg.baseUrl || (document.body && document.body.dataset && document.body.dataset.baseUrl) || "/").replace(/\/$/, "");
+  // Auth exactly as @jupyterlab/services does: the page-config token (when the page was opened with ?token=… there is no OAuth
+  // cookie, only this token) plus the _xsrf cookie echoed as a header on POST. Measured on the Hub 2026-09-15: cookie-only fetches
+  // from a token-opened page are redirected to OAuth; the token header is what Lab itself sends.
+  const authHeaders = pageCfg.token ? {"Authorization": "token " + pageCfg.token} : {};
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   function xsrf() { const m = document.cookie.match(/(?:^|; )_xsrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : ""; }
   function post(payload) {                          // reply -> the parked call (req_id); event -> the mount's event log
     return fetch(base + "/ggblab/reply", {method: "POST", credentials: "same-origin",
-      headers: {"Content-Type": "application/json", "X-XSRFToken": xsrf()},
+      headers: Object.assign({"Content-Type": "application/json", "X-XSRFToken": xsrf()}, authHeaders),
       body: JSON.stringify(Object.assign({mount: M.mount}, payload))});
   }
   function handle(api, req) {                       // C3: one clause per head; unknown kind -> explicit error
@@ -44,7 +51,7 @@
   async function pollLoop() {                       // plain HTTP long-poll; survives proxies, needs no WebSocket
     for (;;) {
       try {
-        const r = await fetch(base + "/ggblab/poll?mount=" + encodeURIComponent(M.mount) + "&wait=25&client=" + clientId + "&lease=40", {credentials: "same-origin", cache: "no-store"});
+        const r = await fetch(base + "/ggblab/poll?mount=" + encodeURIComponent(M.mount) + "&wait=25&client=" + clientId + "&lease=40", {credentials: "same-origin", cache: "no-store", headers: authHeaders});
         if (r.status === 200) {
           const j = await r.json();
           if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(10000); continue; }   // another tab holds it; retry after the lease lapses
