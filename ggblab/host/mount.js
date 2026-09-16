@@ -1,7 +1,12 @@
 (function () {
   const M = __CFG__;
-  const el = document.getElementById("ggb-" + M.dom);
-  if (!el || el.__ggblab) return;
+  // The output element. `getElementById` returns the FIRST element with the id; when the same object was displayed twice
+  // on one page (cell 3 of probes/hub_two_tabs.ipynb, 09-15: "同一 object の再表示 = 空箱") the two outputs shared one id and
+  // the second script found the first, already-initialised div and returned — leaving its own div empty. Take the newest
+  // element with this id that nobody has claimed yet (the host now also stamps a fresh id per display; this is the belt).
+  const cands = Array.from(document.querySelectorAll('[id="ggb-' + M.dom + '"]')).filter(e => !e.__ggblab);
+  const el = cands.length ? cands[cands.length - 1] : null;
+  if (!el) return;
   el.__ggblab = true;
   // stage 3: one live applet per document. If this page already holds an applet for M.mount (an earlier output, a saved
   // output re-rendered on reload), this output becomes a pointer to it instead of a second applet + second poller.
@@ -48,13 +53,23 @@
     catch (e) { await post({req_id: req.req_id, data: {error: String(e)}}); }
   }
   let held = false;
+  async function gone() {                           // the output left the page (cell re-run cleared it, notebook closed)?
+    if (document.contains(el)) return false;        // two looks 2 s apart: Lab detaches and re-attaches nodes when it moves cells
+    await sleep(2000);
+    return !document.contains(el);
+  }
   async function pollLoop() {                       // plain HTTP long-poll; survives proxies, needs no WebSocket
     for (;;) {
+      if (await gone()) {                           // 09-16: no zombie poller serving a detached applet (it shares clientId with
+        const reg = window.__ggblabBoxes[M.mount];  // the live one, so the server could hand it the requests)
+        if (reg && reg.el === el) delete window.__ggblabBoxes[M.mount];
+        return;
+      }
       try {
         const r = await fetch(base + "/ggblab/poll?mount=" + encodeURIComponent(M.mount) + "&wait=25&client=" + clientId + "&lease=40", {credentials: "same-origin", cache: "no-store", headers: authHeaders});
         if (r.status === 200) {
           const j = await r.json();
-          if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(10000); continue; }   // another tab holds it; retry after the lease lapses
+          if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(1000); continue; }   // another tab holds it. The server parks us (<= wait) until it releases; the 1 s is for a server that answers at once
           if (held) { held = false; delete el.dataset.ggblabHeld; }
           for (const req of (j.requests || [])) { if (api) serve(req); else queue.push(req); }
         }

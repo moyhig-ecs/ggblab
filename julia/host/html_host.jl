@@ -148,6 +148,7 @@ function GeoGebra(; mount=nothing, doc=nothing, params...)
 end
 
 function mount(g::GeoGebra)
+    g.dom_id = string(uuid4())[1:12]     # one id per DISPLAY (09-16): re-showing `g` used to emit two divs with one id → the second stayed empty
     cfg = Dict("mount" => g.mount_id, "dom" => g.dom_id, "params" => g.params, "deploy" => DEPLOY[])
     html = "<div id=\"ggb-$(g.dom_id)\" style=\"min-height:600px\"></div><script>" * replace(MOUNT_JS, "__CFG__" => JSON.json(cfg)) * "</script>"
     display(HTML(html))

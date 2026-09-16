@@ -1,0 +1,36 @@
+{
+  "probe": "hub_two_tabs.ipynb browser layer (Playwright MCP), re-measured after the 09-16 relay/mount fixes",
+  "date": "2026-09-16",
+  "server": "http://127.0.0.1:8899 (stage-0 config, base /, jupyter_server 2.17.0, relay = ggblab/host/relay.py after on_connection_close + parked second poller)",
+  "kernel": "python3 (ipykernel), same env as the server (PYTHONPATH = worktree)",
+  "fix_under_test": {
+    "relay.py": "PollHandler.on_connection_close -> Mailbox.release(mount, client, poll_id); a second client is parked (<= wait) instead of told held at once and answers immediately on take-over; a closed poll never drains the queue and never takes the box",
+    "mount.js": "newest unclaimed element with the output id (the same-object re-display used to hit the first, initialised div and return); poll loop exits once its element left the document; held back-off 10 s -> 1 s",
+    "html_host.py / html_host.jl": "a fresh DOM id per display (was one id per object)"
+  },
+  "tab1": {
+    "client": "104627b82d20d8",
+    "cell1_applet": {"dom": "ggb-6f1bab413e64", "api_ready": true},
+    "cell2_command": "LABELS ['A', 'B'] after 0.04 s",
+    "cell3_same_object_redisplay": {"dom": "ggb-712ef77cc64f", "height_px": 23, "text": "ggblab: the applet for this notebook is already mounted above (doc:probes/hub_two_tabs.ipynb) — show", "verdict": "pointer (was: empty 600 px box on 09-15)"}
+  },
+  "tab2": {
+    "client": "2d9e80990e6158",
+    "cell1_applet": {"dom": "ggb-66b98734ec5a", "api_ready": true},
+    "held_mark_set_at_ms": 1789523932546,
+    "held_mark_note": "appears when the FIRST parked poll returns held:true (<= wait 25 s), not at once as on 09-15",
+    "close_tab1_requested_at_ms": 1789523968478,
+    "held_mark_removed_at_ms": 1789523971337,
+    "takeover_s": 2.859,
+    "takeover_note": "measured from the Date.now() taken in tab 2 just before the close-tab tool call; includes the tool's own latency. 09-15: 65 s+ / 130.7 s local (lease 40), 67.0 s on the Hub",
+    "cell2_command_after_takeover": "LABELS ['A', 'B'] after 0.04 s"
+  },
+  "reload": {
+    "client_after_reload": "5192d570ec5f1",
+    "cell1_applet": {"dom": "ggb-a4f003f11475", "api_ready": true},
+    "held_mark_ever_set": false,
+    "cell2_command_after_reload": "LABELS ['A', 'B'] after 0.02 s",
+    "note": "the reloaded page became holder at once (the old page's parked poll closed -> release). Before the fix the dead client held the box for up to lease 40 s (+ parked wait)"
+  },
+  "pass": true
+}

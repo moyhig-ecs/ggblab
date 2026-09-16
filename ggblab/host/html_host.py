@@ -53,7 +53,7 @@ class GeoGebra:
     def __init__(self, mount: str | None = None, doc: str | None = None, **params):
         self._listeners: list[Callable[[dict], None]] = []
         self.kernel_id = kernel_id() or ""
-        self.dom_id = uuid.uuid4().hex[:12]                     # the output element (one per display)
+        self.dom_id = uuid.uuid4().hex[:12]                     # the output element of the LATEST display (mount() stamps a fresh one per display)
         self.params = params
         self.server_url, self._headers = find_server(self.kernel_id)
         if doc:                                                 # an agent-started kernel with no session names its document explicitly
@@ -89,6 +89,10 @@ class GeoGebra:
         self.mount()
 
     def mount(self) -> None:
+        # One id per DISPLAY, not per object: displaying the same object twice on one page used to emit two divs with one id,
+        # and the second script found the first (initialised) div and returned, leaving its own div empty (09-15 所見 2).
+        # With a fresh id the later output becomes a pointer to the live applet, like a second object's output does.
+        self.dom_id = uuid.uuid4().hex[:12]
         cfg = {"mount": self.mount_id, "dom": self.dom_id, "params": self.params, "deploy": DEPLOY}
         html = (f'<div id="ggb-{self.dom_id}" style="min-height:600px"></div>'
                 f'<script>{JS.replace("__CFG__", json.dumps(cfg))}</script>')

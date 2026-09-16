@@ -1,5 +1,5 @@
 """RPC mailbox (09-09, ruling (i)): the kernel's call is parked until the browser replies; events are pulled."""
-import asyncio
+import asyncio, time
 from ggblab.host.relay import Mailbox
 
 
@@ -65,3 +65,79 @@ def test_nothing_in_the_host_package_opens_a_comm():
     pkg = pathlib.Path(__file__).resolve().parents[1] / "ggblab"
     src = "\n".join(p.read_text(encoding="utf-8") for p in pkg.rglob("*.py"))
     assert not re.search(r"register_comm_target|control_handlers\[|Comm\(target_name", src)
+
+
+# ── 09-16: lease release on connection close + parked second poller (所見 2 of the 09-15 hub-crossing measurement) ──────────
+
+def test_release_on_connection_close_hands_over_at_once():
+    async def main():
+        mb = Mailbox()
+        a = await mb.take_requests("doc:nb", wait=0, client="A", lease=40, poll_id="pA1")
+        assert a["held"] is False
+        b = await mb.take_requests("doc:nb", wait=0, client="B", lease=40)
+        assert b["held"] is True                                                           # A holds for 40 s
+        assert mb.release("doc:nb", "A", "pA1") is True                                    # A's tab closed mid-poll
+        b2 = await mb.take_requests("doc:nb", wait=0, client="B", lease=40)
+        assert b2["held"] is False and mb.boxes["doc:nb"]["holder"] == "B"
+    run(main())
+
+
+def test_stale_release_of_an_old_poll_is_ignored():
+    async def main():
+        mb = Mailbox()
+        await mb.take_requests("doc:nb", wait=0, client="A", lease=40, poll_id="p1")
+        await mb.take_requests("doc:nb", wait=0, client="A", lease=40, poll_id="p2")       # A re-polled; p1's socket closes late
+        assert mb.release("doc:nb", "A", "p1") is False and mb.boxes["doc:nb"]["holder"] == "A"
+        assert mb.release("doc:nb", "B", None) is False                                    # not the holder
+        assert mb.release("doc:nb", "A", None) is True                                     # any poll of the holder
+    run(main())
+
+
+def test_second_poller_is_parked_and_wakes_on_release():
+    async def main():
+        mb = Mailbox()
+        await mb.take_requests("doc:nb", wait=0, client="A", lease=40, poll_id="pA")
+        t0 = time.monotonic()
+        parked = asyncio.create_task(mb.take_requests("doc:nb", wait=5, client="B", lease=40))
+        await asyncio.sleep(0.05)
+        assert not parked.done()                                                           # B is parked, not told `held` at once
+        mb.release("doc:nb", "A", "pA")
+        b = await parked
+        assert b["held"] is False and mb.boxes["doc:nb"]["holder"] == "B" and time.monotonic() - t0 < 1.0
+    run(main())
+
+
+def test_parked_second_poller_times_out_as_held():
+    async def main():
+        mb = Mailbox()
+        await mb.take_requests("doc:nb", wait=0, client="A", lease=40)
+        t0 = time.monotonic()
+        b = await mb.take_requests("doc:nb", wait=0.1, client="B", lease=40)
+        assert b["held"] is True and 0.08 <= time.monotonic() - t0 < 1.0
+    run(main())
+
+
+def test_parked_second_poller_takes_over_when_the_lease_lapses():
+    async def main():
+        mb = Mailbox()
+        await mb.take_requests("doc:nb", wait=0, client="A", lease=1)
+        mb.boxes["doc:nb"]["holder_t"] -= 0.9                                              # 0.1 s of A's lease left
+        t0 = time.monotonic()
+        b = await mb.take_requests("doc:nb", wait=5, client="B", lease=1)
+        assert b["held"] is False and mb.boxes["doc:nb"]["holder"] == "B" and time.monotonic() - t0 < 1.0
+    run(main())
+
+
+def test_closed_poll_does_not_drain_the_queue():
+    async def main():
+        mb = Mailbox()
+        closed = asyncio.Event()
+        parked = asyncio.create_task(mb.take_requests("doc:nb", wait=5, client="A", lease=40, poll_id="pA", closed=closed))
+        await asyncio.sleep(0.02)
+        closed.set(); mb.release("doc:nb", "A", "pA")                                      # = the handler's on_connection_close
+        rid = mb.submit("doc:nb", {"kind": "value", "label": "x"})                         # a request arrives right after
+        a = await parked
+        assert a.get("closed") is True and a["requests"] == []                             # not handed to the dead connection
+        b = await mb.take_requests("doc:nb", wait=0, client="B", lease=40)
+        assert [r["req_id"] for r in b["requests"]] == [rid] and b["held"] is False
+    run(main())

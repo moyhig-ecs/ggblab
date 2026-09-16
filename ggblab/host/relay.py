@@ -6,7 +6,9 @@
   GET  <base>ggblab/await?req_id=<id>&wait=<s>         kernel -> keep waiting for a parked reply (proxy-sized slices)
   GET  <base>ggblab/poll?mount=<id>&wait=<s>&client=<id>&lease=<s>
                                                         browser long-poll -> {"requests": [...], "held": bool}
-                                                        (one live poller per box: the first client holds it for `lease` s)
+                                                        (one live poller per box: the first client holds it for `lease` s;
+                                                        a second client is parked up to `wait` s and takes over the moment
+                                                        the holder's connection closes or its lease lapses — 2026-09-16)
   POST <base>ggblab/reply   {req_id, data} | {kind: "event", mount, data}
                                                         browser -> resolve the parked call / append to the mount's event log
   GET  <base>ggblab/events?mount=<id>&since=<seq|latest>&wait=<s>
@@ -42,7 +44,7 @@ class Mailbox:
     """Server-side registry: per-mount request queue (+ poller lease), parked replies by req_id, per-mount event log."""
 
     def __init__(self, keep: float = KEEP) -> None:
-        self.boxes: dict[str, dict] = {}       # mount -> {"q", "ev", "t", "holder", "holder_t", "lease"}
+        self.boxes: dict[str, dict] = {}       # mount -> {"q", "ev", "t", "holder", "holder_t", "holder_poll", "lease", "free"}
         self.pending: dict[str, dict] = {}     # req_id -> {"fut", "t", "mount"}
         self.results: dict[str, tuple] = {}    # req_id -> (data, t): replies that arrived after the waiter left
         self.events: dict[str, dict] = {}      # mount -> {"seq", "q", "ev", "t"}
@@ -64,7 +66,9 @@ class Mailbox:
     def box(self, mount: str) -> dict:
         b = self.boxes.get(mount)
         if b is None:
-            b = self.boxes[mount] = {"q": collections.deque(), "ev": asyncio.Event(), "t": 0.0, "holder": None, "holder_t": 0.0, "lease": LEASE_DEFAULT}
+            b = self.boxes[mount] = {"q": collections.deque(), "ev": asyncio.Event(), "t": 0.0,
+                                     "holder": None, "holder_t": 0.0, "holder_poll": None, "lease": LEASE_DEFAULT,
+                                     "free": asyncio.Event()}              # set when the holder releases the box
         b["t"] = time.time()
         return b
 
@@ -101,23 +105,69 @@ class Mailbox:
         return "ok", data
 
     # -- browser side: poll / reply -----------------------------------------------------------------------------
-    async def take_requests(self, mount: str, wait: float, client: str, lease: float) -> dict:
-        b = self.box(mount); now = time.time()
-        # one live poller per box: the first client holds the box; others are told so and back off until the lease lapses
+    @staticmethod
+    def _held_by_other(b: dict, client: str, now: float) -> bool:
+        return bool(b["holder"]) and b["holder"] != client and now - b["holder_t"] < b["lease"]
+
+    @staticmethod
+    async def _wait_any(events: list[asyncio.Event], timeout: float) -> None:
+        """Park until one of `events` is set or `timeout` s pass (the waiters are cancelled either way)."""
+        if timeout <= 0:
+            return
+        tasks = [asyncio.ensure_future(e.wait()) for e in events]
+        try:
+            await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in tasks:
+                t.cancel()
+
+    async def take_requests(self, mount: str, wait: float, client: str, lease: float,
+                            poll_id: str | None = None, closed: asyncio.Event | None = None) -> dict:
+        """The browser's long-poll. `poll_id` names this one HTTP request (so a late close of an OLD poll cannot release a
+        NEWER one by the same client); `closed` is set by the handler when the browser went away mid-poll (tab closed):
+        the parked wait ends at once, the queue is NOT drained (the next poller gets the requests), and `release()` frees
+        the lease so a second tab takes over immediately instead of after lease + wait (measured 67 s on the Hub, 09-15)."""
+        b = self.box(mount); now = time.time(); deadline = now + max(wait, 0.0)
+        # one live poller per box: the first client holds the box. A second client is PARKED (up to `wait`) on the box's
+        # `free` event and re-checks when the holder releases or the lease lapses; with wait=0 it is told `held` at once.
+        parked = False
         if client:
-            if b["holder"] and b["holder"] != client and now - b["holder_t"] < b["lease"]:
-                return {"requests": [], "held": True, "lease": b["lease"]}
-            b["holder"], b["holder_t"], b["lease"] = client, now, lease
+            while self._held_by_other(b, client, now):
+                left = min(deadline - now, b["holder_t"] + b["lease"] - now)
+                if left <= 0 or (closed is not None and closed.is_set()):
+                    return {"requests": [], "held": True, "lease": b["lease"]}
+                b["free"].clear()                              # clear first, then look: no lost wake-up
+                if self._held_by_other(b, client, time.time()):
+                    parked = True
+                    await self._wait_any([b["free"]] + ([closed] if closed is not None else []), left)
+                now = time.time()
+            if closed is not None and closed.is_set():         # woke because the browser left: a dead poll must not take the box
+                return {"requests": [], "held": True, "lease": b["lease"], "closed": True}
+            b["holder"], b["holder_t"], b["lease"], b["holder_poll"] = client, now, lease, poll_id
+        if parked:                                             # a take-over answers at once: the browser drops its `held` mark and re-polls
+            reqs = list(b["q"]); b["q"].clear()
+            return {"requests": reqs, "held": False, "lease": b["lease"]}
         b["ev"].clear()                                        # clear first, then look: no lost wake-up
         if not b["q"] and wait > 0:
-            try:
-                await asyncio.wait_for(b["ev"].wait(), timeout=wait)
-            except asyncio.TimeoutError:
-                pass
+            await self._wait_any([b["ev"]] + ([closed] if closed is not None else []), deadline - time.time())
+        if closed is not None and closed.is_set():             # the browser is gone: leave the requests for the next poller
+            return {"requests": [], "held": False, "lease": b["lease"], "closed": True}
+        if client and b["holder"] != client:                   # the lease lapsed while parked and another tab took over
+            return {"requests": [], "held": True, "lease": b["lease"]}
         reqs = list(b["q"]); b["q"].clear()
         if client:
             b["holder_t"] = time.time()
         return {"requests": reqs, "held": False, "lease": b["lease"]}
+
+    def release(self, mount: str, client: str, poll_id: str | None = None) -> bool:
+        """Free the box if `client` holds it through the poll `poll_id` (None = any poll of that client). Called by the
+        poll handler's on_connection_close; wakes a parked second poller. Returns whether anything was released."""
+        b = self.boxes.get(mount)
+        if b is None or not client or b["holder"] != client or (poll_id is not None and b["holder_poll"] != poll_id):
+            return False
+        b["holder"], b["holder_t"], b["holder_poll"] = None, 0.0, None
+        b["free"].set()
+        return True
 
     def resolve(self, rid: str, data: Any) -> bool:
         """Deliver the browser's reply to the parked call. A reply nobody is waiting for is kept for a later `await`."""
@@ -201,13 +251,26 @@ class AwaitHandler(_Json):
 
 
 class PollHandler(_Json):
+    _poll: tuple[str, str, str] | None = None            # (mount, client, poll_id) of the request in flight
+    _closed: asyncio.Event | None = None
+
     @web.authenticated
     async def get(self):
         mount = self.get_argument("mount")
         wait = _clamp(self.get_argument("wait", "25"), 0.0, 60.0)
         client = self.get_argument("client", "")
         lease = _clamp(self.get_argument("lease", str(LEASE_DEFAULT)), 1.0, LEASE_MAX)
-        self.send(await MB.take_requests(mount, wait, client, lease))
+        self._poll, self._closed = (mount, client, uuid.uuid4().hex), asyncio.Event()
+        self.send(await MB.take_requests(mount, wait, client, lease, poll_id=self._poll[2], closed=self._closed))
+
+    def on_connection_close(self):
+        """The browser dropped this poll (tab closed, page navigated): end the parked wait without draining the queue and
+        free the lease at once — a second tab then takes over on its next poll instead of after lease + wait."""
+        if self._closed is not None:
+            self._closed.set()
+        if self._poll is not None:
+            MB.release(*self._poll)
+        super().on_connection_close()
 
 
 class ReplyHandler(_Json):
