@@ -2,7 +2,7 @@
 through PythonCall — so the Julia side sees exactly what the Python side sees (one parser, one Construction), and what
 Julia's own parser would have rewritten (prime labels, juxtaposition, numeric literals) reaches the host byte for byte.
 Skipped when julia / PythonCall are not available."""
-import json, os, shutil, subprocess
+import json, os, shutil, subprocess, sys
 from pathlib import Path
 import pytest
 
@@ -10,7 +10,7 @@ from ggblab.parse import parse_cell
 
 ROOT = Path(__file__).resolve().parents[1]
 julia = shutil.which("julia")
-PY = os.environ.get("JULIA_PYTHONCALL_EXE", "/Users/manabu/miniforge3/envs/py314/bin/python3")
+PY = os.environ.get("JULIA_PYTHONCALL_EXE", sys.executable)   # PythonCall uses the Python that runs the tests
 ENV = {**os.environ, "JULIA_CONDAPKG_BACKEND": "Null", "JULIA_PYTHONCALL_EXE": PY, "PYTHONPATH": str(ROOT)}
 
 BODIES = [
@@ -25,7 +25,7 @@ def _julia(code: str) -> str:
     return r.stdout
 
 
-@pytest.mark.skipif(julia is None or not Path(PY).exists(), reason="julia or the conda python not installed")
+@pytest.mark.skipif(julia is None or not Path(PY).exists(), reason="julia or its Python not available")
 def test_string_macro_is_byte_identical_to_the_python_parser():
     code = f'''
 include("{ROOT / 'julia/host/html_host.jl'}"); include("{ROOT / 'julia/host/ggb_macro.jl'}"); using .GGBLabHost, .GGBLabMacro, PythonCall, JSON
@@ -43,7 +43,7 @@ println(JSON.json(Dict("out" => out, "plans" => plans)))
     assert d["plans"][0] == ["Eval"]
 
 
-@pytest.mark.skipif(julia is None or not Path(PY).exists(), reason="julia or the conda python not installed")
+@pytest.mark.skipif(julia is None or not Path(PY).exists(), reason="julia or its Python not available")
 def test_closed_world_crosses_the_boundary():
     code = f'''
 include("{ROOT / 'julia/host/html_host.jl'}"); include("{ROOT / 'julia/host/ggb_macro.jl'}"); using .GGBLabHost, .GGBLabMacro, PythonCall

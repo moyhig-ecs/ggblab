@@ -19,6 +19,7 @@ Version 2 is a rewrite. It does not read or extend version 1's code, and there i
 | Relative references `_`, `__`, `_N` | accepted | rejected (`RelativeReference`) |
 | Julia | `@ggb` expression macro | `ggb"…"` string macro; the text goes to the same Python parser |
 | Packaging | version from `package.json` | version in `pyproject.toml`; pure Python wheel |
+| Python | 3.10 or later | 3.11 or later |
 
 ### Added
 

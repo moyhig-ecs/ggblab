@@ -18,6 +18,8 @@ This is **version 2** (`2.0.0rc1`, a release candidate). It is a rewrite, not an
 
 ## Install
 
+Python 3.11 or later.
+
 ```bash
 pip install ggblab==2.0.0rc1            # the core: applet host, server extension, parser
 pip install "ggblab[extra]==2.0.0rc1"   # plus ggblab_extra: construction I/O, geometry IR, SymPy objects
@@ -139,7 +141,7 @@ The tests read fixtures by paths relative to the repository, so they run in a so
 
 ```bash
 pip install -e ".[extra,test]"
-pytest -q tests          # 60 tests; five of them start Julia
+pytest -q tests          # 60 tests; four of them start Julia and are skipped where Julia is absent
 ```
 
 ## Relation to version 1
