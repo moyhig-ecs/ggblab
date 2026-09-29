@@ -1,7 +1,7 @@
 """Stage 4 (ruling A, 2026-09-11): the Julia string macro `ggb"…"` hands the RAW text to the Python closed-world parser
 through PythonCall — so the Julia side sees exactly what the Python side sees (one parser, one Construction), and what
 Julia's own parser would have rewritten (prime labels, juxtaposition, numeric literals) reaches the host byte for byte.
-Skipped when julia / PythonCall are not available."""
+Skipped when julia, JSON or PythonCall are not available."""
 import json, os, shutil, subprocess, sys
 from pathlib import Path
 import pytest
@@ -12,6 +12,17 @@ ROOT = Path(__file__).resolve().parents[1]
 julia = shutil.which("julia")
 PY = os.environ.get("JULIA_PYTHONCALL_EXE", sys.executable)   # PythonCall uses the Python that runs the tests
 ENV = {**os.environ, "JULIA_CONDAPKG_BACKEND": "Null", "JULIA_PYTHONCALL_EXE": PY, "PYTHONPATH": str(ROOT)}
+
+
+def julia_has(*pkgs: str) -> bool:
+    """julia is installed and the packages load (a machine can have julia without them, e.g. a CI runner)."""
+    if julia is None or not Path(PY).exists():
+        return False
+    return subprocess.run([julia, "-e", "using " + ", ".join(pkgs)], capture_output=True, text=True, env=ENV, timeout=600).returncode == 0
+
+
+HAVE = julia_has("JSON", "PythonCall")
+NEED = "julia with the packages JSON and PythonCall is not available"
 
 BODIES = [
     "\n".join(json.loads((ROOT / "probes/stage2/gate2/groups.json").read_text())[1]["bodies"]),   # gate #2 g1 (lesson 04)
@@ -25,7 +36,7 @@ def _julia(code: str) -> str:
     return r.stdout
 
 
-@pytest.mark.skipif(julia is None or not Path(PY).exists(), reason="julia or its Python not available")
+@pytest.mark.skipif(not HAVE, reason=NEED)
 def test_string_macro_is_byte_identical_to_the_python_parser():
     code = f'''
 include("{ROOT / 'julia/host/html_host.jl'}"); include("{ROOT / 'julia/host/ggb_macro.jl'}"); using .GGBLabHost, .GGBLabMacro, PythonCall, JSON
@@ -43,7 +54,7 @@ println(JSON.json(Dict("out" => out, "plans" => plans)))
     assert d["plans"][0] == ["Eval"]
 
 
-@pytest.mark.skipif(julia is None or not Path(PY).exists(), reason="julia or its Python not available")
+@pytest.mark.skipif(not HAVE, reason=NEED)
 def test_closed_world_crosses_the_boundary():
     code = f'''
 include("{ROOT / 'julia/host/html_host.jl'}"); include("{ROOT / 'julia/host/ggb_macro.jl'}"); using .GGBLabHost, .GGBLabMacro, PythonCall

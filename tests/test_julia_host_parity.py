@@ -1,5 +1,6 @@
 """Stage 4: the Julia host speaks the SAME request JSON as the Python host (the browser's `handle` is one function for
-both) and mounts the SAME JavaScript.  The contract is checked by running julia (skipped when julia is not installed)."""
+both) and mounts the SAME JavaScript.  The contract is checked by running julia (skipped when julia, or the Julia
+package JSON, is not available: a machine can have julia without the package, e.g. a CI runner)."""
 import json, shutil, subprocess
 from pathlib import Path
 import pytest
@@ -12,13 +13,24 @@ JL = ROOT / "julia/host/html_host.jl"
 julia = shutil.which("julia")
 
 
+def julia_has(*pkgs: str) -> bool:
+    """julia is installed and the packages load."""
+    if julia is None:
+        return False
+    return subprocess.run([julia, "-e", "using " + ", ".join(pkgs)], capture_output=True, text=True, timeout=600).returncode == 0
+
+
+HAVE = julia_has("JSON")
+NEED = "julia with the package JSON is not available"
+
+
 def test_mount_js_is_one_file_for_both_hosts():
     js = (ROOT / "ggblab/host/mount.js").read_text(encoding="utf-8")
     assert H.JS == js and "__CFG__" in js and "pollLoop" in js
     assert 'joinpath(@__DIR__, "..", "..", "ggblab", "host", "mount.js")' in JL.read_text(encoding="utf-8")
 
 
-@pytest.mark.skipif(julia is None, reason="julia not installed")
+@pytest.mark.skipif(not HAVE, reason=NEED)
 def test_request_json_parity_for_all_eight_verbs():
     py = {
         "eval": to_json(Eval(("A = (1, 2)", "Circle(A, 1)")), "r"),
@@ -54,7 +66,7 @@ println(GGBLabHost._q("doc:examples/x.ipynb"))
     assert lines[-1] == "doc%3Aexamples%2Fx.ipynb"
 
 
-@pytest.mark.skipif(julia is None, reason="julia not installed")
+@pytest.mark.skipif(not HAVE, reason=NEED)
 def test_julia_kernel_id_is_empty_outside_a_kernel():
     r = subprocess.run([julia, "-e", f'include("{JL}"); using .GGBLabHost; print(repr(GGBLabHost.kernel_id()))'], capture_output=True, text=True, timeout=300)
     assert r.returncode == 0, r.stderr[-1000:]
