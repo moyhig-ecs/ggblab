@@ -13,6 +13,7 @@ version = "2.0.0rc1"
 description = "GeoGebra applets in Jupyter notebooks, driven from Python and Julia kernels over a server-side mailbox (no comm, no lab extension)"
 readme = "README.md"
 license = { file = "LICENSE" }
+authors = [{ name = "Manabu Higashida", email = "manabu@higashida.net" }]
 requires-python = ">=3.11"   # typing.assert_never (3.11) is used for the closed-world checks
 keywords = ["geogebra", "jupyter", "jupyterlab", "julia", "geometry", "education"]
 classifiers = [
@@ -41,6 +42,7 @@ test = ["pytest>=7", "networkx>=3"]                        # networkx is used by
 examples = ["sympy>=1.12", "polars>=1.0", "requests>=2.0", "matplotlib>=3", "networkx>=3", "numpy>=1.26"]   # everything the notebooks in examples/ import
 
 [project.urls]
+Documentation = "https://ggblab.readthedocs.io/"
 Repository = "https://github.com/moyhig-ecs/ggblab"
 Changelog = "https://github.com/moyhig-ecs/ggblab/blob/v2/CHANGELOG.md"
 
@@ -54,4 +56,4 @@ packages = ["ggblab", "ggblab_extra"]
 "jupyter-config/jupyter_server_config.d" = "etc/jupyter/jupyter_server_config.d"
 
 [tool.hatch.build.targets.sdist]
-include = ["ggblab", "ggblab_extra", "julia", "jupyter-config", "tests", "examples", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+include = ["ggblab", "ggblab_extra", "julia", "jupyter-config", "tests", "examples", "docs", ".readthedocs.yaml", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]

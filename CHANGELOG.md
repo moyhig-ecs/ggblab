@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0rc1 (not yet released)
+## 2.0.0rc1 (2026-09-29)
 
 Version 2 is a rewrite. It does not read or extend version 1's code, and there is no compatibility layer.
 
@@ -42,6 +42,10 @@ Version 2 is a rewrite. It does not read or extend version 1's code, and there i
   development machine. The notebooks that served as acceptance checks of the stages moved to `probes/notebooks/`,
   the version 1 originals to `probes/v1_examples/`.
 - Extra `examples`: everything the notebooks import.
+
+### Documentation
+
+- `docs/` for Read the Docs (Sphinx, MyST). The copyright line of `LICENSE` names the author; the license is unchanged.
 
 ### Removed
 

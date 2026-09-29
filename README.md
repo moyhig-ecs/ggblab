@@ -96,6 +96,8 @@ c = Circle(:A, 1)
 
 The notebooks in `examples/` show more. eg1 and eg2 need no server and no applet.
 
+Documentation: <https://ggblab.readthedocs.io/> (choose the version `v2.0.0rc1`; `latest` and `stable` are version 1).
+
 | notebook | what it shows |
 |---|---|
 | eg1, eg2 | reading a `.ggb` file; the construction XML as a Python dict |
@@ -114,7 +116,7 @@ The notebooks in `examples/` show more. eg1 and eg2 need no server and no applet
 | | Python kernel | Julia kernel |
 |---|---|---|
 | JupyterLab | yes | yes |
-| JupyterHub on Kubernetes | yes (checked 2026-09-15) | yes (checked 2026-09-15) |
+| JupyterHub on Kubernetes | yes (checked 2026-09-29) | yes (checked 2026-09-29) |
 | VS Code notebooks | not yet | not yet |
 
 Version 1 has an experimental VS Code extension. Version 2 does not support VS Code notebooks yet.
@@ -162,8 +164,6 @@ GeoGebra itself is not part of this package. The applet is loaded from GeoGebra'
 [GeoGebra's own license](https://www.geogebra.org/license), which is free for non-commercial use.
 
 ## How this version was written
-
-<!-- draft wording; the author's text replaces it before the release -->
 
 Version 2 was written with AI assistance. The author decided the design, the order of the stages and the acceptance
 criteria, and ruled on every open question. The code, the tests and the documentation were drafted by an AI coding agent
