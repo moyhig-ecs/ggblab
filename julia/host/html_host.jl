@@ -18,7 +18,11 @@ module GGBLabHost
 using Downloads, JSON, UUIDs
 
 const DEPLOY = Ref("https://www.geogebra.org/apps/deployggb.js")
-const MOUNT_JS = read(joinpath(@__DIR__, "..", "..", "ggblab", "host", "mount.js"), String)
+# two layouts: the source tree (julia/host next to ggblab/host) and the installed package (ggblab/julia/host inside ggblab)
+const MOUNT_JS = let tree = joinpath(@__DIR__, "..", "..", "ggblab", "host", "mount.js"),
+                     pkg  = joinpath(@__DIR__, "..", "..", "host", "mount.js")
+    read(isfile(pkg) ? pkg : tree, String)
+end
 const SLICE = 25.0                     # one parked HTTP request per proxy-sized slice (same as the Python host)
 
 export GeoGebra, mount, command, xml, set_xml, delete, value, new_construction, kind, listen, unlisten, events, errors, wait_update, request

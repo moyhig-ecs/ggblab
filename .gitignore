@@ -11,3 +11,8 @@ probes/lab_config/migrated
 .jupyter/
 .jupyter_ystore.db
 test.chat
+
+# build artifacts
+dist/
+build/
+*.egg-info/

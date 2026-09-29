@@ -1,0 +1,57 @@
+# ggblab v2. Build: `python -m build`. The wheel carries four kinds of data besides the Python modules:
+#   ggblab/host/mount.js                  the one JavaScript source every host language mounts
+#   ggblab/xsd/common.xsd                 the GeoGebra XML schema used by ggblab.schema
+#   ggblab/julia/host/*.jl                the Julia host and the ggb"…" string macro (included from the installed package)
+#   etc/jupyter/jupyter_server_config.d/  enables the server extension ggblab.host.relay on install
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ggblab"
+version = "2.0.0rc1"
+description = "GeoGebra applets in Jupyter notebooks, driven from Python and Julia kernels over a server-side mailbox (no comm, no lab extension)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+keywords = ["geogebra", "jupyter", "jupyterlab", "julia", "geometry", "education"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: Jupyter",
+  "Framework :: Jupyter :: JupyterLab",
+  "Intended Audience :: Education",
+  "Programming Language :: Python :: 3",
+  "Topic :: Education",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+# The lower bounds are not verified one by one. Installed and tested with: jupyter_server 2.21, tornado 6.5, ipykernel 7.3,
+# xmlschema 4.3, sympy 1.14, polars 1.44 on Python 3.14.
+dependencies = [
+  "jupyter_server>=2.0",
+  "tornado>=6.1",
+  "ipykernel>=6.0",
+  "ipython>=8.0",
+  "xmlschema>=2.0",
+]
+
+[project.optional-dependencies]
+extra = ["sympy>=1.12", "polars>=1.0", "requests>=2.0"]   # ggblab_extra: construction I/O, the geometry IR, the SymPy objects
+anywidget = ["anywidget>=0.9"]                             # adapter #1 (marimo); import ggblab.host.anywidget_host explicitly
+test = ["pytest>=7", "networkx>=3"]                        # networkx is used by tests/test_geometry_ir.py only
+examples = ["sympy>=1.12", "polars>=1.0", "requests>=2.0", "matplotlib>=3", "networkx>=3", "numpy>=1.26"]   # everything the notebooks in examples/ import
+
+[project.urls]
+Repository = "https://github.com/moyhig-ecs/ggblab"
+Changelog = "https://github.com/moyhig-ecs/ggblab/blob/v2/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ggblab", "ggblab_extra"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"julia/host" = "ggblab/julia/host"
+
+[tool.hatch.build.targets.wheel.shared-data]
+"jupyter-config/jupyter_server_config.d" = "etc/jupyter/jupyter_server_config.d"
+
+[tool.hatch.build.targets.sdist]
+include = ["ggblab", "ggblab_extra", "julia", "jupyter-config", "tests", "examples", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
