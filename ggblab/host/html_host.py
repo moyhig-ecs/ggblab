@@ -16,6 +16,7 @@ from typing import Callable
 from IPython.display import HTML, display
 from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, Kind, New, to_json
 from .control import kernel_id
+from ..xml_errata import without_gui
 
 DEPLOY = "https://www.geogebra.org/apps/deployggb.js"
 
@@ -131,8 +132,10 @@ class GeoGebra:
         return self._rpc(Eval(tuple(cmds)), timeout)
     def xml(self, timeout: float = 10.0) -> str:
         return self._rpc(XmlOut(), timeout)
-    def set_xml(self, xml: str, timeout: float = 10.0):
-        return self._rpc(XmlIn(xml), timeout)
+    def set_xml(self, xml: str, timeout: float = 10.0, gui: bool = False):
+        """C1 `xml_in`. The `<gui>` element of the document (the layout the file was saved with) is not sent, so the applet
+        keeps its own layout; `gui=True` sends the document as it is."""
+        return self._rpc(XmlIn(xml if gui else without_gui(xml)), timeout)
     def delete(self, label: str, timeout: float = 10.0):
         return self._rpc(Delete(label), timeout)
     def value(self, label: str, timeout: float = 10.0):

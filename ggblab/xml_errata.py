@@ -49,3 +49,14 @@ def construction_xml(xml: str) -> str:
     if root.tag == "construction":
         return s
     return "<construction>" + s + "</construction>"
+
+
+_GUI = re.compile(r"[ \t]*<gui>.*?</gui>[ \t]*\n?|[ \t]*<gui\s*/>[ \t]*\n?", re.S)
+
+
+def without_gui(xml: str) -> str:
+    """The document without its `<gui>` element. `<gui>` carries the layout of the user interface the file was saved with
+    (which views are open, the toolbar, the input bar); GeoGebra's setXML re-creates that layout, so a file saved with the
+    algebra view closed closes it in the applet (2026-09-29). The construction, `<euclidianView>` and `<kernel>` stay."""
+    return _GUI.sub("", xml) if isinstance(xml, str) else xml
+

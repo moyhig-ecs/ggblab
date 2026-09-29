@@ -16,7 +16,8 @@
     el.style.minHeight = "0"; el.innerHTML = '<div style="font:12px system-ui;color:#666;padding:4px 6px;border-left:3px solid #ccc">ggblab: the applet for this notebook is already mounted above (' + M.mount + ') — <a href="#" onclick="event.preventDefault(); this.closest(\'body\').querySelector(\'#ggb-\' + window.__ggblabBoxes[' + JSON.stringify(M.mount) + '].dom).scrollIntoView({behavior:\'smooth\'})">show</a></div>';
     return;
   }
-  window.__ggblabBoxes[M.mount] = {el, dom: M.dom};
+  const box = {el, dom: M.dom, take: null};        // take: how another poller of this page hands a request to this applet
+  window.__ggblabBoxes[M.mount] = box;
   const clientId = (window.__ggblabClient = window.__ggblabClient || Math.random().toString(16).slice(2));
   // <base>ggblab/…: under JupyterHub the server lives at /user/<name>/. JupyterLab 4 / Notebook 7 stamp the base URL in the
   // page config (what PageConfig.getBaseUrl() reads); <body data-base-url> is the older stamp (absent in Lab 4.5: measured 09-15).
@@ -52,6 +53,8 @@
     try { await post({req_id: req.req_id, data: handle(api, req)}); }
     catch (e) { await post({req_id: req.req_id, data: {error: String(e)}}); }
   }
+  const take = (req) => { if (api) serve(req); else queue.push(req); };
+  box.take = take;
   let held = false;
   async function gone() {                           // the output left the page (cell re-run cleared it, notebook closed)?
     if (document.contains(el)) return false;        // two looks 2 s apart: Lab detaches and re-attaches nodes when it moves cells
@@ -71,7 +74,12 @@
           const j = await r.json();
           if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(1000); continue; }   // another tab holds it. The server parks us (<= wait) until it releases; the 1 s is for a server that answers at once
           if (held) { held = false; delete el.dataset.ggblabHeld; }
-          for (const req of (j.requests || [])) { if (api) serve(req); else queue.push(req); }
+          const reqs = j.requests || [];
+          if (reqs.length && !document.contains(el)) {   // 09-29: this output left the page while the poll was parked (the cell was run again).
+            const live = window.__ggblabBoxes[M.mount];  // The requests belong to the applet that replaced it, not to the detached one.
+            if (live && live.el !== el && live.take) { reqs.forEach(live.take); return; }
+          }
+          for (const req of reqs) take(req);
         }
         else await sleep(1000);
       } catch (e) { await sleep(1000); }

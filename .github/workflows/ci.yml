@@ -24,7 +24,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install ".[extra,test]"
-      - name: Test (the runner has julia but not the Julia packages, so the four tests that start Julia are skipped)
+      - name: Test (the runner has julia but not the Julia packages, so the five tests that start Julia are skipped)
         run: python -m pytest -q tests
 
   julia:
@@ -43,7 +43,7 @@ jobs:
           python -m pip install ".[extra,test]"
           julia -e 'using Pkg; Pkg.add(["JSON", "PythonCall"])'
       - name: Test the Julia host and the string macro
-        run: python -m pytest -q tests/test_julia_host_parity.py tests/test_julia_macro_parity.py
+        run: python -m pytest -q tests/test_julia_host_parity.py tests/test_julia_macro_parity.py tests/test_without_gui.py
 
   build:
     runs-on: ubuntu-latest

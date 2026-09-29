@@ -178,7 +178,9 @@ end
 
 command(g::GeoGebra, cmds::AbstractString...; timeout=10.0) = _rpc(g, request(:eval; commands=collect(String, cmds)); timeout)
 xml(g::GeoGebra; timeout=10.0) = _rpc(g, request(:xml_out); timeout)
-set_xml(g::GeoGebra, x::AbstractString; timeout=10.0) = _rpc(g, request(:xml_in; xml=x); timeout)
+# the <gui> element (the layout the file was saved with) is not sent, so the applet keeps its own layout; gui=true sends the document as it is
+without_gui(x::AbstractString) = replace(String(x), r"[ \t]*<gui>.*?</gui>[ \t]*\n?"s => "", r"[ \t]*<gui\s*/>[ \t]*\n?" => "")
+set_xml(g::GeoGebra, x::AbstractString; timeout=10.0, gui::Bool=false) = _rpc(g, request(:xml_in; xml=(gui ? String(x) : without_gui(x))); timeout)
 delete(g::GeoGebra, label::AbstractString; timeout=10.0) = _rpc(g, request(:delete; label=label); timeout)
 value(g::GeoGebra, label::AbstractString; timeout=10.0) = _rpc(g, request(:value; label=label); timeout)
 new_construction(g::GeoGebra; timeout=10.0) = _rpc(g, request(:new); timeout)

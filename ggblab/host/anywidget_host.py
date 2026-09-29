@@ -10,6 +10,7 @@ from typing import Callable, Optional
 import anywidget, traitlets
 from .base import Request, Eval, XmlIn, XmlOut, Listen, Delete, Value, New
 from .control import ControlBridge, kernel_id
+from ..xml_errata import without_gui
 
 ESM = r"""
 const GGB_SCRIPT = "https://www.geogebra.org/apps/deployggb.js";
@@ -134,8 +135,10 @@ class GeoGebra:
         return self._send(Eval(tuple(cmds)), timeout)
     def xml(self, timeout: float = 10.0) -> str:
         return self._send(XmlOut(), timeout)
-    def set_xml(self, xml: str, timeout: float = 10.0):
-        return self._send(XmlIn(xml), timeout)
+    def set_xml(self, xml: str, timeout: float = 10.0, gui: bool = False):
+        """C1 `xml_in`. The `<gui>` element of the document (the layout the file was saved with) is not sent, so the applet
+        keeps its own layout; `gui=True` sends the document as it is."""
+        return self._send(XmlIn(xml if gui else without_gui(xml)), timeout)
     def delete(self, label: str, timeout: float = 10.0):
         return self._send(Delete(label), timeout)
     def value(self, label: str, timeout: float = 10.0):

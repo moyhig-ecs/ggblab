@@ -12,6 +12,8 @@ What it does (every value comes from the hub's / server's real answers; R4):
                found its own server inside the pod; then the in-pod probe (①②⑥ relay-level, hub_crossing_local.py) with
                JUPYTERHUB_API_TOKEN / JUPYTERHUB_SERVICE_PREFIX
   ⑦ julia    : julia-ggblab-v2 kernel: include html_host.jl + ggb_macro.jl, ggb"A=(1,2)" → a Construction (PythonCall → parser)
+Since 2026-09-29 the image installs ggblab with pip: the in-pod probe is sent along (it is not in the wheel) and the Julia
+host files are looked up inside the installed package.
 Browser-only items (mount.js base in the real page, cookie XSRF, two tabs) are left to a logged-in human; see CHECKLIST §3.
 """
 from __future__ import annotations
@@ -130,7 +132,9 @@ from ggblab.host.html_host import find_server, kernel_id
 url, headers = find_server(kernel_id())
 print("FIND_SERVER", json.dumps({"url": url, "auth": list(headers)[:1], "prefix": os.environ.get("JUPYTERHUB_SERVICE_PREFIX"),
       "hub_service_url": os.environ.get("JUPYTERHUB_SERVICE_URL")}))
-probe = os.path.join(sys.prefix, "share", "ggblab-v2", "probes", "hub_crossing_local.py")
+import tempfile
+probe = os.path.join(tempfile.mkdtemp(), "hub_crossing_local.py")     # the probe is not part of the installed package:
+open(probe, "w", encoding="utf-8").write(__PROBE_SRC__)                # the driver sends its source along
 r = subprocess.run([sys.executable, probe, "--url", "http://127.0.0.1:8888", "--token", os.environ["JUPYTERHUB_API_TOKEN"],
                     "--base", os.environ["JUPYTERHUB_SERVICE_PREFIX"], "--lease", "4"], capture_output=True, text=True, timeout=120)
 print("PROBE_RC", r.returncode)
@@ -141,7 +145,9 @@ except Exception as e:
     print("PROBE_RAW", r.stdout[-800:], r.stderr[-800:])
 '''
     if kid:
-        o = run_code(f"{ws_base}/api/kernels/{kid}/channels", tok, "python3", code_py, 240, ins)
+        from pathlib import Path
+        src = (Path(__file__).with_name("hub_crossing_local.py")).read_text(encoding="utf-8")
+        o = run_code(f"{ws_base}/api/kernels/{kid}/channels", tok, "python3", code_py.replace("__PROBE_SRC__", json.dumps(src)), 240, ins)
         R["items"]["5_kernel_find_server_and_inpod_probe"] = o
         print("⑤ python kernel:", o["status"], "\n" + o["stdout"].strip(), "\nERR:" + o["stderr"].strip() if o["stderr"].strip() else "", o["error"] or "")
         http(f"{base}/api/kernels/{kid}", "DELETE", headers=tok, insecure=ins)
@@ -155,7 +161,9 @@ except Exception as e:
             st, k, _ = http(f"{base}/api/kernels", "POST", {"name": jname}, headers=tok, insecure=ins)
             kid = k.get("id") if isinstance(k, dict) else None
             code_jl = r'''
-const D = joinpath(ENV["NB_PYTHON_PREFIX"], "share", "ggblab-v2", "julia", "host")
+const PY = get(ENV, "JULIA_PYTHONCALL_EXE", joinpath(ENV["NB_PYTHON_PREFIX"], "bin", "python"))   # the host files are inside the installed package
+const D = strip(read(`$PY -c "import ggblab, pathlib; print(pathlib.Path(ggblab.__file__).parent / 'julia' / 'host')"`, String))
+println("JULIA_HOST_DIR ", D)
 include(joinpath(D, "html_host.jl")); include(joinpath(D, "ggb_macro.jl"))
 using .GGBLabMacro
 c = ggb"A=(1,2)"

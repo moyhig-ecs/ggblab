@@ -131,6 +131,10 @@ Version 1 has an experimental VS Code extension. Version 2 does not support VS C
 - **No `$` interpolation** in the `%%ggb` cell and in the `ggb"…"` string.
 - **Not among the eight verbs.** Showing or hiding a layer (`setLayerVisible`) and reading the applet state as a file
   (`getBase64`). Visibility of one object can be changed by editing the XML (see `examples/eg3`).
+- **The layout of a file is not applied.** A GeoGebra document carries, in its `<gui>` element, the layout it was saved
+  with (which views are open, the input bar). `g.set_xml(xml)` leaves that element out, so the applet keeps its own layout;
+  `g.set_xml(xml, gui=True)` sends the document as it is. A file saved with the algebra view closed then closes the side
+  panel, and sending XML again does not reopen it.
 - **`.ggb` files are read, not written.** A `.ggb` file depends on the order of its XML elements and carries the state
   of the user interface besides the construction. Version 2 works on the construction only.
 - **Julia module names** (`GGBLabHost`, `GGBLabMacro`) may change before 2.0.0.
@@ -141,7 +145,7 @@ The tests read fixtures by paths relative to the repository, so they run in a so
 
 ```bash
 pip install -e ".[extra,test]"
-pytest -q tests          # 60 tests; four of them start Julia and are skipped where Julia is absent
+pytest -q tests          # 66 tests; five of them start Julia and are skipped where Julia is absent
 ```
 
 ## Relation to version 1
