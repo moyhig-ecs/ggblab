@@ -1,0 +1,21 @@
+name = "GGBLab"
+uuid = "0cf57a2d-d8e5-4856-be56-4f57e1505f70"
+authors = ["Manabu Higashida"]
+version = "2.0.0-rc1"
+
+[deps]
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+
+[compat]
+JSON = "0.21, 1"
+PythonCall = "0.9"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

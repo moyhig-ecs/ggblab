@@ -18,11 +18,35 @@ module GGBLabHost
 using Downloads, JSON, UUIDs
 
 const DEPLOY = Ref("https://www.geogebra.org/apps/deployggb.js")
-# two layouts: the source tree (julia/host next to ggblab/host) and the installed package (ggblab/julia/host inside ggblab)
-const MOUNT_JS = let tree = joinpath(@__DIR__, "..", "..", "ggblab", "host", "mount.js"),
-                     pkg  = joinpath(@__DIR__, "..", "..", "host", "mount.js")
-    read(isfile(pkg) ? pkg : tree, String)
+# The mount JavaScript is ONE file, shared with the Python host (ggblab/host/mount.js). It is looked up at the first
+# mount (not at load time, so the Julia package precompiles wherever it is installed), in this order:
+#   1. ENV["GGBLAB_MOUNT_JS"]
+#   2. the source tree (julia/host next to ggblab/host)
+#   3. the installed wheel (ggblab/julia/host inside ggblab)
+#   4. the Python package `ggblab` that this kernel's python imports (the Julia package installed on its own, 2026-09-30):
+#      the mailbox (relay.py) lives in that same Python package, so the JavaScript found there matches the server.
+const MOUNT_JS_PATH = Ref{String}("")
+function mount_js_path()
+    isempty(MOUNT_JS_PATH[]) || return MOUNT_JS_PATH[]
+    cands = String[]
+    e = get(ENV, "GGBLAB_MOUNT_JS", ""); isempty(e) || push!(cands, e)
+    push!(cands, joinpath(@__DIR__, "..", "..", "ggblab", "host", "mount.js"))   # source tree
+    push!(cands, joinpath(@__DIR__, "..", "..", "host", "mount.js"))             # installed wheel
+    for c in cands
+        isfile(c) && return (MOUNT_JS_PATH[] = abspath(c))
+    end
+    for py in (get(ENV, "JULIA_PYTHONCALL_EXE", ""), "python3", "python")
+        (isempty(py) || startswith(py, "@")) && continue
+        p = try
+            strip(read(pipeline(`$py -c "import ggblab.host, pathlib; print(pathlib.Path(ggblab.host.__file__).with_name('mount.js'))"`; stderr=devnull), String))
+        catch
+            ""
+        end
+        isfile(p) && return (MOUNT_JS_PATH[] = p)
+    end
+    error("ggblab/host/mount.js not found: set GGBLAB_MOUNT_JS, or pip install ggblab where this kernel's python can import it (candidates: $cands)")
 end
+mount_js() = read(mount_js_path(), String)
 const SLICE = 25.0                     # one parked HTTP request per proxy-sized slice (same as the Python host)
 
 export GeoGebra, mount, command, xml, set_xml, delete, value, new_construction, kind, listen, unlisten, events, errors, wait_update, request
@@ -154,7 +178,7 @@ end
 function mount(g::GeoGebra)
     g.dom_id = string(uuid4())[1:12]     # one id per DISPLAY (09-16): re-showing `g` used to emit two divs with one id → the second stayed empty
     cfg = Dict("mount" => g.mount_id, "dom" => g.dom_id, "params" => g.params, "deploy" => DEPLOY[])
-    html = "<div id=\"ggb-$(g.dom_id)\" style=\"min-height:600px\"></div><script>" * replace(MOUNT_JS, "__CFG__" => JSON.json(cfg)) * "</script>"
+    html = "<div id=\"ggb-$(g.dom_id)\" style=\"min-height:600px\"></div><script>" * replace(mount_js(), "__CFG__" => JSON.json(cfg)) * "</script>"
     display(HTML(html))
     g.mounted = true
     nothing

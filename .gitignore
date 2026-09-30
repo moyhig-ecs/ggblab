@@ -16,3 +16,6 @@ test.chat
 dist/
 build/
 *.egg-info/
+
+# the Julia package (julia/Project.toml): a resolved environment is per machine
+julia/Manifest.toml

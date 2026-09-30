@@ -44,6 +44,11 @@ jobs:
           julia -e 'using Pkg; Pkg.add(["JSON", "PythonCall"])'
       - name: Test the Julia host and the string macro
         run: python -m pytest -q tests/test_julia_host_parity.py tests/test_julia_macro_parity.py tests/test_without_gui.py
+      - name: The Julia package (julia/Project.toml wraps the same two files; PythonCall uses the runner's python)
+        run: julia --project=julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+        env:
+          JULIA_CONDAPKG_BACKEND: "Null"
+          JULIA_PYTHONCALL_EXE: python
 
   build:
     runs-on: ubuntu-latest

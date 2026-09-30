@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The Julia host can be installed as a Julia package: `julia/Project.toml` (`GGBLab`, provisional name) wraps the same
+  two files the wheel ships; `Pkg.test` runs offline tests; the mount JavaScript is looked up at the first mount (also
+  through the installed Python package `ggblab`, or `GGBLAB_MOUNT_JS`), no longer read when the file is loaded.
+
 ## 2.0.0rc1 (2026-09-29)
 
 Version 2 is a rewrite. It does not read or extend version 1's code, and there is no compatibility layer.
