@@ -1,7 +1,17 @@
 # Changelog
 
-## Unreleased
+## Unreleased (toward 2.0.0rc2)
 
+- The relay serves a holder page: `GET ggblab/holder?mount=<box>` returns a same-origin page with the same `div` and the
+  same `mount.js` a notebook output gets, with no CSP sandbox, so a headless browser, an app's webview or a phone can
+  hold the applet of a box without a notebook. Opened with `?token=`, the page carries the token; opened by a logged-in
+  user, it uses the cookie.
+- The relay keeps each box's state: the latest XML (asked of the holder after every state-changing request) and the log
+  of those requests. A new holder's first poll carries a `restore`, applied before any request is served: taking over a
+  box now carries the construction (a page reload, or a page opened after a headless holder, shows what was drawn).
+  `GET ggblab/state?mount=<box>` returns the box's copy.
+- Two projection verbs: `png` (`getPNGBase64`) and `svg` (`exportSVG`) — `g.png()` returns PNG bytes, `g.svg()` SVG text;
+  the same in Julia. Ten verbs now (the code-graph probe's allow-list records the fourth state).
 - The Julia host can be installed as a Julia package: `julia/Project.toml` (`GGBLab`, provisional name) wraps the same
   two files the wheel ships; `Pkg.test` runs offline tests; the mount JavaScript is looked up at the first mount (also
   through the installed Python package `ggblab`, or `GGBLAB_MOUNT_JS`), no longer read when the file is loaded.

@@ -4,7 +4,7 @@
 
 ```{eval-rst}
 .. autoclass:: ggblab.GeoGebra
-   :members: command, new_construction, delete, set_xml, xml, value, kind, listen, unlisten, events, errors, wait_update, mount
+   :members: command, new_construction, delete, set_xml, xml, value, kind, png, svg, listen, unlisten, events, errors, wait_update, mount
 
 .. autofunction:: ggblab.find_server
 ```

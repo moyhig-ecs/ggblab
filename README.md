@@ -11,8 +11,8 @@ This is **version 2** (`2.0.0rc1`, a release candidate). It is a rewrite, not an
 - The kernel talks to the applet through a mailbox on its own Jupyter server (`ggblab.host.relay`, a server extension).
   The kernel is an HTTP client of that server. No comm, no comm target, no ipywidgets.
 - The same mailbox and the same JavaScript serve every kernel language. Python and Julia hosts are included.
-- The interface is a closed set of eight verbs over the GeoGebra Apps API: four writes (`eval`, `new`, `delete`, `xml_in`),
-  three reads (`xml_out`, `value`, `kind`) and one subscription (`listen`).
+- The interface is a closed set of ten verbs over the GeoGebra Apps API: four writes (`eval`, `new`, `delete`, `xml_in`),
+  three reads (`xml_out`, `value`, `kind`), one subscription (`listen`) and two projections (`png`, `svg`).
 - Constructions written as text are parsed by a closed-world parser: 28 GeoGebra commands, labels referenced as `:label`.
   An unknown command is an error, not a guess.
 
@@ -131,7 +131,7 @@ Version 1 has an experimental VS Code extension. Version 2 does not support VS C
   `IntersectPath`, `Element`, `SetCoords`. Send such commands with `g.command(...)`.
 - **An upper-case label followed by `(`** is read as a command, for example `L1(1)`. Name the list in lower case.
 - **No `$` interpolation** in the `%%ggb` cell and in the `ggb"…"` string.
-- **Not among the eight verbs.** Showing or hiding a layer (`setLayerVisible`) and reading the applet state as a file
+- **Not among the ten verbs.** Showing or hiding a layer (`setLayerVisible`) and reading the applet state as a file
   (`getBase64`). Visibility of one object can be changed by editing the XML (see `examples/eg3`).
 - **The layout of a file is not applied.** A GeoGebra document carries, in its `<gui>` element, the layout it was saved
   with (which views are open, the input bar). `g.set_xml(xml)` leaves that element out, so the applet keeps its own layout;

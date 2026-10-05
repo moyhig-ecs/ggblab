@@ -1,6 +1,6 @@
-# The eight verbs
+# The ten verbs
 
-The interface between a kernel and the applet is a closed set of eight verbs. Each verb is one call of the
+The interface between a kernel and the applet is a closed set of ten verbs (eight since 2.0.0rc1, two projections added after it). Each verb is one call of the
 [GeoGebra Apps API](https://geogebra.github.io/docs/reference/en/GeoGebra_Apps_API/). A request of any other kind is
 answered with an error.
 
@@ -14,8 +14,12 @@ answered with an error.
 | `value` | `g.value(label)` | `value(g, label)` | `getValue` | a number |
 | `kind` | `g.kind(label)` | `kind(g, label)` | `getObjectType` | the runtime type |
 | `listen` | `g.listen(callback, label=None)` | `listen(g, callback; label=nothing)` | listeners registered when the applet is mounted | — |
+| `png` | `g.png(scale=1.0, transparent=False, dpi=72)` | `png(g; scale=1.0, transparent=false, dpi=72)` | `getPNGBase64` | the view as PNG bytes |
+| `svg` | `g.svg()` | `svg(g)` | `exportSVG` | the view as SVG text |
 
-Calls are synchronous. Every call takes `timeout` (seconds, default 10).
+Calls are synchronous. Every call takes `timeout` (seconds, default 10; 20 for the two projections).
+
+`png` and `svg` are *projections*: a still picture of the applet's view, for a chat, a record or a test. They read, they do not change the construction.
 
 ## Reply of `command`
 

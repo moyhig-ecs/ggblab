@@ -40,7 +40,7 @@ c = Circle(:A, 1)
 """g
 ```
 
-The functions are those of the [eight verbs](verbs.md): `command`, `new_construction`, `delete`, `set_xml`, `xml`,
-`value`, `kind`, `listen`, and `events`, `errors`, `wait_update`, `unlisten`.
+The functions are those of the [ten verbs](verbs.md): `command`, `new_construction`, `delete`, `set_xml`, `xml`,
+`value`, `kind`, `listen`, `png`, `svg`, and `events`, `errors`, `wait_update`, `unlisten`.
 
 The module names (`GGBLabHost`, `GGBLabMacro`) may change before 2.0.0.
