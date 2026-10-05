@@ -14,6 +14,13 @@
   GET  <base>ggblab/events?mount=<id>&since=<seq|latest>&wait=<s>
                                                         kernel -> pull events (C1 `listen`, pull-first) -> {"events", "next"}
   GET  <base>ggblab/whoami?kernel_id=<id>[&name=…]     kernel -> {"path", "mount"}: the box key is the DOCUMENT (stage 3)
+  GET  <base>ggblab/holder?mount=<id>[&params=<json>][&deploy=<url>]
+                                                        a holder that is not a notebook output (headless Chromium, app webview,
+                                                        phone) -> the same div + mount.js, same-origin, no CSP sandbox (B2, 10-05)
+  GET  <base>ggblab/state?mount=<id>                   the box's own copy of the state (B6, 10-05): latest XML + log of the
+                                                        state-changing requests. After each such request the server asks the
+                                                        holder for the XML (an xml_out of its own); a NEW holder's first poll
+                                                        carries {"restore": {xml, seq}} and mount.js applies it before serving
 
 The kernel is an HTTP client of its own server (blocking urllib on the shell thread). Nothing rides the kernel websocket,
 the control socket, ipywidgets, or a comm target: the server keeps the registry (queues, parked replies, event logs).
@@ -22,12 +29,16 @@ Enable: c.ServerApp.jpserver_extensions = {"ggblab.host.relay": True}
 """
 from __future__ import annotations
 import asyncio, collections, json, time, uuid
+from html import escape as html_escape
+from pathlib import Path
 from typing import Any
 from tornado import web
 from jupyter_server.base.handlers import JupyterHandler
 from jupyter_server.utils import url_path_join
 
 LEASE_DEFAULT, LEASE_MAX = 40.0, 120.0
+STATE_KINDS = {"eval", "xml_in", "delete", "new"}   # requests that change the construction: logged, then a snapshot is taken (B6, 10-05)
+SNAP_PREFIX = "snap-"                                 # req_id prefix of the server's own xml_out requests (the snapshot)
 WAIT_MAX = 55.0                    # one parked HTTP request never outlives a typical proxy timeout (60 s)
 KEEP = 600.0                       # parked / late replies and idle boxes are forgotten after this
 
@@ -68,7 +79,11 @@ class Mailbox:
         if b is None:
             b = self.boxes[mount] = {"q": collections.deque(), "ev": asyncio.Event(), "t": 0.0,
                                      "holder": None, "holder_t": 0.0, "holder_poll": None, "lease": LEASE_DEFAULT,
-                                     "free": asyncio.Event()}              # set when the holder releases the box
+                                     "free": asyncio.Event(),              # set when the holder releases the box
+                                     # B6 (10-05): the box's own copy of the state = the latest XML (restore) + the log of the
+                                     # state-changing requests (replay). The XML is asked of the holder after each change.
+                                     "xml": None, "xml_t": 0.0, "xml_seq": 0, "xml_by": None, "snap": None, "dirty": False,
+                                     "log": collections.deque(maxlen=4096), "log_seq": 0, "restored": None}
         b["t"] = time.time()
         return b
 
@@ -87,8 +102,38 @@ class Mailbox:
         request["req_id"] = rid
         b = self.box(mount)
         b["q"].append(request); b["ev"].set()
-        self.pending[rid] = {"fut": asyncio.get_running_loop().create_future(), "t": time.time(), "mount": mount}
+        kind = request.get("kind")
+        if kind in STATE_KINDS:                                # the log = what changed the construction, in order (replay, B4)
+            b["log_seq"] += 1
+            b["log"].append({"seq": b["log_seq"], "t": time.time(), "request": {k: v for k, v in request.items() if k != "req_id"}})
+        self.pending[rid] = {"fut": asyncio.get_running_loop().create_future(), "t": time.time(), "mount": mount, "kind": kind}
         return rid
+
+    # -- B6 (10-05): the box keeps the latest XML; a new holder is told to restore it on its first poll ------------
+    def _snapshot(self, mount: str) -> None:
+        """Ask the holder for the XML (an ordinary xml_out through the queue). One in flight per box; a change that lands
+        while it is out marks the box dirty and another is taken when the reply arrives."""
+        b = self.box(mount)
+        if b["snap"]:
+            b["dirty"] = True
+            return
+        b["dirty"] = False
+        rid = SNAP_PREFIX + uuid.uuid4().hex[:10]
+        self.submit(mount, {"kind": "xml_out", "req_id": rid})
+        self.pending[rid]["snap"] = True
+        b["snap"] = rid
+
+    def _restore_for(self, b: dict, client: str) -> dict | None:
+        """The state a holder other than the one that produced it has not been given yet (once per xml_seq per client)."""
+        if not client or b["xml"] is None or client == b["xml_by"] or b["restored"] == (client, b["xml_seq"]):
+            return None
+        b["restored"] = (client, b["xml_seq"])
+        return {"xml": b["xml"], "seq": b["xml_seq"]}
+
+    def state(self, mount: str) -> dict:
+        b = self.box(mount)
+        return {"mount": mount, "xml": b["xml"], "xml_t": b["xml_t"], "xml_seq": b["xml_seq"], "holder": bool(b["holder"]),
+                "log_seq": b["log_seq"], "log": list(b["log"])}
 
     async def wait_reply(self, rid: str, wait: float) -> tuple[str, Any]:
         """("ok", data) once the browser replied; ("pending", None) after `wait` s; ("unknown", None) for a foreign id."""
@@ -146,7 +191,11 @@ class Mailbox:
             b["holder"], b["holder_t"], b["lease"], b["holder_poll"] = client, now, lease, poll_id
         if parked:                                             # a take-over answers at once: the browser drops its `held` mark and re-polls
             reqs = list(b["q"]); b["q"].clear()
-            return {"requests": reqs, "held": False, "lease": b["lease"]}
+            out = {"requests": reqs, "held": False, "lease": b["lease"]}
+            r = self._restore_for(b, client)
+            if r:
+                out["restore"] = r
+            return out
         b["ev"].clear()                                        # clear first, then look: no lost wake-up
         if not b["q"] and wait > 0:
             await self._wait_any([b["ev"]] + ([closed] if closed is not None else []), deadline - time.time())
@@ -157,7 +206,11 @@ class Mailbox:
         reqs = list(b["q"]); b["q"].clear()
         if client:
             b["holder_t"] = time.time()
-        return {"requests": reqs, "held": False, "lease": b["lease"]}
+        out = {"requests": reqs, "held": False, "lease": b["lease"]}
+        r = self._restore_for(b, client)
+        if r:
+            out["restore"] = r
+        return out
 
     def release(self, mount: str, client: str, poll_id: str | None = None) -> bool:
         """Free the box if `client` holds it through the poll `poll_id` (None = any poll of that client). Called by the
@@ -170,13 +223,30 @@ class Mailbox:
         return True
 
     def resolve(self, rid: str, data: Any) -> bool:
-        """Deliver the browser's reply to the parked call. A reply nobody is waiting for is kept for a later `await`."""
+        """Deliver the browser's reply to the parked call. A reply nobody is waiting for is kept for a later `await`.
+        The reply to the server's own snapshot request becomes the box's XML; the reply to a state-changing request
+        triggers the next snapshot (B6)."""
         ent = self.pending.get(rid)
+        if ent is not None and ent.get("snap"):
+            b = self.box(ent["mount"])
+            self.pending.pop(rid, None)
+            if not ent["fut"].done():
+                ent["fut"].set_result(data)
+            if isinstance(data, str):
+                b["xml"], b["xml_t"], b["xml_seq"], b["xml_by"] = data, time.time(), b["xml_seq"] + 1, b["holder"]
+            b["snap"] = None
+            if b["dirty"]:
+                self._snapshot(ent["mount"])
+            return True
+        ok = False
         if ent is not None and not ent["fut"].done():
             ent["fut"].set_result(data)
-            return True
-        self.results[rid] = (data, time.time())
-        return False
+            ok = True
+        else:
+            self.results[rid] = (data, time.time())
+        if ent is not None and ent.get("kind") in STATE_KINDS:
+            self._snapshot(ent["mount"])
+        return ok
 
     # -- events: the applet's add / update / error notifications, pulled by the kernel (C1 listen) ---------------
     def push_event(self, mount: str, data: Any) -> int:
@@ -320,6 +390,57 @@ class WhoAmIHandler(_Json):
         self.send({"kernel_id": kid, "path": path, "mount": mount_key(path, kid, name)})
 
 
+_HOLDER_JS = Path(__file__).with_name("mount.js")                   # the same mount.js a notebook output runs (html_host.JS)
+DEPLOY_DEFAULT = "https://www.geogebra.org/apps/deployggb.js"       # = html_host.DEPLOY (kept here: relay must not import the kernel-side host)
+
+
+def holder_html(base_url: str, mount: str, params: dict | None = None, deploy: str | None = None, token: str | None = None) -> str:
+    """The page of a holder that is not a notebook output: a headless Chromium (B6), an app's webview, a phone's browser (B2).
+    Same-origin, no CSP sandbox (the /files/ route serves with `sandbox` -> origin null -> the poll's preflight is refused; 10-02
+    finding 1), one div + the same mount.js with the same cfg a notebook output gets. The page config carries baseUrl and -
+    only when the page was opened with ?token=... (no login cookie) - that token, exactly as a Lab page opened with ?token= does;
+    a cookie-authenticated page gets no token and mount.js falls back to the cookie + _xsrf header."""
+    dom = uuid.uuid4().hex[:12]
+    cfg = {"mount": mount, "dom": dom, "params": params or {}, "deploy": deploy or DEPLOY_DEFAULT}
+    page_cfg = {"baseUrl": (base_url or "/")}
+    if token:
+        page_cfg["token"] = token
+    js = _HOLDER_JS.read_text(encoding="utf-8").replace("__CFG__", json.dumps(cfg))
+    return ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>ggblab holder {html_escape(mount)}</title>'
+            f'<script id="jupyter-config-data" type="application/json">{json.dumps(page_cfg)}</script></head>'
+            f'<body style="margin:0"><div id="ggb-{dom}" style="min-height:600px"></div><script>{js}</script></body></html>')
+
+
+class StateHandler(_Json):
+    """GET state?mount=<box key> -> the box's own copy of the state (B6): latest XML (+ when, by which holder) and the log of
+    state-changing requests (replay). Read by a kernel, an agent, or a replay script; the holder is not asked."""
+    @web.authenticated
+    async def get(self):
+        self.send(MB.state(self.get_argument("mount")))
+
+
+class HolderHandler(JupyterHandler):
+    """GET holder?mount=<box key>[&params=<json>][&deploy=<url>] -> an HTML page that holds the applet of that box (B2)."""
+    @web.authenticated
+    def get(self):
+        mount = self.get_argument("mount", None)
+        if not mount:
+            raise web.HTTPError(400, "holder needs mount=<box key> (a kernel-less holder names its document explicitly)")
+        try:
+            params = json.loads(self.get_argument("params", "{}"))
+        except ValueError:
+            raise web.HTTPError(400, "bad params (JSON expected)")
+        if not isinstance(params, dict):
+            raise web.HTTPError(400, "params must be a JSON object")
+        deploy = self.get_argument("deploy", None)
+        if deploy and not (deploy.startswith("https://") or deploy.startswith("/")):
+            raise web.HTTPError(400, "deploy must be https or a same-origin path")
+        token = self.get_argument("token", None)              # present only when the page itself was opened with ?token=...
+        self.set_header("Content-Type", "text/html; charset=utf-8"); self.set_header("Cache-Control", "no-store")
+        self.finish(holder_html(self.settings.get("base_url", "/"), mount, params, deploy, token))
+
+
 def _jupyter_server_extension_points():
     return [{"module": "ggblab.host.relay"}]
 
@@ -333,8 +454,10 @@ def _load_jupyter_server_extension(serverapp):
         (url_path_join(base, "ggblab", "reply"), ReplyHandler),
         (url_path_join(base, "ggblab", "events"), EventsHandler),
         (url_path_join(base, "ggblab", "whoami"), WhoAmIHandler),
+        (url_path_join(base, "ggblab", "holder"), HolderHandler),
+        (url_path_join(base, "ggblab", "state"), StateHandler),
     ])
-    serverapp.log.info("ggblab mailbox (RPC): %s{call,await,poll,reply,events,whoami}", url_path_join(base, "ggblab/"))
+    serverapp.log.info("ggblab mailbox (RPC): %s{call,await,poll,reply,events,whoami,holder,state}", url_path_join(base, "ggblab/"))
 
 
 load_jupyter_server_extension = _load_jupyter_server_extension

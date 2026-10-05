@@ -16,6 +16,7 @@ eval / new / delete / xml_in (writes), xml_out / value / kind (reads), listen (s
 module GGBLabHost
 
 using Downloads, JSON, UUIDs
+import Base64
 
 const DEPLOY = Ref("https://www.geogebra.org/apps/deployggb.js")
 # The mount JavaScript is ONE file, shared with the Python host (ggblab/host/mount.js). It is looked up at the first
@@ -49,10 +50,11 @@ end
 mount_js() = read(mount_js_path(), String)
 const SLICE = 25.0                     # one parked HTTP request per proxy-sized slice (same as the Python host)
 
-export GeoGebra, mount, command, xml, set_xml, delete, value, new_construction, kind, listen, unlisten, events, errors, wait_update, request
+export GeoGebra, mount, command, xml, set_xml, delete, value, new_construction, kind, listen, unlisten, events, errors, wait_update, request, png, svg
 
-# ── the 8 verbs as JSON requests (mirrors ggblab/host/base.py `to_json`; contract-checked by tests/test_julia_host_parity.py) ──
-function request(kind::Symbol; req_id::AbstractString="", commands=String[], xml::AbstractString="", label::AbstractString="", enable::Bool=true)
+# ── the 10 verbs as JSON requests (8 + the two projections png / svg of 10-05; mirrors ggblab/host/base.py `to_json`; contract-checked by tests/test_julia_host_parity.py) ──
+function request(kind::Symbol; req_id::AbstractString="", commands=String[], xml::AbstractString="", label::AbstractString="", enable::Bool=true,
+                 scale::Real=1.0, transparent::Bool=false, dpi::Integer=72)
     d = kind === :eval    ? Dict{String,Any}("kind" => "eval", "commands" => collect(String, commands)) :
         kind === :xml_in  ? Dict{String,Any}("kind" => "xml_in", "xml" => xml) :
         kind === :xml_out ? Dict{String,Any}("kind" => "xml_out") :
@@ -61,6 +63,8 @@ function request(kind::Symbol; req_id::AbstractString="", commands=String[], xml
         kind === :value   ? Dict{String,Any}("kind" => "value", "label" => label) :
         kind === :kind    ? Dict{String,Any}("kind" => "kind", "label" => label) :
         kind === :new     ? Dict{String,Any}("kind" => "new") :
+        kind === :png     ? Dict{String,Any}("kind" => "png", "scale" => scale, "transparent" => transparent, "dpi" => dpi) :
+        kind === :svg     ? Dict{String,Any}("kind" => "svg") :
         error("unhandled request kind: $kind")          # C3: one clause per head, no guessing
     d["req_id"] = req_id
     d
@@ -202,6 +206,8 @@ end
 
 command(g::GeoGebra, cmds::AbstractString...; timeout=10.0) = _rpc(g, request(:eval; commands=collect(String, cmds)); timeout)
 xml(g::GeoGebra; timeout=10.0) = _rpc(g, request(:xml_out); timeout)
+png(g::GeoGebra; scale=1.0, transparent=false, dpi=72, timeout=20.0) = Base64.base64decode(String(_rpc(g, request(:png; scale, transparent, dpi); timeout)))   # the view as PNG bytes (projection, 10-05)
+svg(g::GeoGebra; timeout=20.0) = String(_rpc(g, request(:svg); timeout))                 # the view as SVG text
 # the <gui> element (the layout the file was saved with) is not sent, so the applet keeps its own layout; gui=true sends the document as it is
 without_gui(x::AbstractString) = replace(String(x), r"[ \t]*<gui>.*?</gui>[ \t]*\n?"s => "", r"[ \t]*<gui\s*/>[ \t]*\n?" => "")
 set_xml(g::GeoGebra, x::AbstractString; timeout=10.0, gui::Bool=false) = _rpc(g, request(:xml_in; xml=(gui ? String(x) : without_gui(x))); timeout)

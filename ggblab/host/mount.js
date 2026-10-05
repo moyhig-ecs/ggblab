@@ -45,12 +45,20 @@
       case "kind":    return api.getObjectType(req.label);   // runtime type (drag-varying); the XML class stays in the DataFrame Type column
       case "new":     api.newConstruction(); return true;
       case "listen":  return true;                  // listeners are wired once at mount
+      case "png":     return api.getPNGBase64(req.scale || 1, !!req.transparent, req.dpi || 72);   // projection (B6, 10-05): the view as a picture
+      case "svg":     return new Promise((res) => api.exportSVG((svg) => res(svg)));               // projection: exportSVG is callback-based
       default: throw new Error("unhandled request kind: " + req.kind);
     }
   }
   let api = null; const queue = [];                 // C2: requests wait here until the applet is ready
+  let pendingRestore = null;                        // B6 (10-05): the state the server handed this NEW holder on its first poll
+  function applyRestore() {                         // applied once the applet is ready, before any request of the same poll is served
+    if (!api || pendingRestore == null) return;
+    const x = pendingRestore; pendingRestore = null;
+    try { api.setXML(x); } catch (e) { post({kind: "event", data: {type: "error", error: "restore: " + String(e)}}); }
+  }
   async function serve(req) {
-    try { await post({req_id: req.req_id, data: handle(api, req)}); }
+    try { const data = await handle(api, req); await post({req_id: req.req_id, data}); }   // await: svg's reply is a Promise
     catch (e) { await post({req_id: req.req_id, data: {error: String(e)}}); }
   }
   const take = (req) => { if (api) serve(req); else queue.push(req); };
@@ -74,6 +82,7 @@
           const j = await r.json();
           if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(1000); continue; }   // another tab holds it. The server parks us (<= wait) until it releases; the 1 s is for a server that answers at once
           if (held) { held = false; delete el.dataset.ggblabHeld; }
+          if (j.restore && typeof j.restore.xml === "string") { pendingRestore = j.restore.xml; applyRestore(); }   // B6: the box's state comes with the lease
           const reqs = j.requests || [];
           if (reqs.length && !document.contains(el)) {   // 09-29: this output left the page while the poll was parked (the cell was run again).
             const live = window.__ggblabBoxes[M.mount];  // The requests belong to the applet that replaced it, not to the detached one.
@@ -127,6 +136,7 @@
           a.registerAddListener((label) => post({kind: "event", data: {type: "add", label}}));
           installErrorScraper();                         // 09-09: GeoGebra reports errors only as a BLOCKING modal in the applet (never in the cell; evalCommandGetLabels just returns null). Scrape the modal text into an error event, then auto-dismiss it.
           api = a; el.__api = a;
+          applyRestore();                                // B6: the state first, then the requests that were waiting
           while (queue.length) serve(queue.shift());
         } catch (e) { console.error("ggblab appletOnLoad failed", e); post({kind: "event", data: {type: "error", error: String(e)}}); }
       }}, M.params || {});

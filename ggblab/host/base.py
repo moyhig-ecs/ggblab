@@ -1,9 +1,10 @@
 """C1 (teacher's ruling 2026-09-07, option A) — the host interface is a CLOSED SUBSET of the GeoGebra Apps API (+ mount).
 
-Each Verb kind names exactly one API method.  Currently eight:
+Each Verb kind names exactly one API method.  Currently ten (eight + two projections, 10-05):
   writes (4)        eval → evalCommandGetLabels   new → newConstruction   delete → deleteObject   xml_in → setXML
   reads (3)         xml_out → getXML              value → getValue         kind → getObjectType (runtime type; drag-varying — NOT the XML class, C6)
   subscription (1)  listen → register*Listener (wired once at mount; events arrive asynchronously, never on the shell channel: C2)
+  projections (2)   png → getPNGBase64            svg → exportSVG          (B6 "paper": the view as a picture, 10-05; allow-list ruling pending)
 Adding a kind is an interface change and is recorded by the code-graph instrument (probes/stage_codegraph_v2.py, M2)
 against a teacher-ruled allow-list.  Arbitrary API calls (`:api f()`) are NOT a verb — the surface words of the Julia
 macro / Python magic are a separate matter.  Heads (C3): a host adapter must handle every kind (`assert_never`).
@@ -23,6 +24,8 @@ class Verb(str, Enum):
     VALUE = "value"        # numeric / string value of an object
     KIND = "kind"          # getObjectType(label): runtime type (circle/triangle/…); read verb #8 (teacher 2026-09-09; the XML class stays the `Type` column, C6)
     NEW = "new"            # newConstruction(): empty the construction (stage 2 adapter: `:const :new`)
+    PNG = "png"            # getPNGBase64(scale, transparent, dpi): the view as a PNG (projection, B6 10-05)
+    SVG = "svg"            # exportSVG(): the view as SVG text (projection, B6 10-05)
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,20 @@ class New:
     kind: Literal["new"] = "new"
 
 
-Request = Union[Eval, XmlIn, XmlOut, Listen, Delete, Value, Kind, New]
+@dataclass(frozen=True)
+class Png:
+    scale: float = 1.0
+    transparent: bool = False
+    dpi: int = 72
+    kind: Literal["png"] = "png"
+
+
+@dataclass(frozen=True)
+class Svg:
+    kind: Literal["svg"] = "svg"
+
+
+Request = Union[Eval, XmlIn, XmlOut, Listen, Delete, Value, Kind, New, Png, Svg]
 
 
 class Host(Protocol):
@@ -98,6 +114,8 @@ def to_json(req: Request, req_id: str) -> dict:
         case Value(label=l):     d = {"kind": "value", "label": l}
         case Kind(label=l):      d = {"kind": "kind", "label": l}
         case New():              d = {"kind": "new"}
+        case Png(scale=s_, transparent=t, dpi=dp): d = {"kind": "png", "scale": s_, "transparent": t, "dpi": dp}
+        case Svg():              d = {"kind": "svg"}
         case _:
             from typing import assert_never
             assert_never(req)

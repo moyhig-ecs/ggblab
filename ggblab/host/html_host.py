@@ -10,11 +10,11 @@ reply arrives (`GET ggblab/await` continues in proxy-sized slices); events are p
 no comm target, no control socket: the server is the registry. Only HTTP crosses the browser<->server boundary.
 """
 from __future__ import annotations
-import json, os, time, uuid, urllib.parse, urllib.request
+import base64, json, os, time, uuid, urllib.parse, urllib.request
 from pathlib import Path
 from typing import Callable
 from IPython.display import HTML, display
-from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, Kind, New, to_json
+from .base import Request, Eval, XmlIn, XmlOut, Delete, Value, Kind, New, Png, Svg, to_json
 from .control import kernel_id
 from ..xml_errata import without_gui
 
@@ -132,6 +132,12 @@ class GeoGebra:
         return self._rpc(Eval(tuple(cmds)), timeout)
     def xml(self, timeout: float = 10.0) -> str:
         return self._rpc(XmlOut(), timeout)
+    def png(self, scale: float = 1.0, transparent: bool = False, dpi: int = 72, timeout: float = 20.0) -> bytes:
+        """The view as PNG bytes (getPNGBase64): the "paper" projection (B6, 10-05) — a still picture for a chat or a record."""
+        return base64.b64decode(self._rpc(Png(scale, transparent, dpi), timeout))
+    def svg(self, timeout: float = 20.0) -> str:
+        """The view as SVG text (exportSVG): the same projection, scalable."""
+        return self._rpc(Svg(), timeout)
     def set_xml(self, xml: str, timeout: float = 10.0, gui: bool = False):
         """C1 `xml_in`. The `<gui>` element of the document (the layout the file was saved with) is not sent, so the applet
         keeps its own layout; `gui=True` sends the document as it is."""

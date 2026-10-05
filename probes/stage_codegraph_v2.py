@@ -104,7 +104,8 @@ for i, c in enumerate(commits):
 ALLOWED = {  # interface states in the order they may appear; a change is legal only if it is on this list (teacher-ruled)
     "verbs": [["DELETE", "EVAL", "LISTEN", "VALUE", "XML_IN", "XML_OUT"],                     # stage 0 (C1 "five verbs" + value)
               ["DELETE", "EVAL", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"],             # stage 2, 2026-09-07: respect the GeoGebra API → newConstruct
-              ["DELETE", "EVAL", "KIND", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"]],    # stage 3, 2026-09-09: kind → getObjectType (read verb #8)ion
+              ["DELETE", "EVAL", "KIND", "LISTEN", "NEW", "VALUE", "XML_IN", "XML_OUT"],     # stage 3, 2026-09-09: kind → getObjectType (read verb #8)
+              ["DELETE", "EVAL", "KIND", "LISTEN", "NEW", "PNG", "SVG", "VALUE", "XML_IN", "XML_OUT"]],   # B6 projections, 2026-10-05: png → getPNGBase64, svg → exportSVG (teacher's ruling 10-05 「足す」)
     "heads": [sorted(["Angle","AngleBisector","ApplyMatrix","Circle","ClosestPoint","Cone","Determinant","Distance","Ellipse","Intersect","IntersectConic",
                       "Length","Line","Locus","Midpoint","Plane","Point","Polar","Polygon","PerpendicularBisector","PerpendicularLine","PerpendicularPlane",
                       "Reflect","Segment","Slider","Sphere","TriangleCenter","Vector"])]}
