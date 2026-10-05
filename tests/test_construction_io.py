@@ -79,5 +79,5 @@ def test_layer_defaults_to_zero_not_null():
 def test_kind_verb_is_the_eighth_and_reads_getObjectType():
     """C1 read verb #8 (teacher 2026-09-09): kind → getObjectType. base.Kind serialises like the other read verbs."""
     from ggblab.host.base import Verb, Kind, to_json
-    assert Verb.KIND.value == "kind" and len(list(Verb)) == 8
+    assert Verb.KIND.value == "kind" and len(list(Verb)) == 10          # 8 until 2026-10-05; png and svg (projections) make ten
     assert to_json(Kind("c_1"), "r")["kind"] == "kind" and to_json(Kind("c_1"), "r")["label"] == "c_1"
