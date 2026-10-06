@@ -1,10 +1,8 @@
 name: Build
 
+# 2026-10-06: version 1 is frozen on this branch; this workflow no longer runs on push or pull_request
+# (its failures predate the freeze: see the v2 branch for the live CI). Run it by hand from the Actions tab if needed.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: ['*']
   workflow_dispatch: {}
 
 concurrency:
