@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0rc3 (2026-10-07)
 
 - Python 3.11 imports the package again. 2.0.0rc2 escaped `</` inside an f-string expression (`html_host.py`, the
   `</script>` escape of A4); a backslash there is a `SyntaxError` before Python 3.12, so `import ggblab` failed on 3.11 —
