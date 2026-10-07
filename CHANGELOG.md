@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (toward 2.0.0rc2)
+## 2.0.0rc2 (2026-10-07)
 
 - The relay serves a holder page: `GET ggblab/holder?mount=<box>` returns a same-origin page with the same `div` and the
   same `mount.js` a notebook output gets, with no CSP sandbox, so a headless browser, an app's webview or a phone can

@@ -2,7 +2,7 @@
 
 GeoGebra applets in Jupyter notebooks, driven from Python and Julia kernels.
 
-This is **version 2** (`2.0.0rc1`, a release candidate). It is a rewrite, not an upgrade of 1.x: see
+This is **version 2** (`2.0.0rc2`, a release candidate). It is a rewrite, not an upgrade of 1.x: see
 [Relation to version 1](#relation-to-version-1).
 
 ## What it is
@@ -21,9 +21,9 @@ This is **version 2** (`2.0.0rc1`, a release candidate). It is a rewrite, not an
 Python 3.11 or later.
 
 ```bash
-pip install ggblab==2.0.0rc1            # the core: applet host, server extension, parser
-pip install "ggblab[extra]==2.0.0rc1"   # plus ggblab_extra: construction I/O, geometry IR, SymPy objects
-pip install "ggblab[examples]==2.0.0rc1" # plus what the notebooks in examples/ import (matplotlib, networkx, numpy)
+pip install ggblab==2.0.0rc2            # the core: applet host, server extension, parser
+pip install "ggblab[extra]==2.0.0rc2"   # plus ggblab_extra: construction I/O, geometry IR, SymPy objects
+pip install "ggblab[examples]==2.0.0rc2" # plus what the notebooks in examples/ import (matplotlib, networkx, numpy)
 ```
 
 Without a version, `pip install ggblab` installs 1.8.1 while 2.0.0 is a release candidate.
@@ -96,7 +96,7 @@ c = Circle(:A, 1)
 
 The notebooks in `examples/` show more. eg1 and eg2 need no server and no applet.
 
-Documentation: <https://ggblab.readthedocs.io/> (choose the version `v2.0.0rc1`; `latest` and `stable` are version 1).
+Documentation: <https://ggblab.readthedocs.io/> (choose the version `v2.0.0rc2`; `latest` and `stable` are version 1).
 
 | notebook | what it shows |
 |---|---|
