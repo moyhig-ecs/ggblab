@@ -4,6 +4,6 @@ transport = mailbox (RPC); C1 host verbs = a closed subset of the GeoGebra Apps 
 on the shell channel for replies, queue until the applet is ready; C3 Horn-clause style.
 The anywidget adapter (host/anywidget_host.py) is kept as adapter #1 for marimo; import it explicitly."""
 from .host.control import ControlBridge, kernel_id
-from .host.html_host import GeoGebra, find_server
+from .host.html_host import GeoGebra, NoHolderError, find_server
 
-__all__ = ["ControlBridge", "kernel_id", "GeoGebra", "find_server"]
+__all__ = ["ControlBridge", "kernel_id", "GeoGebra", "NoHolderError", "find_server"]

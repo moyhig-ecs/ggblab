@@ -6,7 +6,7 @@ GGBLabMacro — the v2 Julia entry for constructions (ruling 2026-09-11: option 
 
 The body is a NON-STANDARD STRING LITERAL: Julia's parser never sees it (the v1 `@ggb` Expr macro let Julia parse the
 GeoGebra text first — juxtaposition `u v`, prime labels `C'`, `²`, numeric literals and operator printing were rewritten
-or rejected before the macro ran; see lancedb-rag conversations/2026-09-11/SURVEY_julia_ggb_macro_v1_20260911.md).
+or rejected before the macro ran).
 The closed world (28 heads, `:label` refs, `RelativeReference`) is the Python parser's — one parser for both kernels (C6:
 ggblab_extra / the parser are not reimplemented in Julia). No `\$` interpolation (a string macro receives raw text).
 
