@@ -1,4 +1,4 @@
-# Publish version 2. A tag v2.0.0rc1 publishes to PyPI; "Run workflow" publishes to TestPyPI (or PyPI, by choice).
+# Publish version 2, after the CI workflow passes at the tagged commit. A tag v2.0.0rc1 publishes to PyPI; "Run workflow" publishes to TestPyPI (or PyPI, by choice).
 # A workflow runs from the files of the commit the tag points to, so tags on the version 1 branch do not start this one.
 name: publish
 
@@ -14,7 +14,14 @@ on:
         default: testpypi
 
 jobs:
+  # 2.0.0rc2 (2026-10-07) reached PyPI while CI was red (the 3.11 job and the Julia job): this workflow built and published
+  # without waiting for the tests. Now the tests, the Julia package and the build of ci.yml run first, at the tagged commit,
+  # and nothing is published unless all of them pass.
+  test:
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -7,6 +7,7 @@ on:
   pull_request:
     branches: [v2]
   workflow_dispatch:
+  workflow_call:        # publish.yml runs this whole workflow (tests on 3.11-3.14, the Julia package, the build) before it publishes
 
 jobs:
   test:
