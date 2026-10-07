@@ -125,6 +125,8 @@ Version 1 has an experimental VS Code extension. Version 2 does not support VS C
 
 - **Trusted output.** The applet is mounted by a script in the cell output. The notebook has to be trusted.
 - **One machine.** The kernel and the Jupyter server are assumed to run on the same machine or in the same container.
+- **A call needs a holder.** A box nobody polls answers `NoHolderError` (a `TimeoutError`) within `holder_grace` s instead of
+  waiting out `timeout`; a request the kernel gave up on is withdrawn and never runs later. `g.boxes()` shows who holds what.
 - **Reply of `command`.** Each entry is one of three things: the labels GeoGebra returned, `None` when GeoGebra refused
   the command (see `g.errors()`), or `{"error": …}` when the Apps API threw for that command.
 - **Commands outside the 28.** The parser rejects them. Examples met in course material and not yet supported:

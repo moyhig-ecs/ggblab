@@ -51,11 +51,11 @@ def test_events_are_pulled_not_pushed():
         mb = Mailbox()
         s1 = mb.push_event("doc:nb", {"type": "add", "label": "A"})
         s2 = mb.push_event("doc:nb", {"type": "update", "label": "A"})
-        evs, nxt = await mb.pull_events("doc:nb", since=0, wait=0)
+        evs, nxt, _ = await mb.pull_events("doc:nb", since=0, wait=0)
         assert [e["data"]["label"] for e in evs] == ["A", "A"] and (s1, s2, nxt) == (1, 2, 2)
-        evs, nxt = await mb.pull_events("doc:nb", since=nxt, wait=0)
+        evs, nxt, _ = await mb.pull_events("doc:nb", since=nxt, wait=0)
         assert evs == [] and nxt == 2
-        evs, nxt = await mb.pull_events("doc:nb", since="latest", wait=0)                  # a new object starts from now
+        evs, nxt, _ = await mb.pull_events("doc:nb", since="latest", wait=0)                  # a new object starts from now
         assert evs == [] and nxt == 2
     run(main())
 

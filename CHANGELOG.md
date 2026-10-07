@@ -12,6 +12,24 @@
   `GET ggblab/state?mount=<box>` returns the box's copy.
 - Two projection verbs: `png` (`getPNGBase64`) and `svg` (`exportSVG`) — `g.png()` returns PNG bytes, `g.svg()` SVG text;
   the same in Julia. Ten verbs now (the code-graph probe's allow-list records the fourth state).
+- A request has a lifetime, a call does not wait for a holder that is not there, and the boxes are listable (A1,
+  2026-10-07). `POST ggblab/call` takes `timeout` (the request's lifetime: past it the request is dropped, never handed to a
+  holder that turns up later) and `fail_fast` + `grace` (no live holder polls the box → `{"status": "no_holder"}` within
+  `grace` s, the request withdrawn). `POST ggblab/cancel {req_id}` withdraws a queued request — the Python host sends it when
+  its own timeout passes. `GET ggblab/boxes` lists every box with whether a live holder polls it. `GET ggblab/events` reports
+  `dropped` when events fell off the box's log before they were pulled. Python: `GeoGebra(fail_fast=True, holder_grace=2.0)`
+  raises `NoHolderError` (a `TimeoutError`) instead of waiting out `timeout`; `g.boxes()`; `g.events_dropped`. Measured on a
+  real server with a headless holder: no holder → error in 1.0 s (grace 1.0); a request that timed out while no holder was
+  there did not run when a holder arrived; the box's state was still restored to that holder.
+- The page says what went wrong (A4): a poll answered with 401 / 403 / 404 stops after three tries with the reason in the
+  output (not only in the console); five consecutive failures of any kind are shown while retrying; a `deployggb.js` that
+  does not load is shown in the output. The "already mounted above" pointer is built with DOM calls, and a `</script>` inside
+  an applet parameter can no longer end the inline script (the JSON is escaped).
+- Outside a kernel the host never guesses a server (A6): `GeoGebra(server_url=..., token=..., doc=...)` names it; without a
+  kernel and without `server_url` (or without `doc`) the constructor raises `ValueError` instead of taking the first server
+  that answers.
+- The Julia host keeps the earlier wire shape (no `fail_fast`, no cancel on timeout): the server accepts both; parity for
+  these two is planned for 2.0.0.
 - The Julia host can be installed as a Julia package: `julia/Project.toml` (`GGBLab`, provisional name) wraps the same
   two files the wheel ships; `Pkg.test` runs offline tests; the mount JavaScript is looked up at the first mount (also
   through the installed Python package `ggblab`, or `GGBLAB_MOUNT_JS`), no longer read when the file is loaded.

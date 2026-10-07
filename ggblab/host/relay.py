@@ -3,6 +3,9 @@
   POST <base>ggblab/call    {mount, request, wait?}    kernel -> queue the request for that mount and PARK this HTTP request
                                                         until the browser replies (<= wait s)
                                                         -> {"status": "ok", "req_id", "data"} | {"status": "pending", "req_id"}
+                                                        {timeout?} = the request's lifetime: past it, it is never handed to a
+                                                        holder; {fail_fast?, grace?} = answer {"status": "no_holder"} at once
+                                                        (<= grace s) when no live holder polls the box (A1, 10-07)
   GET  <base>ggblab/await?req_id=<id>&wait=<s>         kernel -> keep waiting for a parked reply (proxy-sized slices)
   GET  <base>ggblab/poll?mount=<id>&wait=<s>&client=<id>&lease=<s>
                                                         browser long-poll -> {"requests": [...], "held": bool}
@@ -13,6 +16,9 @@
                                                         browser -> resolve the parked call / append to the mount's event log
   GET  <base>ggblab/events?mount=<id>&since=<seq|latest>&wait=<s>
                                                         kernel -> pull events (C1 `listen`, pull-first) -> {"events", "next"}
+  POST <base>ggblab/cancel  {req_id}                   kernel -> withdraw a queued request (the kernel gave up waiting): it is
+                                                        never handed to a holder (A1, 10-07) -> {"cancelled", "queued"}
+  GET  <base>ggblab/boxes                               every box the server knows: holder (live?), queued, log_seq, xml_seq (A1)
   GET  <base>ggblab/whoami?kernel_id=<id>[&name=…]     kernel -> {"path", "mount"}: the box key is the DOCUMENT (stage 3)
   GET  <base>ggblab/holder?mount=<id>[&params=<json>][&deploy=<url>]
                                                         a holder that is not a notebook output (headless Chromium, app webview,
@@ -37,6 +43,8 @@ from jupyter_server.base.handlers import JupyterHandler
 from jupyter_server.utils import url_path_join
 
 LEASE_DEFAULT, LEASE_MAX = 40.0, 120.0
+GRACE_DEFAULT, GRACE_MAX = 2.0, 10.0   # fail_fast: how long a call waits for a holder to appear before "no_holder" (A1, 10-07)
+EV_MAX = 4096                          # events kept per box; older ones are dropped and the drop is reported (A1)
 STATE_KINDS = {"eval", "xml_in", "delete", "new"}   # requests that change the construction: logged, then a snapshot is taken (B6, 10-05)
 SNAP_PREFIX = "snap-"                                 # req_id prefix of the server's own xml_out requests (the snapshot)
 WAIT_MAX = 55.0                    # one parked HTTP request never outlives a typical proxy timeout (60 s)
@@ -54,7 +62,8 @@ def mount_key(path: str | None, kernel_id: str, name: str | None = None) -> str:
 class Mailbox:
     """Server-side registry: per-mount request queue (+ poller lease), parked replies by req_id, per-mount event log."""
 
-    def __init__(self, keep: float = KEEP) -> None:
+    def __init__(self, keep: float = KEEP, ev_max: int = EV_MAX) -> None:
+        self.ev_max = ev_max
         self.boxes: dict[str, dict] = {}       # mount -> {"q", "ev", "t", "holder", "holder_t", "holder_poll", "lease", "free"}
         self.pending: dict[str, dict] = {}     # req_id -> {"fut", "t", "mount"}
         self.results: dict[str, tuple] = {}    # req_id -> (data, t): replies that arrived after the waiter left
@@ -64,10 +73,8 @@ class Mailbox:
     # -- housekeeping ------------------------------------------------------------------------------------------
     def gc(self) -> None:
         now = time.time()
-        for rid in [r for r, e in self.pending.items() if now - e["t"] > self.keep]:
-            e = self.pending.pop(rid)
-            if not e["fut"].done():
-                e["fut"].cancel()
+        for rid in [r for r, e in self.pending.items() if now - e["t"] > self.keep or (e.get("deadline") and now > e["deadline"])]:
+            self._withdraw(rid, "expired")
         for rid in [r for r, (_, t) in self.results.items() if now - t > self.keep]:
             self.results.pop(rid, None)
         if len(self.boxes) > 512:
@@ -80,6 +87,7 @@ class Mailbox:
             b = self.boxes[mount] = {"q": collections.deque(), "ev": asyncio.Event(), "t": 0.0,
                                      "holder": None, "holder_t": 0.0, "holder_poll": None, "lease": LEASE_DEFAULT,
                                      "free": asyncio.Event(),              # set when the holder releases the box
+                                     "arrived": asyncio.Event(),           # set when a holder takes the box (fail_fast waits on it, A1)
                                      # B6 (10-05): the box's own copy of the state = the latest XML (restore) + the log of the
                                      # state-changing requests (replay). The XML is asked of the holder after each change.
                                      "xml": None, "xml_t": 0.0, "xml_seq": 0, "xml_by": None, "snap": None, "dirty": False,
@@ -90,13 +98,16 @@ class Mailbox:
     def _log(self, mount: str) -> dict:
         log = self.events.get(mount)
         if log is None:
-            log = self.events[mount] = {"seq": 0, "q": collections.deque(maxlen=4096), "ev": asyncio.Event(), "t": 0.0}
+            log = self.events[mount] = {"seq": 0, "q": collections.deque(maxlen=self.ev_max), "ev": asyncio.Event(), "t": 0.0,
+                                        "dropped": 0}                       # events pushed out of the deque (A1: reported, not silent)
         log["t"] = time.time()
         return log
 
     # -- kernel side: call / await ------------------------------------------------------------------------------
-    def submit(self, mount: str, request: dict) -> str:
-        """Queue `request` for the browser holding `mount`; park a future for its reply. Returns the req_id."""
+    def submit(self, mount: str, request: dict, timeout: float | None = None) -> str:
+        """Queue `request` for the browser holding `mount`; park a future for its reply. Returns the req_id.
+        `timeout` is the request's lifetime (A1, 10-07): past `now + timeout` it is never handed to a holder — a holder that
+        turns up later must not run a command the kernel stopped waiting for minutes ago."""
         self.gc()
         rid = request.get("req_id") or uuid.uuid4().hex[:12]
         request["req_id"] = rid
@@ -106,8 +117,68 @@ class Mailbox:
         if kind in STATE_KINDS:                                # the log = what changed the construction, in order (replay, B4)
             b["log_seq"] += 1
             b["log"].append({"seq": b["log_seq"], "t": time.time(), "request": {k: v for k, v in request.items() if k != "req_id"}})
-        self.pending[rid] = {"fut": asyncio.get_running_loop().create_future(), "t": time.time(), "mount": mount, "kind": kind}
+        self.pending[rid] = {"fut": asyncio.get_running_loop().create_future(), "t": time.time(), "mount": mount, "kind": kind,
+                             "deadline": (time.time() + timeout) if timeout else None}
         return rid
+
+    # -- A1 (10-07): a request has a lifetime; a kernel can withdraw it; a call can refuse to wait for a holder ------
+    def _withdraw(self, rid: str, why: str) -> dict:
+        """Take `rid` out of its box's queue (if still there) and out of pending (the waiter, if any, sees {"error": why})."""
+        ent = self.pending.pop(rid, None)
+        queued = False
+        if ent is not None:
+            b = self.boxes.get(ent["mount"])
+            if b is not None:
+                before = len(b["q"])
+                b["q"] = collections.deque(r for r in b["q"] if r.get("req_id") != rid)
+                queued = len(b["q"]) != before
+            if not ent["fut"].done():
+                ent["fut"].set_result({"error": why})
+        return {"cancelled": ent is not None, "queued": queued}
+
+    def cancel(self, rid: str) -> dict:
+        """The kernel gave up waiting (its timeout passed): the request must not run later. Returns {"cancelled", "queued"}."""
+        return self._withdraw(rid, "cancelled")
+
+    def _drain(self, b: dict) -> list[dict]:
+        """Hand the holder the live requests only: an expired one (its lifetime passed while nobody held the box) or a
+        withdrawn one (no pending entry) is dropped here, and the waiter — if still there — is told {"error": "expired"}."""
+        now = time.time(); live = []
+        for r in b["q"]:
+            ent = self.pending.get(r.get("req_id"))
+            if ent is None and not str(r.get("req_id", "")).startswith(SNAP_PREFIX):
+                continue                                       # withdrawn by the kernel
+            if ent is not None and ent.get("deadline") and now > ent["deadline"]:
+                self._withdraw(r["req_id"], "expired")
+                continue
+            live.append(r)
+        b["q"].clear()
+        return live
+
+    def has_live_holder(self, mount: str) -> bool:
+        b = self.boxes.get(mount)
+        return bool(b and b["holder"] and time.time() - b["holder_t"] < b["lease"])
+
+    async def wait_holder(self, mount: str, timeout: float) -> bool:
+        """True as soon as a holder polls the box; False after `timeout` s with none (fail_fast, A1)."""
+        b = self.box(mount)
+        if self.has_live_holder(mount):
+            return True
+        b["arrived"].clear()
+        if self.has_live_holder(mount):
+            return True
+        await self._wait_any([b["arrived"]], timeout)
+        return self.has_live_holder(mount)
+
+    def summary(self) -> list[dict]:
+        """GET /boxes: one row per box the server knows (for an agent or a human asking "which applets are open?")."""
+        now = time.time(); out = []
+        for mount, b in self.boxes.items():
+            live = bool(b["holder"]) and now - b["holder_t"] < b["lease"]
+            out.append({"mount": mount, "holder": live, "holder_age_s": round(now - b["holder_t"], 1) if b["holder"] else None,
+                        "queued": len(b["q"]), "pending": sum(1 for e in self.pending.values() if e["mount"] == mount),
+                        "log_seq": b["log_seq"], "xml_seq": b["xml_seq"], "idle_s": round(now - b["t"], 1)})
+        return out
 
     # -- B6 (10-05): the box keeps the latest XML; a new holder is told to restore it on its first poll ------------
     def _snapshot(self, mount: str) -> None:
@@ -189,8 +260,9 @@ class Mailbox:
             if closed is not None and closed.is_set():         # woke because the browser left: a dead poll must not take the box
                 return {"requests": [], "held": True, "lease": b["lease"], "closed": True}
             b["holder"], b["holder_t"], b["lease"], b["holder_poll"] = client, now, lease, poll_id
+            b["arrived"].set()                                 # a fail_fast call parked on this box may proceed (A1)
         if parked:                                             # a take-over answers at once: the browser drops its `held` mark and re-polls
-            reqs = list(b["q"]); b["q"].clear()
+            reqs = self._drain(b)
             out = {"requests": reqs, "held": False, "lease": b["lease"]}
             r = self._restore_for(b, client)
             if r:
@@ -203,7 +275,7 @@ class Mailbox:
             return {"requests": [], "held": False, "lease": b["lease"], "closed": True}
         if client and b["holder"] != client:                   # the lease lapsed while parked and another tab took over
             return {"requests": [], "held": True, "lease": b["lease"]}
-        reqs = list(b["q"]); b["q"].clear()
+        reqs = self._drain(b)
         if client:
             b["holder_t"] = time.time()
         out = {"requests": reqs, "held": False, "lease": b["lease"]}
@@ -252,13 +324,17 @@ class Mailbox:
     def push_event(self, mount: str, data: Any) -> int:
         log = self._log(mount)
         log["seq"] += 1
+        if len(log["q"]) == log["q"].maxlen:
+            log["dropped"] += 1                                # the oldest event falls off: counted, reported by pull_events (A1)
         log["q"].append((log["seq"], data)); log["ev"].set()
         return log["seq"]
 
-    async def pull_events(self, mount: str, since: int | str, wait: float) -> tuple[list[dict], int]:
+    async def pull_events(self, mount: str, since: int | str, wait: float) -> tuple[list[dict], int, int]:
+        """(events after `since`, next cursor, dropped): `dropped` > 0 means events between `since` and the oldest kept one
+        fell off the box's log before this reader came for them (A1: a gap is reported, not silent)."""
         log = self._log(mount)
         if since == "latest":                                  # a new object starts from now, not from the box's birth
-            return [], log["seq"]
+            return [], log["seq"], 0
         since = int(since)
         log["ev"].clear()
         items = [{"seq": s, "data": d} for s, d in log["q"] if s > since]
@@ -268,7 +344,9 @@ class Mailbox:
             except asyncio.TimeoutError:
                 pass
             items = [{"seq": s, "data": d} for s, d in log["q"] if s > since]
-        return items, log["seq"]
+        first = log["q"][0][0] if log["q"] else log["seq"] + 1
+        dropped = max(0, first - since - 1) if since < log["seq"] else 0
+        return items, log["seq"], dropped
 
 
 MB = Mailbox()
@@ -304,9 +382,34 @@ class CallHandler(_Json):
         except KeyError as e:
             raise web.HTTPError(400, f"missing {e}")
         wait = _clamp(body.get("wait", 25.0), 0.0, WAIT_MAX)
-        rid = MB.submit(mount, req)
+        timeout = _clamp(body["timeout"], 0.0, 3600.0) if body.get("timeout") is not None else None   # the request's lifetime (A1)
+        rid = MB.submit(mount, req, timeout=timeout)
+        if body.get("fail_fast") and not MB.has_live_holder(mount):   # A1: no applet polls this box -> say so within `grace` s
+            grace = _clamp(body.get("grace", GRACE_DEFAULT), 0.0, GRACE_MAX)
+            if not await MB.wait_holder(mount, min(wait, grace)):
+                MB.cancel(rid)                                 # never run later by a holder that turns up afterwards
+                self.send({"status": "no_holder", "req_id": rid, "data": None, "box": MB.state(mount) | {"log": None}})
+                return
         status, data = await MB.wait_reply(rid, wait)
         self.send({"status": status, "req_id": rid, "data": data})
+
+
+class CancelHandler(_Json):
+    """POST cancel {req_id}: the kernel stopped waiting; the request leaves the queue and is never handed to a holder (A1)."""
+    @web.authenticated
+    async def post(self):
+        body = _json_body(self)
+        rid = body.get("req_id")
+        if not rid:
+            raise web.HTTPError(400, "cancel needs req_id")
+        self.send({"req_id": rid, **MB.cancel(rid)})
+
+
+class BoxesHandler(_Json):
+    """GET boxes: every box the server knows, with whether a live holder polls it (A1)."""
+    @web.authenticated
+    async def get(self):
+        self.send({"boxes": MB.summary()})
 
 
 class AwaitHandler(_Json):
@@ -369,8 +472,11 @@ class EventsHandler(_Json):
                 since = int(since)
             except ValueError:
                 raise web.HTTPError(400, f"bad since: {since!r}")
-        events, nxt = await MB.pull_events(mount, since, wait)
-        self.send({"events": events, "next": nxt})
+        events, nxt, dropped = await MB.pull_events(mount, since, wait)
+        out = {"events": events, "next": nxt}
+        if dropped:
+            out["dropped"] = dropped                           # A1: the reader learns that events fell off the log
+        self.send(out)
 
 
 class WhoAmIHandler(_Json):
@@ -405,7 +511,7 @@ def holder_html(base_url: str, mount: str, params: dict | None = None, deploy: s
     page_cfg = {"baseUrl": (base_url or "/")}
     if token:
         page_cfg["token"] = token
-    js = _HOLDER_JS.read_text(encoding="utf-8").replace("__CFG__", json.dumps(cfg))
+    js = _HOLDER_JS.read_text(encoding="utf-8").replace("__CFG__", json.dumps(cfg).replace("</", "<\\/"))   # a "</script>" inside a param must not end the script (A4)
     return ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
             f'<title>ggblab holder {html_escape(mount)}</title>'
             f'<script id="jupyter-config-data" type="application/json">{json.dumps(page_cfg)}</script></head>'
@@ -450,6 +556,8 @@ def _load_jupyter_server_extension(serverapp):
     serverapp.web_app.add_handlers(".*$", [
         (url_path_join(base, "ggblab", "call"), CallHandler),
         (url_path_join(base, "ggblab", "await"), AwaitHandler),
+        (url_path_join(base, "ggblab", "cancel"), CancelHandler),
+        (url_path_join(base, "ggblab", "boxes"), BoxesHandler),
         (url_path_join(base, "ggblab", "poll"), PollHandler),
         (url_path_join(base, "ggblab", "reply"), ReplyHandler),
         (url_path_join(base, "ggblab", "events"), EventsHandler),
@@ -457,7 +565,7 @@ def _load_jupyter_server_extension(serverapp):
         (url_path_join(base, "ggblab", "holder"), HolderHandler),
         (url_path_join(base, "ggblab", "state"), StateHandler),
     ])
-    serverapp.log.info("ggblab mailbox (RPC): %s{call,await,poll,reply,events,whoami,holder,state}", url_path_join(base, "ggblab/"))
+    serverapp.log.info("ggblab mailbox (RPC): %s{call,await,cancel,boxes,poll,reply,events,whoami,holder,state}", url_path_join(base, "ggblab/"))
 
 
 load_jupyter_server_extension = _load_jupyter_server_extension

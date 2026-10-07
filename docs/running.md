@@ -12,6 +12,8 @@ the applet pass the proxy of the hub as plain HTTP long polls; no WebSocket is n
 
 ## Known limitations
 
+- **A call needs a holder.** A box nobody polls answers `NoHolderError` within `holder_grace` s (default 2.0): open the notebook's applet, or the holder page `ggblab/holder?mount=…`, before calling. Pass `fail_fast=False` to wait out `timeout` instead.
+
 ```{include} ../README.md
 :start-after: "## Known limitations\n"
 :end-before: "## Tests"

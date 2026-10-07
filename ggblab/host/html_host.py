@@ -20,6 +20,11 @@ from ..xml_errata import without_gui
 
 DEPLOY = "https://www.geogebra.org/apps/deployggb.js"
 
+
+class NoHolderError(TimeoutError):
+    """No applet is polling the box (nothing is open in a browser, or the holder's lease lapsed): the call was withdrawn
+    at once instead of waiting out `timeout` (A1, 10-07). A subclass of TimeoutError, so existing handlers still catch it."""
+
 JS = (Path(__file__).with_name("mount.js")).read_text(encoding="utf-8")   # one JS source for every host language (stage 4: julia/host/html_host.jl reads the same file); __CFG__ is substituted at mount
 
 
@@ -51,12 +56,26 @@ class GeoGebra:
     """Stage-0 façade (command / xml / set_xml / delete / value / new_construction / listen / events) over the HTML + mailbox host."""
     SLICE = 25.0                                                # one parked HTTP request per proxy-sized slice
 
-    def __init__(self, mount: str | None = None, doc: str | None = None, **params):
+    def __init__(self, mount: str | None = None, doc: str | None = None, server_url: str | None = None, token: str | None = None,
+                 fail_fast: bool = True, holder_grace: float = 2.0, **params):
+        """`server_url` + `token`: the jupyter_server to talk to, named explicitly — required outside a kernel (A6, 10-07:
+        `find_server("")` would pick the first server that answers, which is a guess), optional inside one.
+        `fail_fast`: a call on a box nobody holds returns NoHolderError within `holder_grace` s instead of waiting out its
+        timeout (A1). `doc` is required outside a kernel (the box key is the document)."""
         self._listeners: list[Callable[[dict], None]] = []
         self.kernel_id = kernel_id() or ""
         self.dom_id = uuid.uuid4().hex[:12]                     # the output element of the LATEST display (mount() stamps a fresh one per display)
         self.params = params
-        self.server_url, self._headers = find_server(self.kernel_id)
+        self.fail_fast, self.holder_grace = fail_fast, holder_grace
+        self.events_dropped = 0                                 # events that fell off the box's log before we pulled them (A1)
+        if server_url:
+            self.server_url, self._headers = server_url, ({"Authorization": f"token {token}"} if token else {})
+        elif not self.kernel_id:
+            raise ValueError("outside a kernel, name the server: GeoGebra(server_url=..., token=..., doc=...) — there is no kernel to find it by")
+        else:
+            self.server_url, self._headers = find_server(self.kernel_id)
+        if not self.kernel_id and not doc:
+            raise ValueError("outside a kernel the box must be named: GeoGebra(..., doc='<document>')")
         if doc:                                                 # an agent-started kernel with no session names its document explicitly
             from .relay import mount_key
             self.path, self.mount_id = doc, mount_key(doc, self.kernel_id, mount)
@@ -96,7 +115,7 @@ class GeoGebra:
         self.dom_id = uuid.uuid4().hex[:12]
         cfg = {"mount": self.mount_id, "dom": self.dom_id, "params": self.params, "deploy": DEPLOY}
         html = (f'<div id="ggb-{self.dom_id}" style="min-height:600px"></div>'
-                f'<script>{JS.replace("__CFG__", json.dumps(cfg))}</script>')
+                f'<script>{JS.replace("__CFG__", json.dumps(cfg).replace("</", "<\\/"))}</script>')   # "</script>" in a param must not end the script (A4)
         display(HTML(html))
         self._mounted = True
 
@@ -116,14 +135,26 @@ class GeoGebra:
         body = to_json(req, rid)
         t0 = time.time()
         wait = min(timeout, self.SLICE)
-        d = self._http("POST", "/ggblab/call", {"mount": self.mount_id, "request": body, "wait": wait}, timeout=wait + 10)
+        d = self._http("POST", "/ggblab/call", {"mount": self.mount_id, "request": body, "wait": wait, "timeout": timeout,
+                                                "fail_fast": self.fail_fast, "grace": self.holder_grace}, timeout=wait + 10)
+        if d.get("status") == "no_holder":                      # A1: nobody polls the box; the request was withdrawn, not queued
+            raise NoHolderError(f"no applet holds box {self.mount_id} (open the notebook's applet, or "
+                                f"GET {self.server_url.rstrip('/')}/ggblab/holder?mount={self._q(self.mount_id)} in a browser)")
         while d.get("status") == "pending":
             left = timeout - (time.time() - t0)
             if left <= 0:
+                try:                                            # A1: withdraw it, so a holder that turns up later never runs it
+                    self._http("POST", "/ggblab/cancel", {"req_id": rid}, timeout=3)
+                except Exception:
+                    pass
                 raise TimeoutError(f"no reply for {rid} within {timeout}s (box {self.mount_id}: is its applet open in a browser?)")
             wait = min(left, self.SLICE)
             d = self._http("GET", f"/ggblab/await?req_id={rid}&wait={wait}", timeout=wait + 10)
         return d.get("data")
+
+    def boxes(self) -> list[dict]:
+        """Every box this server knows and whether a live holder polls it (GET ggblab/boxes, A1)."""
+        return self._http("GET", "/ggblab/boxes").get("boxes", [])
 
     def command(self, *cmds: str, timeout: float = 10.0):
         """C1 `eval`: one reply entry per command — the label string(s) GeoGebra returned, None when it refused (error modal →
@@ -174,6 +205,7 @@ class GeoGebra:
         `wait` > 0 parks the request on the server until an event arrives (blocking pull; no thread in the kernel)."""
         d = self._http("GET", f"/ggblab/events?mount={self._q(self.mount_id)}&since={self._event_seq}&wait={wait}", timeout=wait + 10)
         evs = [e["data"] for e in d.get("events", [])]
+        self.events_dropped += int(d.get("dropped", 0) or 0)   # A1: a gap in the log is counted here, never silent
         self._event_seq = int(d.get("next", self._event_seq))
         for e in evs:
             for cb, label in self._listeners:

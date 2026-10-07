@@ -13,7 +13,12 @@
   window.__ggblabBoxes = window.__ggblabBoxes || {};
   const prev = window.__ggblabBoxes[M.mount];
   if (prev && prev.el && document.contains(prev.el) && prev.el !== el) {
-    el.style.minHeight = "0"; el.innerHTML = '<div style="font:12px system-ui;color:#666;padding:4px 6px;border-left:3px solid #ccc">ggblab: the applet for this notebook is already mounted above (' + M.mount + ') — <a href="#" onclick="event.preventDefault(); this.closest(\'body\').querySelector(\'#ggb-\' + window.__ggblabBoxes[' + JSON.stringify(M.mount) + '].dom).scrollIntoView({behavior:\'smooth\'})">show</a></div>';
+    el.style.minHeight = "0"; el.textContent = "";             // A4: build the pointer with DOM calls, never innerHTML of the mount string
+    const note = document.createElement("div"); note.style.cssText = "font:12px system-ui;color:#666;padding:4px 6px;border-left:3px solid #ccc";
+    note.appendChild(document.createTextNode("ggblab: the applet for this notebook is already mounted above (" + M.mount + ") \u2014 "));
+    const a = document.createElement("a"); a.href = "#"; a.textContent = "show";
+    a.onclick = (ev) => { ev.preventDefault(); const live = window.__ggblabBoxes[M.mount]; if (live && live.el) live.el.scrollIntoView({behavior: "smooth"}); };
+    note.appendChild(a); el.appendChild(note);
     return;
   }
   const box = {el, dom: M.dom, take: null};        // take: how another poller of this page hands a request to this applet
@@ -64,12 +69,19 @@
   const take = (req) => { if (api) serve(req); else queue.push(req); };
   box.take = take;
   let held = false;
+  function notice(text) {                           // A4 (10-07): a failure is shown in the output, not only in the console
+    let n = el.querySelector(".ggblab-notice");
+    if (!n) { n = document.createElement("div"); n.className = "ggblab-notice"; n.style.cssText = "font:12px system-ui;color:#a00;padding:4px 6px;border-left:3px solid #a00;white-space:pre-wrap"; el.prepend(n); }
+    n.textContent = "ggblab: " + text;
+  }
+  function clearNotice() { const n = el.querySelector(".ggblab-notice"); if (n) n.remove(); }
   async function gone() {                           // the output left the page (cell re-run cleared it, notebook closed)?
     if (document.contains(el)) return false;        // two looks 2 s apart: Lab detaches and re-attaches nodes when it moves cells
     await sleep(2000);
     return !document.contains(el);
   }
   async function pollLoop() {                       // plain HTTP long-poll; survives proxies, needs no WebSocket
+    let failures = 0;                               // A4: consecutive poll failures; auth / not-found stops the loop with a visible reason
     for (;;) {
       if (await gone()) {                           // 09-16: no zombie poller serving a detached applet (it shares clientId with
         const reg = window.__ggblabBoxes[M.mount];  // the live one, so the server could hand it the requests)
@@ -79,6 +91,7 @@
       try {
         const r = await fetch(base + "/ggblab/poll?mount=" + encodeURIComponent(M.mount) + "&wait=25&client=" + clientId + "&lease=40", {credentials: "same-origin", cache: "no-store", headers: authHeaders});
         if (r.status === 200) {
+          if (failures) { failures = 0; clearNotice(); }
           const j = await r.json();
           if (j.held) { if (!held) { held = true; el.dataset.ggblabHeld = "1"; } await sleep(1000); continue; }   // another tab holds it. The server parks us (<= wait) until it releases; the 1 s is for a server that answers at once
           if (held) { held = false; delete el.dataset.ggblabHeld; }
@@ -90,8 +103,18 @@
           }
           for (const req of reqs) take(req);
         }
-        else await sleep(1000);
-      } catch (e) { await sleep(1000); }
+        else {                                        // A4: a non-2xx poll is reported; 401/403/404 (auth, no relay) will not heal by retrying
+          failures += 1;
+          const fatal = r.status === 401 || r.status === 403 || r.status === 404;
+          if (fatal || failures >= 5) notice("poll " + base + "/ggblab/poll -> HTTP " + r.status + (fatal ? " (not retrying: " + (r.status === 404 ? "is the ggblab server extension enabled?" : "not authorized — reload the page or log in") + ")" : " (" + failures + " failures, retrying)"));
+          if (fatal && failures >= 3) return;
+          await sleep(Math.min(1000 * failures, 5000));
+        }
+      } catch (e) {                                   // network / CORS: keep trying, but say so after a while
+        failures += 1;
+        if (failures >= 5) notice("cannot reach " + base + "/ggblab/poll (" + failures + " failures: " + String(e) + ") — retrying");
+        await sleep(Math.min(1000 * failures, 5000));
+      }
     }
   }
   function loadScript() {
@@ -141,5 +164,5 @@
         } catch (e) { console.error("ggblab appletOnLoad failed", e); post({kind: "event", data: {type: "error", error: String(e)}}); }
       }}, M.params || {});
     new window.GGBApplet(params, true).inject(el);   // element, not id (deployggb gives up silently on a missing id)
-  }).catch(e => console.error("ggblab: deployggb load failed", e));
+  }).catch(e => { console.error("ggblab: deployggb load failed", e); notice("could not load " + M.deploy + " (the GeoGebra applet script): " + String(e && e.type ? e.type : e)); });   // A4: visible, not only in the console
 })();
