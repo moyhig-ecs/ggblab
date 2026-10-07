@@ -4,7 +4,9 @@
 
 ```{eval-rst}
 .. autoclass:: ggblab.GeoGebra
-   :members: command, new_construction, delete, set_xml, xml, value, kind, png, svg, listen, unlisten, events, errors, wait_update, mount
+   :members: command, new_construction, delete, set_xml, xml, value, kind, png, svg, listen, unlisten, events, errors, wait_update, mount, boxes
+
+.. autoexception:: ggblab.host.html_host.NoHolderError
 
 .. autofunction:: ggblab.find_server
 ```
