@@ -114,8 +114,10 @@ class GeoGebra:
         # With a fresh id the later output becomes a pointer to the live applet, like a second object's output does.
         self.dom_id = uuid.uuid4().hex[:12]
         cfg = {"mount": self.mount_id, "dom": self.dom_id, "params": self.params, "deploy": DEPLOY}
+        cfg_js = json.dumps(cfg).replace("</", "<\\/")   # "</script>" in a param must not end the script (A4); kept out of the
+                                                        # f-string: a backslash inside {} is a SyntaxError before Python 3.12
         html = (f'<div id="ggb-{self.dom_id}" style="min-height:600px"></div>'
-                f'<script>{JS.replace("__CFG__", json.dumps(cfg).replace("</", "<\\/"))}</script>')   # "</script>" in a param must not end the script (A4)
+                f'<script>{JS.replace("__CFG__", cfg_js)}</script>')
         display(HTML(html))
         self._mounted = True
 

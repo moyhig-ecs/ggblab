@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Python 3.11 imports the package again. 2.0.0rc2 escaped `</` inside an f-string expression (`html_host.py`, the
+  `</script>` escape of A4); a backslash there is a `SyntaxError` before Python 3.12, so `import ggblab` failed on 3.11 —
+  CI's 3.11 job caught it after the release, and the 2.0.0rc2 wheel on PyPI is affected. The escape is computed before the
+  f-string.
+- The Julia package declares `Base64`, which `png` has used since the projection verbs; in CI's clean environment
+  `using GGBLab` failed to precompile on 2.0.0rc2 ("Package GGBLab does not have Base64 in its dependencies").
+
 ## 2.0.0rc2 (2026-10-07)
 
 - The relay serves a holder page: `GET ggblab/holder?mount=<box>` returns a same-origin page with the same `div` and the
