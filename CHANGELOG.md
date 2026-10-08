@@ -5,6 +5,19 @@
 - The publish workflow runs the CI workflow (tests on Python 3.11 to 3.14, the Julia package, the build) at the tagged
   commit and publishes only when all of it passes. 2.0.0rc2 reached PyPI while CI was red because the two workflows were
   independent.
+- `:const :undo` deletes the last label defined before the directive, in Python and in Julia (A2). It deleted the last
+  label of the whole cell: `A, B, :const :undo, C` sent `delete C` before `C` existed and `B` stayed. The label is now
+  fixed by `plan` at the directive's position and carried in the step (`HostWord("undo", "B")`); undos stack, and
+  `:const :new` empties the stack. The tests check literal expectations in both languages.
+  **Compatibility**: `A, B, :const :undo, C` — before: `delete C` (sent before C existed; nothing was removed);
+  now: `delete B`. A cell ending in `:const :undo` behaves as before.
+- A string read from a document is not run as Python (A3). The radius of `Cylinder` / `Cone` read from the XML's
+  `<input>` was passed to `sympify`, so a crafted `.ggb` or XML ran code when `objects_from_xml` read it; it is now read
+  as a literal number (`_num`), else through the restricted parse below (`sqrt(2)` is still a SymPy value), else `None`.
+  `expr_from_value` (which the value-string parsers call) refuses `__`, quotes, `[ ]`, `;`, backticks, backslashes and a
+  `.` that is not a decimal point, and parses with an explicit allow-list of SymPy names and no Python builtins.
+  `point_from_value` no longer falls back to SymPy's `parse_expr` with its default globals when `expr_from_value`
+  refuses (that fallback ran the string from a DataFrame's `Value` column).
 
 ## 2.0.0rc3 (2026-10-07)
 

@@ -24,6 +24,40 @@ def _normalize_exponent(xml: str) -> str:
     return re.sub(r'(?<=\d)e(?=[+-]?\d+)', 'E', xml)
 
 
+# A3 (2026-10-08): the strings parsed here come from documents (.ggb / XML / value columns), so they are not evaluated
+# as Python.  `parse_expr` compiles the text to Python and evals it; with its default globals that namespace holds every
+# Python builtin function (`__import__`, `eval`, `open`, …).  Two fences: (1) a token check refuses the characters that
+# reach Python beyond arithmetic (`__`, quotes, `[ ]`, `;`, backtick, backslash, and a `.` that is not a decimal point =
+# attribute access); (2) the globals are an explicit allow-list of SymPy names with no builtins, so any other name
+# becomes a SymPy Symbol / undefined Function (auto_symbol) instead of a Python object.
+_REFUSED_TOKENS = re.compile(r"__|['\"\[\];`\\]")
+_DECIMAL = re.compile(r"\d+\.\d*|\.\d+")
+_ALLOWED_SYMPY_NAMES = (
+    # what parse_expr's own transformations emit (auto_symbol / auto_number / factorial_notation)
+    "Symbol", "Function", "Integer", "Float", "Rational", "factorial",
+    # the functions and constants GeoGebra value strings use
+    "sin", "cos", "tan", "cot", "sec", "csc", "asin", "acos", "atan", "atan2", "acot",
+    "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "exp", "log", "sqrt", "cbrt", "root",
+    "Abs", "sign", "floor", "ceiling", "Max", "Min", "pi", "E", "I", "oo", "nan",
+)
+
+
+def _check_value_tokens(ss: str) -> None:
+    """Raise ValueError when `ss` contains a token that is not arithmetic on names and numbers (A3)."""
+    if _REFUSED_TOKENS.search(ss) or "." in _DECIMAL.sub("0", ss):
+        raise ValueError(f"expr_from_value refuses a string that is not arithmetic: {ss[:80]!r}")
+
+
+def _allowed_globals() -> dict:
+    """The globals for parse_expr: SymPy names only, no Python builtins (A3)."""
+    import sympy
+    g = {"__builtins__": {}}
+    for n in _ALLOWED_SYMPY_NAMES:
+        g[n] = getattr(sympy, n)
+    g.update(abs=sympy.Abs, max=sympy.Max, min=sympy.Min, ln=sympy.log)   # GeoGebra / v1 spellings (v1 had max/min)
+    return g
+
+
 def expr_from_value(
     s: str, transformations=None, local_dict=None, extra_transformations=None
 ):
@@ -102,11 +136,15 @@ def expr_from_value(
         except Exception:
             ld.setdefault("nan", float("nan"))
 
+    _check_value_tokens(ss)                       # A3: before either parse_expr below
+    gd = _allowed_globals()
+    ld.pop("__builtins__", None)
+
     if eq_index is not None:
         lhs_s = ss[:eq_index].strip()
         rhs_s = ss[eq_index + 1 :].strip()
-        left = parse_expr(lhs_s, transformations=trans, local_dict=ld)
-        right = parse_expr(rhs_s, transformations=trans, local_dict=ld)
+        left = parse_expr(lhs_s, transformations=trans, local_dict=ld, global_dict=gd)
+        right = parse_expr(rhs_s, transformations=trans, local_dict=ld, global_dict=gd)
 
         # Auto-convert tuple-like results to SymPy Point/Tuple when possible
         def _maybe_convert_tuple(obj):
@@ -154,7 +192,7 @@ def expr_from_value(
         except Exception:
             return (left, right)
 
-    res = parse_expr(ss, transformations=trans, local_dict=ld)
+    res = parse_expr(ss, transformations=trans, local_dict=ld, global_dict=gd)
 
     # Auto-convert tuple-like parse results into Points/Tuples when appropriate
     try:

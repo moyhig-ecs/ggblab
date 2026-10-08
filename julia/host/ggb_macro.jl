@@ -70,7 +70,8 @@ function flatten_labels(replies)
 end
 
 """Send the plan to a host (one `Eval` per batch; `:const :new` → `new_construction`; `:const :undo` → `delete` of the last
-label; `:api …` is not a construction statement → `ClosedWorldError`). Mirrors `ggblab.adapter.apply`."""
+label defined BEFORE the directive, as fixed by the Python `plan` in the step's `detail`; `:api …` is not a construction
+statement → `ClosedWorldError`). Mirrors `ggblab.adapter.apply`."""
 function apply(g::GeoGebra, c; timeout::Real=10.0)
     replies = Any[]
     for st in plan(c)
@@ -82,9 +83,9 @@ function apply(g::GeoGebra, c; timeout::Real=10.0)
             if a == "newConstruction"
                 push!(replies, new_construction(g; timeout=Float64(timeout)))
             elseif a == "undo"
-                ls = labels(c)
-                isempty(ls) && throw(ClosedWorldError(":const :undo with no labelled statement before it"))
-                push!(replies, delete(g, ls[end]; timeout=Float64(timeout)))
+                l = pyconvert(String, st.detail)
+                isempty(l) && throw(ClosedWorldError(":const :undo with no labelled statement before it"))
+                push!(replies, delete(g, l; timeout=Float64(timeout)))
             else
                 throw(ClosedWorldError("directive $a $(pyconvert(String, st.detail)): not a construction statement (no Verb)"))
             end

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import polars as pl
-from sympy import Eq, Float, Matrix, S, sqrt, symbols, sympify
+from sympy import Eq, Float, Matrix, S, sqrt, symbols
 from sympy.geometry import Circle as SympyCircle
 from sympy.geometry import Line2D, Line3D, Plane as SympyPlane, Point2D, Point3D, Polygon as SympyPolygon, Ray2D, Ray3D, Segment2D, Segment3D
 
@@ -219,8 +219,13 @@ def _numeric_arg(label: str, irs: Mapping[str, ElementIR]):
     ir = irs.get(label)
     if ir is not None and ir.value is not None:
         return _num(ir.value)
+    try:                                           # A3 (2026-10-08): the label is file text — a literal number first,
+        return _num(label)
+    except (TypeError, ValueError):
+        pass
+    from .utils import expr_from_value             # then SymPy arithmetic (`sqrt(2)`) via the restricted parse; refused → None
     try:
-        return sympify(label)
+        return expr_from_value(label)
     except Exception:
         return None
 

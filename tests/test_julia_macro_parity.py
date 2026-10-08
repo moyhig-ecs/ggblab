@@ -77,3 +77,31 @@ println(join(to_ggb(c), " | "), " || ", join(labels(c), ","))
     assert lines[1].startswith("ClosedWorldError") and "relative reference" in lines[1]
     assert lines[2].startswith("ClosedWorldError") and "L1" in lines[2]
     assert lines[3] == "A = (0, 0) | c = Circle(A, 1) || A,c"
+
+
+@pytest.mark.skipif(not HAVE, reason=NEED)
+def test_undo_deletes_the_label_before_the_directive_in_julia():
+    """A2 (2026-10-08): the Julia `apply` on the same cells as tests/test_adapter.py::UNDO_CASES, against the same LITERAL
+    host-call sequences (not against the Python output — a defect shared by both languages must fail here).  The host's
+    `_rpc` is replaced by a recorder: no browser, no server."""
+    from test_adapter import UNDO_CASES
+    code = f'''
+include("{ROOT / 'julia/host/html_host.jl'}"); include("{ROOT / 'julia/host/ggb_macro.jl'}"); using .GGBLabHost, .GGBLabMacro, JSON
+const SENT = Any[]
+GGBLabHost._rpc(g::GGBLabHost.GeoGebra, req::Dict{{String,Any}}; timeout=10.0) =
+    (push!(SENT, req["kind"] == "eval" ? Any["eval", req["commands"]] : req["kind"] == "delete" ? Any["delete", req["label"]] : Any[req["kind"]]);
+     req["kind"] == "eval" ? [String(split(c, " = ")[1]) for c in req["commands"]] : true)
+g = GGBLabHost.GeoGebra("k", "d", Dict{{String,Any}}(), "http://127.0.0.1:9", Pair{{String,String}}[], nothing, "m", true, 0, Tuple{{Function,Union{{Nothing,String}}}}[])
+cells = JSON.parse(raw"""{json.dumps([c for c, _, _ in UNDO_CASES])}""")
+out = Any[]
+for c in cells
+    empty!(SENT); apply(g, parse_ggb(c)); push!(out, copy(SENT))
+end
+println(JSON.json(out))
+'''
+    got = json.loads(_julia(code).strip().splitlines()[-1])
+    def as_json(step):                                     # ("eval", (…,)) → ["eval", [...]]; ("delete", "B") → ["delete", "B"]; ("new",) → ["new"]
+        return [step[0], list(step[1])] if step[0] == "eval" else list(step)
+    assert len(got) == len(UNDO_CASES)
+    for (cell, sent, _), jl in zip(UNDO_CASES, got):
+        assert jl == [as_json(s) for s in sent], cell

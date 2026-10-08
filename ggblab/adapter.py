@@ -3,7 +3,7 @@
 `plan` turns a Construction into the sequence the current route would send: consecutive renderable statements are
 batched into one `Eval` (the JS host evaluates them in order with evalCommandGetLabels); a Directive becomes a `HostWord`,
 the host-side action the current route performs for it (stage 2 gate #1 recorded them verbatim from the v1 macro):
-    :const :new   → newConstruction()        :const :undo → deleteObject(last label)
+    :const :new   → newConstruction()        :const :undo → deleteObject(the last label defined BEFORE the directive)
     :api f(args)  → applet API call f(args)  (not a construction statement; passed through for the host)
 Teacher 2026-09-07: respect the GeoGebra API → `newConstruction()` became the Verb `New` (host.new_construction());
 `:api f(args)` (arbitrary API calls) and the surface words of the Julia macro / Python magic are a separate matter, so
@@ -20,7 +20,7 @@ from .host.base import Eval, Request, Delete
 class HostWord:
     """A host-side action requested by a Directive (never sent as a GeoGebra command)."""
     action: str                 # "newConstruction" | "undo" | "api"
-    detail: str = ""            # for "api": the call text, e.g. "getVersion()"
+    detail: str = ""            # for "api": the call text, e.g. "getVersion()"; for "undo": the label to delete ("" = none)
     kind: str = "host_word"
 
 
@@ -36,17 +36,29 @@ def host_word(d: Directive) -> HostWord:
 
 
 def plan(c: Construction) -> tuple[Step, ...]:
-    """One clause per statement kind (C3); commands are batched between directives, in order."""
-    steps: list[Step] = []; batch: list[str] = []
+    """One clause per statement kind (C3); commands are batched between directives, in order.
+
+    `:const :undo` deletes the last label defined BEFORE the directive (A2, 2026-10-08): the label is fixed here, at
+    the directive's position, and carried in the HostWord (`detail`), so `A, B, :const :undo, C` deletes B (before,
+    the host deleted `c.labels()[-1]` of the whole cell = C, sent before C existed, and B stayed).  Undos stack
+    (`A, B, :undo, :undo` deletes B then A); `:const :new` empties the stack; no label left → detail "" (apply raises)."""
+    steps: list[Step] = []; batch: list[str] = []; defined: list[str] = []
     def flush():
         if batch: steps.append(Eval(tuple(batch))); batch.clear()
     for s in c.statements:
         match s:
             case Directive():
-                flush(); steps.append(host_word(s))
+                flush(); hw = host_word(s)
+                if hw.action == "undo":
+                    hw = HostWord("undo", defined.pop() if defined else "")
+                elif hw.action == "newConstruction":
+                    defined.clear()
+                steps.append(hw)
             case _:
                 t = render(s)
                 if t is not None: batch.append(t)
+                l = getattr(s, "label", None)
+                if l: defined.append(l)
     flush()
     return tuple(steps)
 
@@ -64,10 +76,9 @@ def apply(host, c: Construction, timeout: float = 10.0) -> list:
                 out.append(host.command(*cmds, timeout=timeout))
             case HostWord(action="newConstruction"):
                 out.append(host.new_construction(timeout=timeout))
-            case HostWord(action="undo"):
-                labels = c.labels()
-                if not labels: raise UnsupportedHostWord(":const :undo with no labelled statement before it")
-                out.append(host.delete(labels[-1], timeout=timeout))
+            case HostWord(action="undo", detail=label):
+                if not label: raise UnsupportedHostWord(":const :undo with no labelled statement before it")
+                out.append(host.delete(label, timeout=timeout))
             case HostWord(action="api", detail=d):
                 raise UnsupportedHostWord(f":api {d}: applet API calls are not construction statements (no Verb)")
             case HostWord(action=a, detail=d):
