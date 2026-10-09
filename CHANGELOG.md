@@ -19,6 +19,30 @@
   `point_from_value` no longer falls back to SymPy's `parse_expr` with its default globals when `expr_from_value`
   refuses (that fallback ran the string from a DataFrame's `Value` column).
 
+### Security
+
+Each item: what, the versions it affects, the change. Report channel and scope: `SECURITY.md`; the trust boundaries:
+`docs/security.md`.
+
+- **Strings read from a document were run as Python (A3, 2026-10-08).** Affects 1.x and 2.0.0rc1–rc3. Value strings,
+  `<input>` arguments and a DataFrame's `Value` column reached `sympify` / `parse_expr` with default globals. Now: a literal
+  number, else a parse restricted to allow-listed SymPy names with no builtins, else `None` (the entry above).
+- **The per-module parsers kept a fallback to the unrestricted parser (N2-03).** Affects 2.0.0rc1–rc3. `_parse_expr` in
+  `line`, `circle`, `curve`, `surface` and `plane` fell back to SymPy's `parse_expr` when `expr_from_value` could not be
+  imported. The fallback is removed; without `expr_from_value` they raise `ImportError`.
+- **The holder page's config was not escaped (N2-08).** Affects 2.0.0rc2–rc3 (the holder page appeared in 2.0.0rc2).
+  A `?token=` value was written into the page's `jupyter-config-data` script unescaped, so `</` in it could end the
+  script. The page config is now escaped like the applet's config (`</` → `<\/`), and a token that is not letters,
+  digits, `-` and `_` is answered with 400.
+- **The holder page accepted a `deploy` URL on any host (N2-01).** Affects 2.0.0rc2–rc3. The check accepted any
+  `https://` URL and any string starting with `/`, which includes `//host/...`. `deploy` is now accepted only under
+  `https://www.geogebra.org/` or as a path on the same origin (a `/` not followed by `/` or `\`); otherwise 400.
+  **Compatibility**: a holder URL whose `deploy` points to another https host (a mirror, a self-hosted copy on another
+  origin) is now refused; host the script on the same origin or use the default.
+- **The Julia host did not escape its applet config (N2-09).** Affects 2.0.0rc1–rc3 (the Julia package). `mount`
+  wrote `JSON.json(cfg)` into an inline script without the `</` escape the Python host has had since 2.0.0rc2 (A4); a
+  `</script>` in a parameter could end the script. The same escape is applied.
+
 ## 2.0.0rc3 (2026-10-07)
 
 - Python 3.11 imports the package again. 2.0.0rc2 escaped `</` inside an f-string expression (`html_host.py`, the

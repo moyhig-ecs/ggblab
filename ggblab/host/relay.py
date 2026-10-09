@@ -34,7 +34,7 @@ Browser<->server is plain HTTP (JupyterHub/CHP friendly). Kernel and server are 
 Enable: c.ServerApp.jpserver_extensions = {"ggblab.host.relay": True}
 """
 from __future__ import annotations
-import asyncio, collections, json, time, uuid
+import asyncio, collections, json, re, time, uuid
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any
@@ -500,6 +500,22 @@ _HOLDER_JS = Path(__file__).with_name("mount.js")                   # the same m
 DEPLOY_DEFAULT = "https://www.geogebra.org/apps/deployggb.js"       # = html_host.DEPLOY (kept here: relay must not import the kernel-side host)
 
 
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def deploy_ok(deploy: str) -> bool:
+    """The deploy URLs a holder page may load (N2-01, rc4): GeoGebra's own host, or a path on this origin. A string that
+    starts with '//' or '/\\' is a host to a browser (protocol-relative), not a path, so it is refused."""
+    if deploy.startswith("https://www.geogebra.org/"):
+        return True
+    return deploy.startswith("/") and deploy[1:2] not in ("/", "\\")
+
+
+def token_ok(token: str) -> bool:
+    """The form of a ?token= a holder page echoes into its page config (N2-08, rc4): letters, digits, '-' and '_' only."""
+    return bool(_TOKEN_RE.fullmatch(token))
+
+
 def holder_html(base_url: str, mount: str, params: dict | None = None, deploy: str | None = None, token: str | None = None) -> str:
     """The page of a holder that is not a notebook output: a headless Chromium (B6), an app's webview, a phone's browser (B2).
     Same-origin, no CSP sandbox (the /files/ route serves with `sandbox` -> origin null -> the poll's preflight is refused; 10-02
@@ -512,9 +528,10 @@ def holder_html(base_url: str, mount: str, params: dict | None = None, deploy: s
     if token:
         page_cfg["token"] = token
     js = _HOLDER_JS.read_text(encoding="utf-8").replace("__CFG__", json.dumps(cfg).replace("</", "<\\/"))   # a "</script>" inside a param must not end the script (A4)
+    page_js = json.dumps(page_cfg).replace("</", "<\\/")   # the same for the page config: a "</script>" in a value must not end it (N2-08)
     return ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
             f'<title>ggblab holder {html_escape(mount)}</title>'
-            f'<script id="jupyter-config-data" type="application/json">{json.dumps(page_cfg)}</script></head>'
+            f'<script id="jupyter-config-data" type="application/json">{page_js}</script></head>'
             f'<body style="margin:0"><div id="ggb-{dom}" style="min-height:600px"></div><script>{js}</script></body></html>')
 
 
@@ -540,9 +557,11 @@ class HolderHandler(JupyterHandler):
         if not isinstance(params, dict):
             raise web.HTTPError(400, "params must be a JSON object")
         deploy = self.get_argument("deploy", None)
-        if deploy and not (deploy.startswith("https://") or deploy.startswith("/")):
-            raise web.HTTPError(400, "deploy must be https or a same-origin path")
+        if deploy and not deploy_ok(deploy):
+            raise web.HTTPError(400, "deploy must be on https://www.geogebra.org/ or a same-origin path")
         token = self.get_argument("token", None)              # present only when the page itself was opened with ?token=...
+        if token and not token_ok(token):
+            raise web.HTTPError(400, "bad token (letters, digits, '-' and '_' expected)")
         self.set_header("Content-Type", "text/html; charset=utf-8"); self.set_header("Cache-Control", "no-store")
         self.finish(holder_html(self.settings.get("base_url", "/"), mount, params, deploy, token))
 

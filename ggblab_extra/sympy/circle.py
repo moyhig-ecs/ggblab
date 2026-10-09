@@ -14,7 +14,7 @@ from sympy import Matrix, cos, sin, sqrt, symbols
 from sympy.core.sympify import SympifyError
 from sympy.geometry import Point3D as SympyPoint3D
 from sympy.parsing.sympy_parser import (implicit_multiplication_application,
-                                        parse_expr, standard_transformations)
+                                        standard_transformations)
 
 from .point import point_from_value, sympy_point_from_coords
 
@@ -36,9 +36,10 @@ except Exception:
 
 
 def _parse_expr(s: str, local: dict = None):
-    if expr_from_value is not None:
-        return expr_from_value(s, transformations=_transformations, local_dict=local)
-    return parse_expr(s, transformations=_transformations, local_dict=local)
+    # A3 / N2-03 (rc4): no fallback to sympy's parse_expr with its default globals — without the hardened parser, refuse
+    if expr_from_value is None:
+        raise ImportError("ggblab_extra.sympy.utils.expr_from_value is unavailable; a string is not parsed without it")
+    return expr_from_value(s, transformations=_transformations, local_dict=local)
 
 
 @dataclass

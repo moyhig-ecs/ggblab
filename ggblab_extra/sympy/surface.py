@@ -14,7 +14,7 @@ from typing import Any, Optional
 from sympy import E, cos, pi, sin, sqrt, symbols, tan
 from sympy.core.sympify import SympifyError
 from sympy.parsing.sympy_parser import (implicit_multiplication_application,
-                                        parse_expr, standard_transformations)
+                                        standard_transformations)
 
 _transformations = standard_transformations + (implicit_multiplication_application,)
 
@@ -25,9 +25,10 @@ except Exception:
 
 
 def _parse_expr(s: str, local: dict = None):
-    if expr_from_value is not None:
-        return expr_from_value(s, transformations=_transformations, local_dict=local)
-    return parse_expr(s, transformations=_transformations, local_dict=local)
+    # A3 / N2-03 (rc4): no fallback to sympy's parse_expr with its default globals — without the hardened parser, refuse
+    if expr_from_value is None:
+        raise ImportError("ggblab_extra.sympy.utils.expr_from_value is unavailable; a string is not parsed without it")
+    return expr_from_value(s, transformations=_transformations, local_dict=local)
 
 
 @dataclass

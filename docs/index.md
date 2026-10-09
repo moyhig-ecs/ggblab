@@ -28,6 +28,7 @@ verbs
 parser
 julia
 running
+security
 reference
 version1
 changelog

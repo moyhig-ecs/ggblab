@@ -367,11 +367,7 @@ def resolve_label_to_point(label: str, df, name_col: str, value_col: str, obj_co
                 parsed = [
                     expr_from_value(v, transformations=_transformations) for v in comps
                 ]
-            elif parse_expr is not None:
-                parsed = [
-                    parse_expr(v, transformations=_transformations) for v in comps
-                ]
-            else:
+            else:   # N2-03 (rc4): never sympy's parse_expr with its default globals; without the hardened parser, numbers only
                 # SymPy not available: try numeric conversion, else leave as string
                 parsed = []
                 for v in comps:

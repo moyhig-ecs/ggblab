@@ -3,6 +3,11 @@
 using Test
 using GGBLab
 
+struct _Cap <: AbstractDisplay                  # a display that keeps the HTML a `mount` emits (no IJulia, no browser)
+    html::Vector{String}
+end
+Base.display(d::_Cap, x::HTML) = (push!(d.html, x.content); nothing)
+
 @testset "GGBLab (offline)" begin
     @testset "host" begin
         @test GGBLab.GGBLabHost.kernel_id() == ""                       # outside an IJulia kernel
@@ -16,6 +21,25 @@ using GGBLab
         @test GGBLab.GGBLabHost.without_gui("<geogebra><gui/><a/></geogebra>") == "<geogebra><a/></geogebra>"
         p = GGBLab.GGBLabHost.mount_js_path()                              # the one JavaScript, wherever the package lives
         @test isfile(p) && occursin("__CFG__", read(p, String)) && occursin("pollLoop", read(p, String))
+    end
+
+    @testset "mount escapes \"</\" in its cfg (N2-09, rc4)" begin
+        # Positive control (stage 2, 2026-10-09, before the fix): the same expression emitted the marker raw.
+        # The marker is an inert string; the HTML is captured from the display stack, not shown or run.
+        H = GGBLab.GGBLabHost
+        mark = "</script>ZZPOCZZ"
+        g = H.GeoGebra("", "", Dict{String,Any}("k" => mark), "http://127.0.0.1:1", Pair{String,String}[], nothing,
+                       "m1", false, 0, Tuple{Function,Union{Nothing,String}}[])
+        cap = _Cap(String[])
+        pushdisplay(cap)
+        try
+            H.mount(g)
+        finally
+            popdisplay(cap)
+        end
+        @test length(cap.html) == 1
+        @test !occursin(mark, cap.html[1])
+        @test occursin("<\\/script>ZZPOCZZ", cap.html[1])
     end
 
     @testset "macro (PythonCall + the ggblab Python package)" begin

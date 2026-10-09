@@ -182,7 +182,8 @@ end
 function mount(g::GeoGebra)
     g.dom_id = string(uuid4())[1:12]     # one id per DISPLAY (09-16): re-showing `g` used to emit two divs with one id → the second stayed empty
     cfg = Dict("mount" => g.mount_id, "dom" => g.dom_id, "params" => g.params, "deploy" => DEPLOY[])
-    html = "<div id=\"ggb-$(g.dom_id)\" style=\"min-height:600px\"></div><script>" * replace(mount_js(), "__CFG__" => JSON.json(cfg)) * "</script>"
+    cfg_js = replace(JSON.json(cfg), "</" => "<\\/")   # "</script>" in a param must not end the script (A4 = html_host.py:117; N2-09)
+    html = "<div id=\"ggb-$(g.dom_id)\" style=\"min-height:600px\"></div><script>" * replace(mount_js(), "__CFG__" => cfg_js) * "</script>"
     display(HTML(html))
     g.mounted = true
     nothing

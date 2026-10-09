@@ -110,3 +110,29 @@ def test_point_from_value_is_not_evaluated(tmp_path):
     except Exception:
         pass
     assert not m.exists()
+
+
+# N2-03 (rc4): the per-module `_parse_expr` of line / circle / curve / surface / plane had a fallback to sympy's bare
+# parse_expr when the hardened `expr_from_value` failed to import.  Positive control (stage 2, 2026-10-09, before the fix):
+# with `line.expr_from_value = None`, `line._parse_expr("__import__")` returned the builtin.  The input is the bare name
+# "__import__" (nothing is imported or called).
+_PARSE_MODULES = ["line", "circle", "curve", "surface", "plane"]
+
+
+@pytest.mark.parametrize("name", _PARSE_MODULES)
+def test_parse_expr_refuses_in_the_normal_state(name):
+    import importlib
+    mod = importlib.import_module(f"ggblab_extra.sympy.{name}")
+    assert mod.expr_from_value is not None
+    with pytest.raises(ValueError):
+        mod._parse_expr("__import__")
+
+
+@pytest.mark.parametrize("name", _PARSE_MODULES)
+def test_parse_expr_has_no_bare_fallback(monkeypatch, name):
+    import importlib
+    mod = importlib.import_module(f"ggblab_extra.sympy.{name}")
+    monkeypatch.setattr(mod, "expr_from_value", None)       # as if `from .utils import expr_from_value` had failed
+    with pytest.raises(ImportError):
+        mod._parse_expr("__import__")
+    assert not hasattr(mod, "parse_expr")                   # the bare parser is no longer imported into the module

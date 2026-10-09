@@ -10,13 +10,11 @@ _HAS_SYMPY = True
 try:
     from sympy import Matrix, symbols
     from sympy.parsing.sympy_parser import (
-        implicit_multiplication_application, parse_expr,
-        standard_transformations)
+        implicit_multiplication_application, standard_transformations)
 except Exception:
     Matrix = None
     symbols = None
     implicit_multiplication_application = None
-    parse_expr = None
     standard_transformations = ()
     _HAS_SYMPY = False
 
@@ -177,9 +175,10 @@ except Exception:
 
 
 def _parse_expr(s: str, local: dict = None):
-    if expr_from_value is not None:
-        return expr_from_value(s, transformations=_transformations, local_dict=local)
-    return parse_expr(s, transformations=_transformations, local_dict=local)
+    # A3 / N2-03 (rc4): no fallback to sympy's parse_expr with its default globals — without the hardened parser, refuse
+    if expr_from_value is None:
+        raise ImportError("ggblab_extra.sympy.utils.expr_from_value is unavailable; a string is not parsed without it")
+    return expr_from_value(s, transformations=_transformations, local_dict=local)
 
 
 def _try_parse_line_equation(s: str):
