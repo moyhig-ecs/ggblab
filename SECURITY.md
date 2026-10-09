@@ -6,8 +6,9 @@ Report it privately through GitHub's Security Advisories for this repository ("R
 Security tab). Please do not open a public issue for it. Include the version, the host (Python or Julia), and the
 smallest input that shows the behaviour.
 
-Expect an acknowledgement within 7 days and, for a confirmed report, a fix or a written plan within 30 days. Fixes are
-listed under **Security** in `CHANGELOG.md`.
+Expect a response within 30 days: the deployment assumption below is a secure, single-user server, so a report is not
+treated as an emergency. With the AI-assisted maintenance this project uses, a response usually comes within 7 days.
+Fixes are listed under **Security** in `CHANGELOG.md`.
 
 ## Supported versions
 

@@ -1,6 +1,6 @@
 """Check that a built wheel carries the four kinds of data besides the Python modules (used by the CI; not a pytest test).
 
-    python tests/check_wheel.py dist/ggblab-2.0.0rc3-py3-none-any.whl
+    python tests/check_wheel.py dist/ggblab-2.0.0rc4-py3-none-any.whl
 """
 import sys
 import zipfile

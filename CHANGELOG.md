@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+(nothing yet)
+
+## 2.0.0rc4 (2026-10-09)
+
 - The publish workflow runs the CI workflow (tests on Python 3.11 to 3.14, the Julia package, the build) at the tagged
   commit and publishes only when all of it passes. 2.0.0rc2 reached PyPI while CI was red because the two workflows were
   independent.

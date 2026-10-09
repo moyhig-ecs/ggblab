@@ -1,7 +1,7 @@
 name = "GGBLab"
 uuid = "0cf57a2d-d8e5-4856-be56-4f57e1505f70"
 authors = ["Manabu Higashida"]
-version = "2.0.0-rc3"
+version = "2.0.0-rc4"
 
 [deps]
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
