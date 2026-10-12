@@ -2,7 +2,7 @@
 
 GeoGebra applets in Jupyter notebooks, driven from Python and Julia kernels.
 
-**Current version: 2.0.0rc1** ([PyPI](https://pypi.org/project/ggblab/2.0.0rc1/), 2026-09-29) — a rewrite of version 1, not an upgrade.
+**Current version: 2.0.0rc4** ([PyPI](https://pypi.org/project/ggblab/2.0.0rc4/), 2026-10-09) — a rewrite of version 1, not an upgrade.
 The code of version 2 lives on the [`v2` branch](https://github.com/moyhig-ecs/ggblab/tree/v2); this `main` branch still holds
 version 1 (1.8.1, a JupyterLab extension). Documentation for both: <https://ggblab.readthedocs.io/>.
 
@@ -53,6 +53,13 @@ Version 1 (1.8.1) is a JupyterLab extension with an IPython comm and an out-of-b
 [README_v1.md](README_v1.md); install it with `pip install ggblab==1.8.1`. Version 2 does not read or extend version 1's code
 and has no compatibility layer; the differences are tabulated in the
 [v2 changelog](https://github.com/moyhig-ecs/ggblab/blob/v2/CHANGELOG.md).
+
+Version 1 is frozen and not maintained. It evaluates strings read from documents (a `.ggb` file's XML, the value
+column of a DataFrame) as Python expressions, so a crafted document can run code when it is read; do not open untrusted
+documents with it. This is addressed only in version 2 (2.0.0rc4 and later): see the v2
+[SECURITY.md](https://github.com/moyhig-ecs/ggblab/blob/v2/SECURITY.md) and
+[Security considerations](https://github.com/moyhig-ecs/ggblab/blob/v2/docs/security.md). The frozen version-1 source is
+archived at [10.5281/zenodo.23227658](https://doi.org/10.5281/zenodo.23227658).
 
 ## Funding
 
