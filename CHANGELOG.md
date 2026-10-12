@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-(nothing yet)
+- README: a section *Published documents* lists the Zenodo records that describe the package with their DOIs
+  (the archived version-1 source 10.5281/zenodo.23227658, the version-1 technical report 10.5281/zenodo.23228021,
+  and the technical report on how version 2 was written, 10.5281/zenodo.23307861). The docs include it as the page
+  *Published documents*.
 
 ## 2.0.0rc4 (2026-10-09)
 

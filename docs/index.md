@@ -31,5 +31,6 @@ running
 security
 reference
 version1
+publications
 changelog
 ```

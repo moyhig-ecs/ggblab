@@ -171,3 +171,14 @@ Version 2 was written with AI assistance. The author decided the design, the ord
 criteria, and ruled on every open question. The code, the tests and the documentation were drafted by an AI coding agent
 (Anthropic Claude, through Claude Code) and accepted only after the example notebooks and the test suite reproduced the
 recorded results. Version 1 was written by the author, from January 2026 with the help of GitHub Copilot.
+
+## Published documents
+
+Records on Zenodo that describe this package and its history. Each DOI resolves at `https://doi.org/<DOI>`; the
+"all versions" DOI in parentheses resolves to the latest version of that record.
+
+| Date | Document | DOI |
+|---|---|---|
+| 2026-10-08 | *ggblab version 1: frozen source at commit 2cb266d, with the GeoGebra.jl submodule at 40b92a1* — the archived source of version 1 (software) | [10.5281/zenodo.23227658](https://doi.org/10.5281/zenodo.23227658) (all versions: [10.5281/zenodo.23227657](https://doi.org/10.5281/zenodo.23227657)) |
+| 2026-10-08 | *ggblab/GeoGebra.jl: A Hybrid Julia/Python Architecture for Geometry-Notebook Communication — Technical report on ggblab version 1* (manuscript of May 2026, revised 7–8 October 2026 against the frozen source; CC BY 4.0) | [10.5281/zenodo.23228021](https://doi.org/10.5281/zenodo.23228021) (all versions: [10.5281/zenodo.23228020](https://doi.org/10.5281/zenodo.23228020)) |
+| 2026-10-12 | *Translate or Replay? Two AI-Assisted Rewrites Compared — ggblab version 1 → version 2 (n = 1) and Bun Zig → Rust: what each kept, what served as the oracle, what escaped, and what code volume measures* — a technical report on how version 2 was written (CC BY 4.0) | [10.5281/zenodo.23307861](https://doi.org/10.5281/zenodo.23307861) (all versions: [10.5281/zenodo.23307860](https://doi.org/10.5281/zenodo.23307860)) |
